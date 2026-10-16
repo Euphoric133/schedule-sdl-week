@@ -62,34 +62,55 @@
 | `graph.js` | 任务依赖图：环检测（三色标记）、拓扑序（Kahn + 确定性排序） | 界面选择前置任务时复用同一实现 |
 | `schemas.js` | 默认设置、空状态、整体数据校验、状态摘要 | 数据契约的集中位置；版本号在此定义 |
 
-### 2.2 `src/engine/`（阶段 2 实现）
+### 2.2 `src/engine/` —— 排程引擎（阶段 2 已实现）
 
-计划中的模块划分：
-
-| 模块 | 职责 |
-|---|---|
-| `policy.js` | 全部可调参数与默认值（权重、缓冲比例、休息规则、时长限制） |
-| `priority.js` | 优先级评分 `P = 0.35·紧迫 + 0.30·难度 + 0.20·重要 + 0.15·拖延` |
-| `capacity.js` | 可用区间计算与缓冲预留 |
-| `splitter.js` | 任务 → 学习片段（可拆分 / 不可拆分、尾差处理） |
-| `placer.js` | 片段 → 时间槽（偏好时段、同科目连续、确定性平局裁决） |
-| `constraints.js` | 硬约束校验器（H1–H10），含负向测试 |
-| `diff.js` | 计划差异（新增/移动/缩短/拆分/取消/不变/锁定影响/每日指标） |
-| `risk.js` | 逾期风险与 30 天风险评估 |
-| `scheduler.js` | 编排十步流程，返回 `{ plan, status, unscheduled, diagnostics }` |
-| `versionHash.js` | 输入指纹（用于预览过期检测）与确定性派生 ID |
+| 模块 | 职责 | 关键约束 |
+|---|---|---|
+| `policy.js` | 全部可调参数与默认值（权重、缓冲比例、休息规则、时长限制、每日上限）、原因码与诊断码枚举 | 阈值只在这里定义；非法值被夹到安全范围 |
+| `versionHash.js` | FNV-1a 稳定哈希、输入指纹、策略指纹、确定性派生时段/块 ID | 指纹只包含"会影响排程结果"的字段；不包含实体 ID（避免循环依赖） |
+| `priority.js` | 截止紧迫度（0–100）、1–5 评分映射、加权优先级、复合排序键 | 评分**只影响排序与放位偏好**，不参与硬约束判定 |
+| `capacity.js` | 允许窗口规范化（含跨午夜）、区间相减、逐日净容量与 10% 缓冲、空闲槽位工具 | 重叠占用只扣一次；缓冲逐日计算、不跨日挪用 |
+| `splitter.js` | 可拆分任务均匀切分与尾差处理、不可拆分任务保护、片段数上界 | 绝不产生非法片段；尾差排不下就如实报告 |
+| `placer.js` | 槽位评分（偏好时段 / 同科目连续 / 槽位贴合 / 紧凑）、确定性平局裁决、休息插入、依赖门控 | 每次放置后重算空闲区间；前置未放完则后继不进候选 |
+| `constraints.js` | 硬约束校验器 **H1–H10**、受保护时段保留检查、可读违规说明 | 与算法分离；有负向测试防止校验器失效 |
+| `diff.js` | 计划差异（新增 / 移动 / 时长变化 / 拆分 / 取消 / 保持不变 / 锁定影响 / 每日指标变化） | 受保护时段绝不出现在"取消"里；结果稳定可断言 |
+| `risk.js` | 只读模拟"最早完成时刻"、30 天窗口风险等级 | 模拟口径与主排程一致（同样扣除缓冲） |
+| `scheduler.js` | 十步流程编排、可行性状态、未安排原因与建议、有界局部优化 | 纯函数；约束违规即拒绝出计划；不宣称全局最优 |
 
 **引擎契约（必须遵守）**
 
 ```js
 /**
- * @param {SchedulerInput} input { tasks, sessions, fixedActivities, settings, existingPlan, now, engineVersion }
- * @returns {SchedulerResult}    { ok, status, plan?, diagnostics, unscheduled, stats, inputHash }
+ * @param {object} input
+ * @param {object} input.state 完整应用状态（tasks / sessions / fixedActivities / settings）
+ * @param {{date: string, minutes: number}} input.now 当前本地墙上时间（显式传入）
+ * @param {string} [input.windowStart] 窗口起始日（默认 = now.date）
+ * @param {number} [input.windowDays] 窗口天数（默认 7）
+ * @param {object|null} [input.existingPlan] 当前正式计划（仅用于计算差异）
+ * @returns {object} { ok, status, plan, diagnostics, unscheduled, risks, diff, inputHash, policyHash, … }
  * 约束：不读系统时钟、不读随机数、不访问 DOM / localStorage / 网络。
- * 同一 input + 同一 engineVersion ⇒ 逐字段相同的输出。
+ *       同一 input + 同一 engineVersion ⇒ 逐字段相同的输出（派生 ID 也相同）。
  */
 export function run(input) {}
 ```
+
+**十步流程与产物**
+
+| 步骤 | 做什么 | 产物 |
+|---|---|---|
+| 1 | 校验输入（区分"数据不合法"与"排不下"） | `invalid_input` + 字段级问题；依赖环单独拦截 |
+| 2 | 展开固定活动，建立锁定/进行中/已完成保留集合 | `fixedSpans`、`reservedSpans`（重叠冲突如实报告） |
+| 3 | 计算剩余工作量（含减去保留时段已占用的部分） | `remainingByTask` |
+| 4 | 生成可用区间与逐日 10% 缓冲 | `capacityDays`（含 `freeWindows`、`schedulableMinutes`） |
+| 5 | 拆分任务（可拆分 / 不可拆分 / 尾差） | `fragmentsByTask` + 拆分失败原因 |
+| 6 | 按截止时间与评分放位，插入计划休息 | `placements`（带原因码） |
+| 7 | 有界局部优化（向前压缩，违反依赖/占用即回退） | 优化后的 `placements` |
+| 8 | 组装时间轴块（学习 / 固定 / 休息 / 缓冲） | `blocks` |
+| 9 | 硬约束校验 H1–H10 | 违规则返回 `invalid_input`，不交付计划 |
+| 10 | 可行性状态、未安排原因、风险评估、差异 | `plan` / `unscheduled` / `risks` / `diff` |
+
+**确定性保证**：所有排序都有唯一全序（末位用 ID 兜底）；迭代次数有固定上界；
+派生 ID 由输入指纹推导；引擎不读时钟与随机数。
 
 ### 2.3 `src/storage/`
 
@@ -187,21 +208,30 @@ localStorage ── load ──> migrations（迁移 + 语义校验）──> Ap
                   AppState + localStorage
 ```
 
-### 4.3 写入（计划，阶段 2/3 完整形态）
+### 4.3 写入（计划）
 
 ```
-用户操作 ──> planService.requestPreview(intent)
-                │ 1. 记录 baseVersion 与 baseInputHash
-                │ 2. 在内存 draft 上应用变更（不写状态）
-                │ 3. engine.run(draft)               ← 纯函数
-                │ 4. 硬约束校验失败 → 保留现有正式计划，报告原因
-                │ 5. engine.diff(officialPlan, candidate)
+用户操作 ──> planService.requestPreview({ now, draft?, changeSummary })
+                │ 1. 记录 baseVersion 与「当前状态的实时输入指纹」
+                │ 2. engine.run(state)                ← 纯函数，读草稿状态
+                │ 3. 失败（invalid_input / 硬约束违规）→ 不产生候选计划，返回原因
+                │ 4. 成功 → 生成 pendingPreview（候选计划 + 差异 + 风险 + 会话快照）
                 ▼
-          pendingPreview（候选计划 + 差异）
+          pendingPreview（持久化，刷新后仍可确认；**正式计划零改动**）
                 │
-   用户确认 ────┤ 过期检查（版本 + 输入指纹）→ 二次校验 → 原子写入 + 快照入历史
-   用户放弃 ────┴ 丢弃 pendingPreview，正式计划零改动
+   用户确认 ────┤ ① 过期检查：baseVersion + 实时输入指纹
+                │ ② 结构校验 + 受保护时段保留检查（H9 / H10）
+                │ ③ 原子写入：sessions（保留/取消/新建）+ officialPlan + 历史快照
+                ▼
+   用户放弃 ────┴ 只清空 pendingPreview（业务数据零改动）
 ```
+
+**会话同步规则**（`buildSessionPlan`）：
+
+- 受保护时段（已完成 / 锁定 / 进行中）**原样保留**，不重建、不移动；
+- 窗口内被新安排取代的旧 `flexible` 时段标记为 `cancelled`（保留记录，不物理删除）；
+- 候选计划中的新学习块创建为 `state='flexible'`、`source='engine'` 的 `StudySession`，
+  带 `reasonCodes`（放位原因，用于界面解释）。
 
 ---
 
@@ -254,9 +284,14 @@ tests/
 
 ---
 
-## 8. 已知架构限制（阶段 1）
+## 8. 已知架构限制（阶段 2 结束时）
 
-1. `src/engine/` 尚未创建，`planService` 目前只能接收"已经算好的"计划。
-2. 任务的新增/修改目前直接落盘，还未接入"候选计划 → 差异预览 → 确认"闭环（阶段 3 完成）。
-3. 界面层没有 DOM 自动化测试（未安装 jsdom 等依赖）；DOM 级验证由 `docs/ACCEPTANCE.md` 的人工步骤覆盖。
-4. `pendingPreview` 的数据结构已在 `domain/plan.js` 与 `planService` 中定型，但生成逻辑待阶段 2 填充。
+1. **任务表单仍是"直接保存"**：引擎与预览闭环已经可用，但表单内的"先预览再保存"流程、
+   时段锁定/移动按钮、固定活动管理页面在阶段 3 接线。
+2. **局部优化是局部改进**：只做确定性的"向前压缩"，有迭代上界、可回退，不宣称全局最优。
+3. **界面层没有真实 DOM 自动化测试**（未安装 jsdom 等依赖）：用最小 DOM 打桩验证
+   "渲染不抛异常 + 关键内容存在 + 单文件产物可执行"，CSS 布局与真实点击由
+   `docs/ACCEPTANCE.md` 的人工步骤覆盖。
+4. **窗口滚动未接线**：引擎支持任意窗口与天数，界面按钮在阶段 3 提供。
+5. **内联打包器是极简实现**：支持静态 import / 命名空间导入 / 别名 / 再导出 / async 导出；
+   遇到动态 import、`export *`、外部依赖会明确报错而不是产出错误的包。

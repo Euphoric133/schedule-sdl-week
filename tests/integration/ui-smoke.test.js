@@ -343,6 +343,62 @@ test('界面渲染：七天计划页生成 7 个日期表头与 18 个整点刻�
   delete globalThis.getComputedStyle;
 });
 
+test('界面渲染：有待确认候选计划时，预览页显示差异明细与确认按钮', async () => {
+  const dom = installFakeDom();
+  const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);
+  const instance = boot({ root: dom.appHost });
+
+  // 通过服务层真实生成一份候选计划（等价于用户点了"生成七天计划"）
+  const created = instance.services.taskService.addTask({
+    title: '线性代数作业',
+    subject: '数学',
+    plannedMinutes: 90,
+    deadlineDate: '2025-10-20',
+    deadlineTime: '23:00',
+    importance: 4,
+    difficulty: 4,
+    procrastination: 3,
+    splittable: true,
+    minChunkMinutes: 30,
+    maxChunkMinutes: 60,
+    dependsOn: [],
+    note: '',
+  });
+  assert.equal(created.ok, true, created.issues?.map((i) => i.message).join('; '));
+
+  const preview = instance.services.planService.requestPreview({ now: instance.services.now(), changeSummary: '生成第一份计划' });
+  assert.equal(preview.ok, true, preview.issues?.map((i) => i.message).join('; '));
+
+  dom.location.hash = '#/preview';
+  instance.shell.render();
+
+  const main = dom.appHost.children[0].byClass('app-main')[0];
+  const texts = main.all().map((node) => node.textContent).join('\n');
+
+  assert.match(texts, /候选计划/, '应显示候选计划卡片');
+  assert.match(texts, /新增时段/, '差异里应显示新增时段');
+  assert.match(texts, /每日学习量/, '应显示每日指标变化');
+  assert.match(texts, /截止风险评估|可按期完成|时间较紧/, '应显示风险评估');
+  assert.ok(
+    main.all().some((node) => node.textContent === '确认应用'),
+    '应提供"确认应用"按钮',
+  );
+  assert.ok(
+    main.all().some((node) => node.textContent === '放弃修改'),
+    '应提供"放弃修改"按钮',
+  );
+
+  delete globalThis.Node;
+  delete globalThis.addEventListener;
+  delete globalThis.removeEventListener;
+  delete globalThis.document;
+  delete globalThis.window;
+  delete globalThis.location;
+  delete globalThis.localStorage;
+  delete globalThis.requestAnimationFrame;
+  delete globalThis.getComputedStyle;
+});
+
 test('界面渲染：空数据时每个页面都显示空状态而不是崩溃或假数据', async () => {
   const dom = installFakeDom();
   const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);

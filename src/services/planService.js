@@ -1,18 +1,19 @@
 /**
- * 计划业务服务：正式计划 / 候选计划 / 版本链 / 撤销 的**唯一**写入口。
+ * 计划业务服务：正式计划 / 候选计划 / 预览 / 版本链 / 撤销 的**唯一**写入口。
  *
- * 当前阶段（阶段 1）说明：
- * - 排程引擎尚未实现（阶段 2），因此这里只提供"已经算好的计划"的写入、校验、统计与撤销能力。
- * - 预览（候选计划 + 差异）的数据结构见 domain/plan.js 与本文件的 note 说明；
- *   完整的 requestPreview / applyPreview / discardPreview 会在阶段 2 接入引擎后实现，
- *   届时本文件是唯一改动点，UI 不受影响。
+ * 完整的产品闭环（阶段 2 起可用）：
  *
- * 铁律（在阶段 2/3 接入引擎时必须继续成立）：
+ *   用户操作 → requestPreview()  → 引擎生成候选计划 + 差异（pendingPreview，只读草稿）
+ *            → 用户确认 → applyPreview()   → 重新校验过期 → 事务式写入正式计划 + 版本快照
+ *            → 用户放弃 → discardPreview() → 正式计划与所有时段零改动
+ *
+ * 铁律（任何改动都不得破坏）：
  * 1. 只有用户确认后，正式计划才会被替换。
  * 2. 放弃预览时，正式计划与所有时段**零改动**。
- * 3. 应用候选计划前必须重新校验（防止预览生成后数据又变化）。
+ * 3. 应用候选计划前必须重新校验：基础版本或输入指纹变化时**拒绝应用**，要求重新生成预览。
  * 4. 撤销只回滚排程，不回滚"用户已经完成学习"这一事实：
  *    已完成的时段永远保留，且不能被改回未完成。
+ * 5. 受保护时段（已完成 / 锁定 / 进行中）在候选计划中必须原样保留，否则拒绝应用。
  */
 
 import {
@@ -28,7 +29,8 @@ import { BLOCK_KIND, groupBlocksByDate } from '../domain/calendarBlock.js';
 import { SESSION_STATE, isLockedForScheduling } from '../domain/session.js';
 import { PLAN_HISTORY_LIMIT } from '../domain/schemas.js';
 import { VALIDATION_CODES as C, error, result } from '../domain/validation.js';
-import { addDays, weekday } from '../domain/time.js';
+import { addDays, wallTimeFromDateObject, weekday } from '../domain/time.js';
+import { computeSchedulerInputHash, run as runScheduler } from '../engine/scheduler.js';
 
 /**
  * @param {object} options
@@ -347,7 +349,278 @@ export function createPlanService({ app, idFactory }) {
     };
   }
 
+  /**
+   * 生成候选计划与差异预览（**不修改任何已保存的数据**）。
+   *
+   * @param {object} input
+   * @param {{date: string, minutes: number}} input.now 当前本地墙上时间（由调用方注入，保证可测）
+   * @param {Map<string, object>} [input.draft] 由 services 层构造的"变更后的草稿状态"
+   *   （阶段 3 的任务/设置编辑会传入；不传则使用当前状态）
+   * @param {string} [input.changeSummary] 变更摘要（写入版本历史）
+   * @param {string} [input.trigger] 触发来源
+   * @returns {{ok: boolean, preview?: object, issues?: object[], code?: string, result?: object}}
+   */
+  function requestPreview(input = {}) {
+    const state = input.draft ?? app.getState();
+    // "现在"必须显式传入（引擎是纯函数）。未传时从状态容器的时钟推导，便于界面直接调用。
+    const now = input.now ?? wallTimeFromDateObject(new Date(app.clock()));
+
+    const current = getOfficialPlan();
+    const baseVersion = current?.version ?? 0;
+    // 基准指纹取**当前状态**的指纹（而不是旧计划里存的指纹）：
+    // 这样"预览生成后数据又被改动"就能被精确检测出来。
+    const baseInputHash = computeLiveInputHash(app.getState(), now);
+
+    const engineResult = runScheduler({
+      state,
+      now,
+      windowStart: input.windowStart ?? now.date,
+      windowDays: input.windowDays ?? 7,
+      existingPlan: current,
+      baseVersion: baseVersion + 1,
+      planId: idFactory.next('plan'),
+    });
+
+    if (!engineResult.ok) {
+      return {
+        ok: false,
+        code: engineResult.reason ?? 'engine_failed',
+        status: engineResult.status,
+        issues: engineResult.issues ?? [],
+        diagnostics: engineResult.diagnostics ?? [],
+        unscheduled: engineResult.unscheduled ?? [],
+        result: engineResult,
+      };
+    }
+
+    const candidate = { ...engineResult.plan, generatedAt: nowIso() };
+    const preview = {
+      previewId: idFactory.next('preview'),
+      baseVersion,
+      baseInputHash,
+      candidate,
+      diff: engineResult.diff,
+      risks: engineResult.risks,
+      diagnostics: engineResult.diagnostics,
+      unscheduled: engineResult.unscheduled,
+      createdAt: nowIso(),
+      changeSummary: input.changeSummary ?? '重新规划',
+      trigger: input.trigger ?? 'preview',
+      /** 引擎产出的会话快照：应用时会据此创建/更新 StudySession */
+      sessionPlan: buildSessionPlan(candidate, state),
+    };
+
+    const commitResult = app.commit((currentState) => ({ ...currentState, pendingPreview: preview }), { reason: 'preview-create' });
+    if (!commitResult.ok) return { ok: false, error: commitResult.error, issues: [] };
+
+    return { ok: true, preview, result: engineResult };
+  }
+
+  /**
+   * 应用待确认的候选计划。
+   *
+   * 事务顺序（任一步失败都会保持现有数据不变）：
+   *   1. 过期检测（基础版本 + 输入指纹）
+   *   2. 结构校验 + 硬约束复检（防止预览生成后数据又变了）
+   *   3. 受保护时段必须原样保留（H9 / H10）
+   *   4. 一次性写入：正式计划 + 版本快照 + 时段同步
+   */
+  function applyPreview(input = {}) {
+    const preview = getPendingPreview();
+    if (!preview) {
+      return { ok: false, issues: [error(C.REQUIRED, 'preview', '当前没有待确认的候选计划，无法应用。', {})] };
+    }
+
+    const current = getOfficialPlan();
+    const currentVersion = current?.version ?? 0;
+
+    if (preview.baseVersion !== currentVersion) {
+      return stalePreview('基础版本已变化', preview.baseVersion, currentVersion);
+    }
+
+    // 过期检测的第二道关：**重新计算当前状态的输入指纹**，与预览记录的指纹比对。
+    // 只比较 officialPlan.inputHash 是不够的——用户在预览生成后修改了任务（例如改截止时间）
+    // 但还没有重新生成计划时，officialPlan 上存着的仍是旧指纹，会让过期预览"看起来有效"。
+    const liveInputHash = computeLiveInputHash(app.getState(), input.now ?? null);
+    if (preview.baseInputHash !== liveInputHash) {
+      return stalePreview('生成预览后任务或设置发生了变化', preview.baseInputHash, liveInputHash);
+    }
+
+    const validation = validatePlan(preview.candidate, 'candidate');
+    if (!validation.ok) return { ok: false, issues: validation.issues };
+
+    const state = app.getState();
+    const protectedIssue = checkProtectedSessions(preview.sessionPlan, state.sessions ?? []);
+    if (protectedIssue) return { ok: false, issues: [protectedIssue] };
+
+    const snapshot = current ? createPlanSnapshot({ plan: current, nowIso: nowIso(), changeSummary: lastMutationSummary(current), trigger: preview.trigger }) : null;
+
+    const commitResult = app.commit(
+      (currentState) => {
+        const history = snapshot ? [snapshot, ...currentState.planHistory] : [...currentState.planHistory];
+        return {
+          ...currentState,
+          sessions: preview.sessionPlan,
+          officialPlan: { ...preview.candidate, version: preview.candidate.version },
+          planHistory: history.slice(0, historyLimit),
+          pendingPreview: null,
+          meta: {
+            ...currentState.meta,
+            lastPlanMutation: { at: nowIso(), summary: preview.changeSummary ?? '应用计划', trigger: preview.trigger ?? 'preview-confirm' },
+          },
+        };
+      },
+      { reason: 'plan-apply-preview' },
+    );
+    if (!commitResult.ok) return { ok: false, error: commitResult.error, issues: [] };
+
+    return { ok: true, plan: getOfficialPlan(), applied: preview };
+  }
+
+  /** 放弃候选计划：只清理 pendingPreview，正式计划与所有时段零改动 */
+  function discardPreview() {
+    if (!getPendingPreview()) {
+      return { ok: false, issues: [error(C.REQUIRED, 'preview', '当前没有待确认的候选计划。', {})] };
+    }
+    const commitResult = app.commit((state) => ({ ...state, pendingPreview: null }), { reason: 'preview-discard' });
+    if (!commitResult.ok) return { ok: false, error: commitResult.error, issues: [] };
+    return { ok: true };
+  }
+
+  /** 当前风险清单（优先取预览里的结果，否则不重算，避免界面误以为"风险已刷新"） */
+  function currentRisks() {
+    const preview = getPendingPreview();
+    if (preview) return { source: 'preview', risks: preview.risks ?? [] };
+    return { source: 'none', risks: [] };
+  }
+
+
+  /**
+   * 重新计算"当前状态"的输入指纹，用于过期检测。
+   *
+   * 直接复用引擎导出的 `computeSchedulerInputHash`，保证服务层与引擎的指纹口径**完全一致**：
+   * 任何会影响排程的数据变化都会在这里体现出来，过期预览因此无法被应用。
+   */
+  function computeLiveInputHash(state, now = null) {
+    const nowWall = now ?? wallTimeFromDateObject(new Date(app.clock()));
+    return computeSchedulerInputHash({
+      state,
+      now: nowWall,
+      windowStart: state.officialPlan?.windowStart ?? nowWall.date,
+      windowEnd: state.officialPlan?.windowEnd ?? addDays(nowWall.date, 6),
+      engineVersion: state.officialPlan?.engineVersion ?? 'engine@1.0.0',
+      completedByTask: {},
+    });
+  }
+
+  /** 过期预览的错误结果（统一文案，便于界面直接展示） */
+  function stalePreview(reason, expected, actual) {
+    return {
+      ok: false,
+      code: 'stale_preview',
+      issues: [
+        error(
+          C.ENTITY_OVERLAP,
+          'plan.version',
+          `预览已过期：${reason}（预览基于 v${expected}，当前为 v${actual}）。为保护你的数据，本次应用已取消，请重新生成预览。`,
+          { expected, actual, reason },
+        ),
+      ],
+    };
+  }
+
+  /** 受保护时段（已完成 / 锁定 / 进行中）必须逐字段保留 */
+  function checkProtectedSessions(nextSessions, previousSessions) {
+    const previousById = new Map(previousSessions.map((session) => [session.id, session]));
+    const nextById = new Map((nextSessions ?? []).map((session) => [session.id, session]));
+
+    for (const session of previousSessions) {
+      const mustKeep = session.state === SESSION_STATE.COMPLETED || session.locked === true || session.state === SESSION_STATE.IN_PROGRESS;
+      if (!mustKeep) continue;
+      const next = nextById.get(session.id);
+      if (!next) {
+        return error(
+          session.state === SESSION_STATE.COMPLETED ? C.ENTITY_DANGLING_REF : C.ENTITY_DANGLING_REF,
+          'sessions',
+          session.state === SESSION_STATE.COMPLETED
+            ? `已完成的学习时段（${session.date}）在本次计划中消失了，已取消应用以保护你的学习记录。`
+            : `锁定的学习时段（${session.date}）在本次计划中消失了，已取消应用。请先解除锁定再重新规划。`,
+          { sessionId: session.id, state: session.state, locked: session.locked },
+        );
+      }
+      if (next.date !== session.date || next.startMinutes !== session.startMinutes || next.endMinutes !== session.endMinutes) {
+        return error(
+          C.ENTITY_OVERLAP,
+          'sessions',
+          session.state === SESSION_STATE.COMPLETED
+            ? '已完成的学习时段被移动了位置，已取消应用以保护历史记录。'
+            : '锁定的学习时段被移动了位置，已取消应用。锁定是硬约束，不会自动改动。',
+          { sessionId: session.id },
+        );
+      }
+      void previousById;
+    }
+    return null;
+  }
+
+  /**
+   * 根据候选计划构造新的时段集合。
+   *
+   * 规则：
+   * - 受保护时段（已完成 / 锁定 / 进行中）原样保留，不重建。
+   * - 窗口内其它旧时段（flexible）在本次排程中被替换 → 标记为 cancelled（保留记录，不物理删除）。
+   * - 候选计划中的新学习块 → 创建 StudySession（state=flexible，source=engine，带 reasonCodes）。
+   */
+  function buildSessionPlan(candidate, draftState) {
+    const existing = draftState.sessions ?? [];
+    const protectedIds = new Set(
+      existing
+        .filter((session) => session.state === SESSION_STATE.COMPLETED || session.locked === true || session.state === SESSION_STATE.IN_PROGRESS)
+        .map((session) => session.id),
+    );
+    // 只有"受保护"的既有会话才需要在候选计划的块里被跳过；
+    // 候选计划里其它块都是本次新排出来的，必须创建对应的 StudySession。
+    const reservedIds = protectedIds;
+
+    const kept = existing.filter((session) => protectedIds.has(session.id) || !isInWindow(session, candidate));
+    const superseded = existing
+      .filter((session) => !protectedIds.has(session.id) && isInWindow(session, candidate) && session.state !== SESSION_STATE.CANCELLED)
+      .map((session) => ({ ...session, state: SESSION_STATE.CANCELLED, locked: false, updatedAt: nowIso() }));
+
+    const created = (candidate.blocks ?? [])
+      .filter((block) => block.kind === BLOCK_KIND.STUDY && block.refId && !reservedIds.has(block.refId) && !protectedIds.has(block.refId))
+      .map((block) => ({
+        id: block.refId,
+        taskId: block.taskId,
+        date: block.date,
+        startMinutes: block.startMinutes,
+        endMinutes: block.endMinutes,
+        plannedMinutes: block.endMinutes - block.startMinutes,
+        actualMinutes: null,
+        state: SESSION_STATE.FLEXIBLE,
+        locked: false,
+        source: 'engine',
+        reasonCodes: [...(block.meta?.reasons ?? [])],
+        planVersion: candidate.version,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+        startedAt: null,
+        completedAt: null,
+        history: [],
+      }));
+
+    return [...kept, ...superseded, ...created];
+  }
+
+  function isInWindow(session, plan) {
+    return session.date >= plan.windowStart && session.date <= plan.windowEnd;
+  }
+
   return {
+    requestPreview,
+    applyPreview,
+    discardPreview,
+    currentRisks,
     getOfficialPlan,
     getHistory,
     getPendingPreview,

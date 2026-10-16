@@ -6,10 +6,16 @@
  * 浏览器对 ES Module 有同源限制，`file://` 直接打开 index.html 时 import 会被拦截。
  * 内联成单文件后，dist/standalone.html 可以双击直接用（不需要服务器、没有任何依赖）。
  *
- * 实现说明（有意保持简单）：
- * - 不使用任何打包工具。本项目的模块是扁平的静态 import/export，没有动态 import、没有循环依赖，
- *   因此"拓扑排序 + 去掉 import/export 关键字 + 拼接"即可得到等价结果。
- * - 若将来引入动态 import 或 node_modules 依赖，本脚本会明确报错而不是产出错误的包。
+ * 实现说明（有意保持简单，但**不是**把源码拼在一起）：
+ * 每个模块被包进一个 IIFE，并返回自己的导出对象；导入语句被改写成从"模块注册表"取值。
+ * 这样做是必须的：项目里存在同名但不同实现的顶层声明
+ * （例如 domain/plan.js 与 engine/capacity.js 都有 computeDayCapacity），
+ * 直接拼接会导致重复声明报语法错误，或者更糟——静默用错实现。
+ *
+ * 约束（脚本会在违反时报错，而不是产出错误的包）：
+ * - 只支持静态 import；出现动态 import 直接失败。
+ * - 不支持 import 外部包（运行时零依赖）。
+ * - 循环依赖会被拒绝（本项目当前没有循环依赖）。
  */
 
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
@@ -18,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * 项目根目录 = 本脚本所在目录的上一级（scripts/ → 项目根）。
- * 这里显式用 dirname 计算，避免不同 Node 版本对 `new URL('..', fileUrl)` 的处理差异
+ * 显式用 dirname 计算，避免不同 Node 版本对 `new URL('..', fileUrl)` 的处理差异
  * 导致相对路径解析到错误目录（曾出现把 src/ 前缀吃掉、找不到模块的问题）。
  */
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -27,16 +33,20 @@ const ENTRY = join(projectRoot, 'src', 'main.js');
 const OUT_DIR = join(projectRoot, 'dist');
 const OUT_FILE = join(OUT_DIR, 'standalone.html');
 
-/** 递归收集入口可达的所有本地模块（深度优先，返回依赖在前、入口在后的顺序） */
+/** 递归收集入口可达的所有本地模块（深度优先 → 依赖在前、入口在后） */
 async function collectModules(file, collected = new Map(), stack = []) {
   const absolute = resolve(file);
   if (collected.has(absolute)) return collected;
   if (stack.includes(absolute)) {
-    throw new Error(`检测到循环依赖，无法安全内联：${stack.map((p) => relative(projectRoot, p)).join(' → ')} → ${relative(projectRoot, absolute)}`);
+    throw new Error(
+      `检测到循环依赖，无法安全内联：${stack.map((p) => relative(projectRoot, p)).join(' → ')} → ${relative(projectRoot, absolute)}`,
+    );
   }
 
   const source = await readFile(absolute, 'utf8');
-  // 只检测真正的动态 import（避免把注释或字符串里的 "import (" 误判为动态导入）
+  if (/^\s*export\s+\*/m.test(source)) {
+    throw new Error(`${relative(projectRoot, absolute)} 使用了 \`export * from\`，当前内联脚本不支持，请改为显式列出导出。`);
+  }
   if (/\bimport\s*\(\s*['"`]/.test(source)) {
     throw new Error(`${relative(projectRoot, absolute)} 使用了动态 import()，当前内联脚本不支持，请改用静态 import。`);
   }
@@ -45,54 +55,174 @@ async function collectModules(file, collected = new Map(), stack = []) {
   const nextStack = [...stack, absolute];
   for (const specifier of specifiers) {
     if (!specifier.startsWith('.')) {
-      throw new Error(`${relative(projectRoot, absolute)} 引入了外部依赖「${specifier}」。本项目的运行时代码必须零依赖（见 README 依赖政策）。`);
+      throw new Error(
+        `${relative(projectRoot, absolute)} 引入了外部依赖「${specifier}」。本项目的运行时代码必须零依赖（见 README 依赖政策）。`,
+      );
     }
-    const target = resolve(dirname(absolute), specifier);
-    await collectModules(target, collected, nextStack);
+    await collectModules(resolve(dirname(absolute), specifier), collected, nextStack);
   }
 
   collected.set(absolute, { source, absolute });
   return collected;
 }
 
-/** 去掉 import/export 关键字：所有模块在同一个函数作用域内，顶级 const/function 名称必须唯一 */
-function stripModuleSyntax(source, modulePath) {
-  const label = relative(projectRoot, modulePath);
+/** 收集模块导出的名字（含 `export { X }` 再导出） */
+function collectExportNames(source) {
+  const named = new Set();
+  for (const match of source.matchAll(/^export\s*\{([^}]*)\}\s*;?[ \t]*$/gm)) {
+    for (const part of match[1].split(',')) {
+      const alias = part.trim().split(/\s+as\s+/);
+      const exported = (alias[1] ?? alias[0] ?? '').trim();
+      if (exported) named.add(exported);
+    }
+  }
+  for (const match of source.matchAll(/^[ \t]*export\s+(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm)) {
+    named.add(match[1]);
+  }
+  return named;
+}
+
+/** 把模块源码改写成 IIFE：导入 → 从注册表取值，导出 → 返回导出对象 */
+function transformModule(source, moduleId, exportsByAbsolute, idByAbsolute, absolute) {
+  const importLines = [];
   let out = source;
 
-  // 副作用 import：'./x.js'  →  已在同一作用域，直接删除
+  out = out.replace(/^\s*import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"];?[ \t]*$/gm, (match, clause, specifier) => {
+    void match;
+    const targetAbsolute = resolve(dirname(absolute), specifier);
+    const targetId = idByAbsolute.get(targetAbsolute);
+    if (!targetId) throw new Error(`无法解析导入路径：${specifier}（来自 ${moduleId}）`);
+    const targetExports = exportsByAbsolute.get(targetAbsolute);
+    if (!targetExports) throw new Error(`缺少导出信息：${targetId}`);
+
+    const trimmed = clause.trim();
+    const lines = [];
+    if (trimmed.startsWith('*')) {
+      // `import * as ns from '...'` → 命名空间对象
+      const namespaceName = trimmed.replace(/^\*\s+as\s+/, '').trim();
+      if (!namespaceName) throw new Error(`${moduleId} 中的 import * 写法无法解析：${trimmed}`);
+      lines.push(`const ${namespaceName} = __modules__[${JSON.stringify(targetId)}].named;`);
+    } else if (trimmed.startsWith('{')) {
+      const rawClause = trimmed.replace(/^\{/, '').replace(/\}\s*$/, '');
+      validateImportedNames(rawClause, targetExports, targetId, moduleId);
+      const destructure = toDestructurePattern(rawClause);
+      lines.push(`const {${destructure}} = __modules__[${JSON.stringify(targetId)}].named;`);
+    } else {
+      const parts = trimmed.split(',');
+      const defaultName = parts[0].trim();
+      if (defaultName) lines.push(`const ${defaultName} = __modules__[${JSON.stringify(targetId)}].named.default;`);
+      const rest = parts.slice(1).join(',').trim();
+      if (rest.startsWith('{')) {
+        const rawClause = rest.replace(/^\{/, '').replace(/\}\s*$/, '');
+        validateImportedNames(rawClause, targetExports, targetId, moduleId);
+        const destructure = toDestructurePattern(rawClause);
+        lines.push(`const {${destructure}} = __modules__[${JSON.stringify(targetId)}].named;`);
+      }
+    }
+    importLines.push(lines.join('\n'));
+    return '';
+  });
+
   out = out.replace(/^\s*import\s+['"][^'"]+['"];?[ \t]*$/gm, '');
 
-  // 带 from 的 import：只保留默认导入的别名（本项目默认导入与本地名同名）
-  out = out.replace(
-    /^\s*import\s+([\s\S]*?)\s+from\s+['"][^'"]+['"];?[ \t]*$/gm,
-    (match, clause) => {
-      const trimmed = clause.trim();
-      const defaultMatch = /^([A-Za-z_$][\w$]*)\s*(?:,|$)/.exec(trimmed);
-      if (defaultMatch) return `const ${defaultMatch[1]} = ${defaultMatch[1]};`;
-      return ''; // 命名导入已在同一作用域内可用
-    },
+  const exportNames = [];
+  // 导出名必须在删除 export 关键字**之前**收集：删除之后源码里就没有 "export" 了。
+  for (const match of out.matchAll(/^[ \t]*export\s+(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm)) {
+    exportNames.push(match[1]);
+  }
+
+  out = out.replace(/^\s*export\s*\{([^}]*)\}\s*;?[ \t]*$/gm, (match, body) => {
+    void match;
+    for (const part of body.split(',')) {
+      const alias = part.trim().split(/\s+as\s+/);
+      const exported = (alias[1] ?? alias[0] ?? '').trim();
+      if (exported) exportNames.push(exported);
+    }
+    return '';
+  });
+  // 删除 export 关键字：这些名字已经在上面记录过，剥离后不影响运行
+  out = out.replace(/^([ \t]*)export[ \t]+((?:async[ \t]+)?(?:const|let|var|function|class))/gm, '$1$2');
+
+  if (/^export\s+default\s/m.test(source)) {
+    out = out.replace(/^([ \t]*)export[ \t]+default[ \t]+/gm, '$1const __default__ = ');
+    exportNames.push('default');
+  }
+
+  if (/^[ \t]*export[ \t]/m.test(out)) {
+    const leftover = out.match(/^[ \t]*export[ \t].*$/m)?.[0]?.trim();
+    throw new Error(`${moduleId} 中仍有无法处理的 export 语法：${leftover}`);
+  }
+  if (/^[ \t]*import[ \t]/m.test(out)) {
+    const leftover = out.match(/^[ \t]*import[ \t].*$/m)?.[0]?.trim();
+    throw new Error(`${moduleId} 中仍有无法处理的 import 语法：${leftover}`);
+  }
+
+  const namedEntries = [...new Set(exportNames)].map((name) =>
+    name === 'default' ? 'default: __default__' : toObjectProperty(name),
   );
+  const body = [importLines.filter(Boolean).join('\n'), out].filter((part) => part.trim().length > 0).join('\n');
 
-  // export { a, b as c }
-  out = out.replace(/^\s*export\s*\{[^}]*\}\s*;?[ \t]*$/gm, '');
+  return `__modules__[${JSON.stringify(moduleId)}] = (function () {\n${body}\nreturn { named: {${namedEntries.join(', ')}} };\n})();`;
+}
 
-  // export const/let/var/function/class
-  out = out.replace(/^(\s*)export\s+(const|let|var|function|class|async)/gm, '$1$2');
+/**
+ * 把 ES Module 的别名语法转成对象解构语法。
+ * `{ foo as bar, baz }` → `foo: bar, baz`
+ * 不转换会得到 `const { foo as bar } = ...`，这是非法语法（`as` 不是 JS 关键字）。
+ */
+function toDestructurePattern(clause) {
+  return clause
+    .split(',')
+    .map((part) => {
+      const raw = part.trim();
+      if (!raw) return '';
+      const alias = raw.split(/\s+as\s+/);
+      return alias.length === 2 ? `${alias[0].trim()}: ${alias[1].trim()}` : raw;
+    })
+    .filter(Boolean)
+    .join(', ');
+}
 
-  if (/^\s*export\s/m.test(out)) {
-    const leftover = out.match(/^\s*export\s.*$/m)?.[0]?.trim();
-    throw new Error(`${label} 中仍有无法处理的 export 语法：${leftover}`);
+/** 把导出名转成导出对象的属性写法：`bar` → `bar`；`a as b` 已在收集阶段拆成 b */
+function toObjectProperty(name) {
+  const alias = name.split(/\s+as\s+/);
+  if (alias.length === 2) return `${alias[1].trim()}: ${alias[0].trim()}`;
+  return name;
+}
+
+/** 校验导入的命名确实存在，避免产出一个运行到一半才报错的包 */
+function validateImportedNames(destructure, exportedNames, targetId, importerId) {
+  for (const part of destructure.split(',')) {
+    const raw = part.trim();
+    if (!raw) continue;
+    const name = raw.split(/\s+as\s+/)[0].trim();
+    if (!name) continue;
+    if (!exportedNames.has(name)) {
+      throw new Error(`${importerId} 从 ${targetId} 导入了不存在的导出「${name}」。请检查拼写或补充导出。`);
+    }
   }
-  if (/^\s*import\s/m.test(out)) {
-    const leftover = out.match(/^\s*import\s.*$/m)?.[0]?.trim();
-    throw new Error(`${label} 中仍有无法处理的 import 语法：${leftover}`);
-  }
-  return out;
 }
 
 async function main() {
   const modules = await collectModules(ENTRY);
+
+  const idByAbsolute = new Map();
+  for (const absolute of modules.keys()) {
+    idByAbsolute.set(absolute, relative(projectRoot, absolute).split(sep).join('/'));
+  }
+
+  const exportsByAbsolute = new Map();
+  for (const [absolute, { source }] of modules) {
+    exportsByAbsolute.set(absolute, collectExportNames(source));
+  }
+
+  const parts = [];
+  for (const [absolute, { source }] of modules) {
+    const moduleId = idByAbsolute.get(absolute);
+    parts.push(
+      `/* ==== ${moduleId} ==== */\n${transformModule(source, moduleId, exportsByAbsolute, idByAbsolute, absolute)}`,
+    );
+  }
 
   const cssFiles = [
     join(projectRoot, 'src', 'ui', 'styles', 'tokens.css'),
@@ -100,11 +230,6 @@ async function main() {
     join(projectRoot, 'src', 'ui', 'styles', 'components.css'),
   ];
   const css = (await Promise.all(cssFiles.map((file) => readFile(file, 'utf8')))).join('\n\n');
-
-  const parts = [];
-  for (const [absolute, { source }] of modules) {
-    parts.push(`/* ==== ${relative(projectRoot, absolute).split(sep).join('/')} ==== */\n${stripModuleSyntax(source, absolute)}`);
-  }
 
   const html = `<!doctype html>
 <html lang="zh-CN">
@@ -123,9 +248,11 @@ ${css}
 <noscript><p style="max-width:720px;margin:48px auto;font-family:system-ui,sans-serif">本应用需要启用 JavaScript。</p></noscript>
 <script>
 /* 由 scripts/build-standalone.mjs 生成，请勿手工编辑。
-   修改源码后重新运行：node scripts/build-standalone.mjs */
+   修改源码后重新运行：node scripts/build-standalone.mjs
+   结构：__modules__ 是模块注册表；每个模块被包在 IIFE 内，避免同名声明互相冲突。 */
 (function () {
 'use strict';
+var __modules__ = Object.create(null);
 ${parts.join('\n\n')}
 })();
 </script>

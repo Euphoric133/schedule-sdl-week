@@ -1,3 +1,5 @@
+import { VALIDATION_CODES as C, error } from './validation.js';
+
 /**
  * 有向图工具：用于任务依赖（前置任务）关系。
  *
@@ -97,7 +99,6 @@ export function buildEdgeMap(tasks) {
  * @returns {object[]} 校验问题列表（结构见 validation.js 的 ValidationIssue）
  */
 export function checkTaskDependencies(tasks) {
-  const { VALIDATION_CODES: C, error } = validationModule;
   const issues = [];
   const ids = new Set(tasks.map((t) => t.id));
 
@@ -129,6 +130,3 @@ export function checkTaskDependencies(tasks) {
   }
   return issues;
 }
-
-// 延迟 import 以避免与 validation.js 形成循环依赖（validation 不依赖 graph）
-import * as validationModule from './validation.js';

@@ -9,9 +9,9 @@
  * "放弃修改"必须是零副作用的操作。
  */
 
-import { button, card, emptyState, notice, versionTable } from '../components.js';
+import { button, card, emptyState, notice, pill, versionTable } from '../components.js';
 import { el, toast } from '../dom.js';
-import { formatDuration } from '../../domain/time.js';
+import { formatDuration, formatMinutes } from '../../domain/time.js';
 import { PLAN_STATUS_LABELS_ZH } from '../../domain/plan.js';
 import { confirmDialog } from '../modal.js';
 
@@ -64,6 +64,9 @@ export function renderPreview({ app, services }) {
       }),
     );
   } else {
+    const diff = preview.diff ?? {};
+    const counts = diff.counts ?? {};
+
     nodes.push(
       card({
         title: `候选计划（基于 v${preview.baseVersion}）`,
@@ -71,9 +74,12 @@ export function renderPreview({ app, services }) {
         body: el('div', {}, [
           el('div.metric-row', {}, [
             el('div.metric', {}, [el('div.metric__label', { text: '候选状态' }), el('div.metric__value', { text: PLAN_STATUS_LABELS_ZH[preview.candidate?.status] ?? '—' })]),
-            el('div.metric', {}, [el('div.metric__label', { text: '新增时段' }), el('div.metric__value', { text: String(preview.diff?.added?.length ?? 0) })]),
-            el('div.metric', {}, [el('div.metric__label', { text: '移动时段' }), el('div.metric__value', { text: String(preview.diff?.moved?.length ?? 0) })]),
-            el('div.metric', {}, [el('div.metric__label', { text: '取消时段' }), el('div.metric__value', { text: String(preview.diff?.cancelled?.length ?? 0) })]),
+            el('div.metric', {}, [el('div.metric__label', { text: '新增时段' }), el('div.metric__value', { text: String(counts.added ?? 0) })]),
+            el('div.metric', {}, [el('div.metric__label', { text: '移动时段' }), el('div.metric__value', { text: String(counts.moved ?? 0) })]),
+            el('div.metric', {}, [el('div.metric__label', { text: '时长变化' }), el('div.metric__value', { text: String(counts.resized ?? 0) })]),
+            el('div.metric', {}, [el('div.metric__label', { text: '拆分' }), el('div.metric__value', { text: String(counts.split ?? 0) })]),
+            el('div.metric', {}, [el('div.metric__label', { text: '取消时段' }), el('div.metric__value', { text: String(counts.cancelled ?? 0) })]),
+            el('div.metric', {}, [el('div.metric__label', { text: '保持不变' }), el('div.metric__value', { text: String(counts.unchanged ?? 0) })]),
           ]),
           el('div.form-actions', {}, [
             button('放弃修改', { variant: 'ghost', onClick: () => handleDiscard({ services }) }),
@@ -82,6 +88,229 @@ export function renderPreview({ app, services }) {
         ]),
       }),
     );
+
+    // —— 新增时段 ——
+    if (diff.added?.length > 0) {
+      nodes.push(
+        card({
+          title: `新增时段（${diff.added.length}）`,
+          flush: true,
+          body: el(
+            'ul.task-list',
+            {},
+            diff.added.map((item) =>
+              el('li.task-item', {}, [
+                el('div.task-item__head', {}, [
+                  el('div', {}, [el('strong', { text: `+ ${item.taskTitle}` })]),
+                  el('div.task-item__meta', {}, [
+                    pill(`${item.date} ${formatMinutes(item.startMinutes)}–${formatMinutes(item.endMinutes)}`, 'study'),
+                    pill(formatDuration(item.minutes), 'neutral'),
+                  ]),
+                ]),
+                el('div.card__hint', { text: `原因：${(item.reasons ?? []).join('；')}` }),
+              ]),
+            ),
+          ),
+        }),
+      );
+    }
+
+    // —— 移动 / 时长变化 / 拆分 / 取消 ——
+    if (diff.moved?.length > 0) {
+      nodes.push(
+        card({
+          title: `移动时段（${diff.moved.length}）`,
+          flush: true,
+          body: el(
+            'ul.task-list',
+            {},
+            diff.moved.map((item) =>
+              el('li.task-item', {}, [
+                el('div.task-item__head', {}, [
+                  el('div', {}, [el('strong', { text: `~ ${item.taskTitle}` })]),
+                  el('div.task-item__meta', {}, [
+                    pill(`${item.from.date} ${formatMinutes(item.from.startMinutes)} → ${item.to.date} ${formatMinutes(item.to.startMinutes)}`, 'warning'),
+                  ]),
+                ]),
+                el('div.card__hint', { text: `原因：${(item.reasons ?? []).join('；')}` }),
+              ]),
+            ),
+          ),
+        }),
+      );
+    }
+
+    if (diff.resized?.length > 0) {
+      nodes.push(
+        card({
+          title: `时长调整（${diff.resized.length}）`,
+          flush: true,
+          body: el(
+            'ul.task-list',
+            {},
+            diff.resized.map((item) =>
+              el('li.task-item', {}, [
+                el('div.task-item__head', {}, [
+                  el('div', {}, [el('strong', { text: `± ${item.taskTitle}` })]),
+                  el('div.task-item__meta', {}, [
+                    pill(`${formatDuration(item.fromMinutes)} → ${formatDuration(item.toMinutes)}`, item.toMinutes < item.fromMinutes ? 'warning' : 'study'),
+                  ]),
+                ]),
+                el('div.card__hint', { text: `原因：${(item.reasons ?? []).join('；')}` }),
+              ]),
+            ),
+          ),
+        }),
+      );
+    }
+
+    if (diff.split?.length > 0) {
+      nodes.push(
+        card({
+          title: `拆分（${diff.split.length}）`,
+          flush: true,
+          body: el(
+            'ul.task-list',
+            {},
+            diff.split.map((item) =>
+              el('li.task-item', {}, [
+                el('div.task-item__head', {}, [
+                  el('div', {}, [el('strong', { text: `⑂ ${item.taskTitle}` })]),
+                  el('div.task-item__meta', {}, [pill(`${formatDuration(item.fromMinutes)} 拆成 ${item.into.length} 段`, 'study')]),
+                ]),
+                el('div.card__hint', {
+                  text: item.into.map((part) => `${part.date} ${formatMinutes(part.startMinutes)}–${formatMinutes(part.endMinutes)}`).join('；'),
+                }),
+              ]),
+            ),
+          ),
+        }),
+      );
+    }
+
+    if (diff.cancelled?.length > 0) {
+      nodes.push(
+        card({
+          title: `取消的旧时段（${diff.cancelled.length}）`,
+          hint: '这些时段已被新的安排取代，记录会保留为历史',
+          flush: true,
+          body: el(
+            'ul.task-list',
+            {},
+            diff.cancelled.map((item) =>
+              el('li.task-item', {}, [
+                el('div.task-item__head', {}, [
+                  el('div', {}, [el('strong', { text: `− ${item.taskTitle}` })]),
+                  el('div.task-item__meta', {}, [pill(`${item.from.date} ${formatMinutes(item.from.startMinutes)}–${formatMinutes(item.from.endMinutes)}`, 'neutral')]),
+                ]),
+              ]),
+            ),
+          ),
+        }),
+      );
+    }
+
+    // —— 锁定时段是否受影响 ——
+    if (diff.lockedImpact?.length > 0) {
+      nodes.push(
+        card({
+          title: `锁定 / 已完成时段（${diff.lockedImpact.length}）`,
+          hint: '锁定是硬约束：自动规划不会移动、缩短或拆分它们',
+          flush: true,
+          body: el(
+            'ul.task-list',
+            {},
+            diff.lockedImpact.map((item) =>
+              el('li.task-item', {}, [
+                el('div.task-item__head', {}, [
+                  el('div', {}, [el('span', { text: item.impact === 'untouched' ? '🔒 ' : '⚠ ' }), el('span', { text: item.message })]),
+                  el('div.task-item__meta', {}, [pill(impactLabel(item.impact), item.impact === 'untouched' ? 'success' : 'danger')]),
+                ]),
+              ]),
+            ),
+          ),
+        }),
+      );
+    }
+
+    // —— 每日指标变化 ——
+    if (diff.dailyDelta?.length > 0) {
+      nodes.push(
+        card({
+          title: '每日学习量 / 休息 / 缓冲变化',
+          flush: true,
+          body: el('div.table-wrap', {}, [
+            el('table', {}, [
+              el('thead', {}, [
+                el('tr', {}, [
+                  el('th', { text: '日期' }),
+                  el('th', { text: '学习量' }),
+                  el('th', { text: '休息' }),
+                  el('th', { text: '缓冲' }),
+                  el('th', { text: '时段数' }),
+                ]),
+              ]),
+              el(
+                'tbody',
+                {},
+                diff.dailyDelta.map((entry) =>
+                  el('tr', {}, [
+                    el('td', { text: entry.date }),
+                    el('td', { text: `${formatDuration(entry.studyBefore)} → ${formatDuration(entry.studyAfter)}（${signed(entry.studyDelta)}）` }),
+                    el('td', { text: `${formatDuration(entry.restBefore)} → ${formatDuration(entry.restAfter)}（${signed(entry.restDelta)}）` }),
+                    el('td', { text: `${formatDuration(entry.bufferBefore)} → ${formatDuration(entry.bufferAfter)}（${signed(entry.bufferDelta)}）` }),
+                    el('td', { text: signed(entry.sessionDelta) }),
+                  ]),
+                ),
+              ),
+            ]),
+          ]),
+        }),
+      );
+    }
+
+    // —— 未安排任务与风险 ——
+    if (diff.unscheduledAfter?.length > 0) {
+      nodes.push(
+        card({
+          title: `本次仍无法安排的任务（${diff.unscheduledAfter.length}）`,
+          hint: '系统会如实说明原因，并给出可选的处理方式',
+          body: el(
+            'ul.diag-list',
+            {},
+            diff.unscheduledAfter.map((item) =>
+              el('li.diag-item', {}, [
+                el('span.diag-item__code', { text: item.reasonCode ?? 'unknown' }),
+                el('span', { text: `${item.taskTitle ?? item.taskId}：剩余 ${formatDuration(item.remainingMinutes ?? 0)}。${item.reasonText ?? ''}` }),
+              ]),
+            ),
+          ),
+        }),
+      );
+    }
+
+    if (preview.risks?.length > 0) {
+      nodes.push(
+        card({
+          title: '截止风险评估',
+          hint: '按当前可用容量模拟的最早完成时间与截止时间的比较',
+          flush: true,
+          body: el(
+            'ul.task-list',
+            {},
+            preview.risks.map((risk) =>
+              el('li.task-item', {}, [
+                el('div.task-item__head', {}, [
+                  el('div', {}, [el('strong', { text: risk.taskTitle }), el('span', { text: ` · 截止 ${risk.deadline.date} ${formatMinutes(risk.deadline.minutes)}` })]),
+                  el('div.task-item__meta', {}, [pill(riskLabel(risk.level), riskPillKind(risk.level))]),
+                ]),
+                el('div.card__hint', { text: risk.message }),
+              ]),
+            ),
+          ),
+        }),
+      );
+    }
   }
 
   // —— 未安排任务与风险 ——
@@ -122,6 +351,27 @@ export function renderPreview({ app, services }) {
   }
 
   return nodes;
+}
+
+/** 格式化带符号的分钟差，便于在表格里一眼看出增减 */
+function signed(minutes) {
+  if (!minutes) return '0 分钟';
+  return `${minutes > 0 ? '+' : '−'}${formatDuration(Math.abs(minutes))}`;
+}
+
+const IMPACT_LABELS = { untouched: '未受影响', moved: '被移动', resized: '被改时长', cancelled: '被移除' };
+function impactLabel(impact) {
+  return IMPACT_LABELS[impact] ?? impact;
+}
+
+const RISK_LABELS = { on_time: '可按期完成', tight: '时间较紧', at_risk: '有逾期风险', impossible: '无法完成' };
+function riskLabel(level) {
+  return RISK_LABELS[level] ?? level;
+}
+function riskPillKind(level) {
+  if (level === 'on_time') return 'success';
+  if (level === 'tight') return 'study';
+  return 'danger';
 }
 
 async function handleUndo({ services, versions }) {

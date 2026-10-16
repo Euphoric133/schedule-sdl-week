@@ -7,7 +7,7 @@
  */
 
 import { button, card, legend, notice, pill, sumByKind, timeline, versionTable } from '../components.js';
-import { el } from '../dom.js';
+import { el, toast } from '../dom.js';
 import { addDays, dateRange, formatDateWithWeekday, formatDuration } from '../../domain/time.js';
 import { PLAN_STATUS, PLAN_STATUS_LABELS_ZH } from '../../domain/plan.js';
 
@@ -38,6 +38,17 @@ export function renderWeek({ app, services, route, now }) {
         }),
       ]),
       el('div.page-head__actions', {}, [
+        button(plan && plan.version > 0 ? '重新规划' : '生成计划', {
+          variant: 'primary',
+          size: 'sm',
+          onClick: () => {
+            const result = services.ui.requestPreview({
+              changeSummary: plan && plan.version > 0 ? '重新规划' : '生成第一份计划',
+              trigger: 'week-page',
+            });
+            if (!result.ok) toast(result.message, 'error', 8000);
+          },
+        }),
         button('← 上一周', { size: 'sm', onClick: () => gotoWeek(offsetWeeks - 1) }),
         button('回到本周', { size: 'sm', disabled: offsetWeeks === 0, onClick: () => gotoWeek(0) }),
         button('下一周 →', { size: 'sm', onClick: () => gotoWeek(offsetWeeks + 1) }),

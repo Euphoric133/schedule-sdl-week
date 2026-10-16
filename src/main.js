@@ -35,13 +35,39 @@ function createUiService({ services }) {
       const task = taskId ? services.taskService.getTask(taskId) : null;
       openTaskForm({ task, services });
     },
-    /** 阶段 3 实现：生成候选计划并跳转到预览页 */
-    requestReplan() {
-      return {
-        ok: false,
-        reason: 'engine_not_implemented',
-        message: '排程引擎将在阶段 2 实现，届时"生成计划 / 重新规划"会在这里产生候选计划与差异预览。',
-      };
+    /**
+     * 生成（或重新生成）候选计划预览。
+     *
+     * 这是阶段 2 接入引擎后的核心入口：任何改动都先走这里拿到候选计划与差异，
+     * 由用户在预览页确认后才写入正式计划。
+     *
+     * @param {object} [options]
+     * @param {string} [options.changeSummary] 变更摘要（写入版本历史）
+     * @param {string} [options.trigger] 触发来源
+     * @param {boolean} [options.navigate] 是否自动跳转到预览页（默认 true）
+     */
+    requestPreview(options = {}) {
+      const result = services.planService.requestPreview({
+        now: services.now(),
+        changeSummary: options.changeSummary,
+        trigger: options.trigger,
+      });
+      if (!result.ok) {
+        const first = result.issues?.[0];
+        return {
+          ok: false,
+          message: first?.message ?? '生成计划失败。',
+          issues: result.issues ?? [],
+          status: result.status ?? null,
+        };
+      }
+      if (options.navigate !== false) globalThis.location.hash = '#/preview';
+      return { ok: true, preview: result.preview };
+    },
+
+    /** 撤销上一次计划变更（供界面按钮调用） */
+    undoLastPlan() {
+      return services.planService.undoLastApply();
     },
   };
 }

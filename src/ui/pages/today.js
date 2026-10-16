@@ -6,7 +6,7 @@
  */
 
 import { button, card, emptyState, metricRow, notice, pill, taskList } from '../components.js';
-import { el } from '../dom.js';
+import { el, toast } from '../dom.js';
 import { addDays, formatDateWithWeekday, formatDuration, weekday as weekdayOf } from '../../domain/time.js';
 import { TASK_STATUS } from '../../domain/task.js';
 import { PLAN_STATUS } from '../../domain/plan.js';
@@ -32,7 +32,17 @@ export function renderToday({ app, services, now }) {
         el('p.page-head__sub', { text: `${formatDateWithWeekday(today)} · 计划窗口 ${plan?.windowStart ?? today} → ${plan?.windowEnd ?? addDays(today, 6)}` }),
       ]),
       el('div.page-head__actions', {}, [
-        button('前往七天计划', { variant: 'primary', onClick: () => { globalThis.location.hash = '#/week'; } }),
+        button('前往七天计划', { onClick: () => { globalThis.location.hash = '#/week'; } }),
+        button(plan && plan.version > 0 ? '重新规划' : '生成七天计划', {
+          variant: 'primary',
+          onClick: () => {
+            const result = services.ui.requestPreview({
+              changeSummary: plan && plan.version > 0 ? '重新规划' : '生成第一份计划',
+              trigger: 'today-page',
+            });
+            if (!result.ok) toast(result.message, 'error', 8000);
+          },
+        }),
       ]),
     ]),
   );
@@ -43,7 +53,9 @@ export function renderToday({ app, services, now }) {
         level: 'info',
         title: '还没有正式计划',
         message:
-          '排程引擎将在阶段 2 完成。当前阶段你可以先录入学习任务、固定活动与偏好设置；引擎接入后即可生成七天计划并在这里查看今天的学习安排。',
+          activeTaskCount(services) > 0
+            ? '点击右上角"生成七天计划"，系统会按你的任务、固定活动与可用时间算出候选计划，并在确认前给出完整的调整预览。'
+            : '还没有可安排的学习任务。先到"任务列表"创建任务，然后点击右上角生成计划。',
       }),
     );
   } else if (plan.status === PLAN_STATUS.PARTIALLY_FEASIBLE || plan.status === PLAN_STATUS.INFEASIBLE) {
@@ -101,6 +113,13 @@ export function renderToday({ app, services, now }) {
   );
 
   return nodes;
+}
+
+/** 当前待安排任务数量（用于空状态文案区分"没任务"与"没生成计划"） */
+function activeTaskCount(services) {
+  return services.taskService
+    .getTasks()
+    .filter((task) => task.status === TASK_STATUS.NOT_STARTED || task.status === TASK_STATUS.IN_PROGRESS).length;
 }
 
 function daysUntil(from, to) {

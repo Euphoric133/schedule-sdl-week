@@ -18,23 +18,23 @@
 
 | # | 场景 | 测试落点 | 状态 | 说明 |
 |---|---|---|---|---|
-| 1 | 所有任务都可以安排时生成完整计划 | `tests/unit/plan.test.js`、`tests/integration/planService.test.js` | 🟡 | 计划结构、每日统计、可行性状态已测；"引擎真的把任务排满"待阶段 2 |
-| 2 | 高难度任务与临近截止任务并存时正确平衡优先级 | — | ⏳ | 优先级评分与排序键在阶段 2 实现（`PROJECT_SPEC.md` §2.5 已定义公式） |
-| 3 | 任务总时长大于可用时间时显示部分可行或不可行 | `tests/unit/plan.test.js`（容量 0/超载记账） | 🟡 | 容量与超载字段已测；状态判定待阶段 2 |
-| 4 | 大任务跨天拆分后剩余分钟数正确 | `tests/unit/task.test.js`、`tests/unit/session.test.js` | 🟡 | 剩余工作量口径已测；拆分算法待阶段 2 |
-| 5 | 不可拆分任务不得被拆开 | `tests/unit/task.test.js`（V011） | 🟡 | 数据层强制 `min=max=总时长`；放置时不得拆分待阶段 2 |
-| 6 | 固定活动与学习时段不得重叠 | `tests/unit/fixedActivity.test.js`、`tests/unit/calendarBlock.test.js`、`tests/unit/plan.test.js` | ✅ | 区间合并、重叠检测、容量扣减均已测（引擎侧 H1 负向测试在阶段 2 补） |
-| 7 | 锁定时段不受自动重排影响 | `tests/unit/session.test.js`、`tests/unit/plan.test.js`、`tests/integration/planService.test.js` | 🟡 | 锁定语义、移动拒绝、保留容量已测；重排前后一致性待阶段 2 |
-| 8 | 休息与缓冲不重复占用时间 | `tests/unit/calendarBlock.test.js`、`tests/unit/plan.test.js` | ✅ | 四类块分 `kind` 统计、重叠检测、缓冲逐日计算均已测 |
-| 9 | 前置任务未完成时后续任务不得提前执行 | `tests/unit/graph.test.js`、`tests/unit/session.test.js` | 🟡 | 依赖图校验与拓扑序已测；引擎的依赖门控待阶段 2 |
-| 10 | 已完成任务不会被重复安排 | `tests/unit/task.test.js`、`tests/unit/schemas.test.js`、`tests/integration/lifecycle.test.js` | ✅ | 剩余量推导、V015/V016 一致性、完成后剩余为 0 均已测 |
-| 11 | 新增任务后调整预览能够完整显示差异 | `tests/integration/planService.test.js`（计划/版本/未安排汇总） | ⏳ | 差异数据结构与 `planService` 接口已定型，`diff` 计算待阶段 2，界面展示待阶段 3 |
-| 12 | 放弃调整后正式计划不发生变化 | `tests/integration/planService.test.js` | 🟡 | 被拒绝的应用不改动正式计划已测；`discardPreview` 待阶段 3 接入 UI |
+| 1 | 所有任务都可以安排时生成完整计划 | `tests/engine/scheduler.test.js`（场景 1）、`tests/integration/previewFlow.test.js` | ✅ | 容量充足时状态为 `feasible`、无未安排任务、排入分钟数与剩余工作量完全守恒 |
+| 2 | 高难度任务与临近截止任务并存时正确平衡优先级 | `tests/engine/scheduler.test.js`（场景 2）、`tests/engine/priority.test.js` | ✅ | 临近截止的任务先获得时段；评分分项可复算（紧迫度/难度分别更高） |
+| 3 | 任务总时长大于可用时间时显示部分可行或不可行 | `tests/engine/scheduler.test.js`（场景 3）、`tests/integration/previewFlow.test.js` | ✅ | 返回 `partially_feasible`/`infeasible` + 缺口分钟数 + 原因码 + 建议；缓冲仍按 10% 预留 |
+| 4 | 大任务跨天拆分后剩余分钟数正确 | `tests/engine/splitter.test.js`、`tests/engine/scheduler.test.js`（场景 4） | ✅ | 片段合计精确等于剩余工作量；每段落在 `[min, max]`；300 分钟分布到多天 |
+| 5 | 不可拆分任务不得被拆开 | `tests/engine/scheduler.test.js`（场景 5）、`tests/engine/splitter.test.js` | ✅ | 只产生一个片段且长度等于总时长；放不下时报 `non_splittable_no_slot` 并建议允许拆分，绝不切开 |
+| 6 | 固定活动与学习时段不得重叠 | `tests/engine/constraints.test.js`（H1 负向）、`tests/engine/scheduler.test.js`（场景 6） | ✅ | 把可用窗口扩到白天后，学习时段仍严格避开上课与用餐时间；违规计划会被校验器拦下 |
+| 7 | 锁定时段不受自动重排影响 | `tests/engine/scheduler.test.js`（场景 7 / 7b）、`tests/engine/constraints.test.js`（H10 负向） | ✅ | 锁定时段位置逐分钟不变、其它时段不侵占它、只安排剩余 75 分钟；两次运行结果完全一致 |
+| 8 | 休息与缓冲不重复占用时间 | `tests/engine/scheduler.test.js`（场景 8）、`tests/engine/constraints.test.js`（H8 负向） | ✅ | 休息块与缓冲块互不重叠；每日统计分别累计；缓冲 = Σ floor(净容量 × 10%) |
+| 9 | 前置任务未完成时后续任务不得提前执行 | `tests/engine/scheduler.test.js`（场景 9 / 9b / 9c）、`tests/engine/constraints.test.js`（H7 负向） | ✅ | 依赖任务不早于前置任务完成时刻；前置被取消时报依赖无法满足；引擎校验器含 H7 |
+| 10 | 已完成任务不会被重复安排 | `tests/engine/scheduler.test.js`（场景 10 / 10b / 10c）、`tests/integration/previewFlow.test.js` | ✅ | 只安排剩余 75 分钟；已完成时段原样保留在计划中；已取消任务完全不参与排程 |
+| 11 | 新增任务后调整预览能够完整显示差异 | `tests/engine/diff.test.js`、`tests/integration/previewFlow.test.js`、`tests/integration/ui-smoke.test.js` | ✅ | 差异含新增/移动/时长/拆分/取消/不变/锁定影响/每日指标；预览页实际渲染出这些区块与确认按钮 |
+| 12 | 放弃调整后正式计划不发生变化 | `tests/integration/previewFlow.test.js`（discardPreview）、`tests/engine/diff.test.js` | ✅ | 放弃后状态快照与放弃前逐字段一致（业务数据零改动），且不创建任何学习时段 |
 | 13 | 确认计划后数据可以持久保存 | `tests/integration/appState.test.js`、`tests/integration/lifecycle.test.js` | ✅ | 应用计划后写入存储并可读回 |
 | 14 | 刷新页面后数据仍然存在 | `tests/integration/appState.test.js`、`tests/integration/lifecycle.test.js` | ✅ | 用同一存储重新装配应用后数据完整 |
 | 15 | 错误的 JSON 导入不能破坏现有数据 | `tests/unit/storage.test.js`、`tests/integration/appState.test.js` | ✅ | 5 类错误数据被拒绝 + 断言 state 深度不变 |
-| 16 | 计划预览过期时不能覆盖更新后的正式计划 | `tests/integration/planService.test.js`、`tests/integration/lifecycle.test.js` | ✅ | 版本不匹配与输入指纹变化均拒绝应用 |
-| 17 | 相同输入两次运行相同算法版本结果一致 | `tests/integration/lifecycle.test.js`（框架级一致性）、`tests/unit/graph.test.js`（排序确定性） | 🟡 | 服务层确定性已测；引擎级"逐字节相同"待阶段 2 |
+| 16 | 计划预览过期时不能覆盖更新后的正式计划 | `tests/integration/previewFlow.test.js`、`tests/integration/planService.test.js` | ✅ | 版本变化与**实时输入指纹**变化都会拒绝；拒绝后正式计划与时段保持不变 |
+| 17 | 相同输入两次运行相同算法版本结果一致 | `tests/engine/scheduler.test.js`（场景 17 / 17b / 17c）、`tests/engine/splitter.test.js` | ✅ | 同一输入连续三次运行计划逐字节相同（含派生时段 ID）；输入指纹一致；改动截止时间会改变指纹 |
 | 18 | 时区与跨午夜情况下日期与时段顺序正确 | `tests/unit/time.test.js`（16 个用例）、`tests/unit/fixedActivity.test.js` | ✅ | 日期解析绕开 UTC 陷阱、跨午夜切分、业务日边界、墙钟↔时间戳可逆 |
 | 19 | 刷新、空数据和边界输入不会导致页面崩溃 | `tests/integration/lifecycle.test.js`（9 类破坏性输入）、`tests/unit/schemas.test.js`、`tests/integration/ui-smoke.test.js`（渲染不抛异常） | 🟡 | 服务层鲁棒性与**界面渲染不抛异常**已自动化；CSS 布局与真实点击仍需人工确认（👤） |
 | 20 | 新功能不得破坏已通过的核心回归测试 | 全量测试 + 本表 | ✅ | 每次改动运行 `node --test "tests/**/*.test.js"` |
@@ -56,20 +56,20 @@
 
 | 约束 | 数据层/领域层测试 | 引擎校验器（阶段 2） |
 |---|---|---|
-| H1 学习不与固定活动重叠 | ✅ 区间合并 + 容量扣减 | ⏳ 待实现（含负向测试） |
-| H2 学习时段之间不冲突 | ✅ 重叠判定 + 块重叠检测 | ⏳ |
-| H3 只安排在允许时间内 | ✅ 窗口规范化 + 空闲区间 | ⏳ |
-| H4 超期任务不得标按时 | 🟡 状态枚举与未安排原因结构已定型 | ⏳ |
-| H5 不可拆分任务不被拆开 | ✅ `min=max=总时长` 强制校验 | ⏳ |
-| H6 学习时长有效 | ✅ 时长与起止一致性校验 | ⏳ |
-| H7 前置任务依赖 | ✅ 图校验 + 拓扑序 | ⏳ 依赖门控 |
-| H8 缓冲与休息不重复计算 | ✅ 分 `kind` 统计 + 重叠检测 + 逐日缓冲 | ⏳ |
-| H9 已完成时段不被改动 | ✅ 状态机 + 服务层保护 + 撤销保护 | ⏳ |
-| H10 锁定时段不被改动 | ✅ 移动拒绝 + 保留集合 + 容量记账 | ⏳ |
+| H1 学习不与固定活动重叠 | ✅ 区间合并 + 容量扣减 | ✅ 校验器 + H1 负向测试 |
+| H2 学习时段之间不冲突 | ✅ 重叠判定 + 块重叠检测 | ✅ 校验器 + H2 负向测试 + 排程结果断言 |
+| H3 只安排在允许时间内 | ✅ 窗口规范化 + 空闲区间 | ✅ 校验器 + H3 负向测试 |
+| H4 超期任务不得标按时 | ✅ 状态枚举与未安排原因结构 | ✅ 转化为风险告警（不谎称按时）+ H4 测试 |
+| H5 不可拆分任务不被拆开 | ✅ `min=max=总时长` 强制校验 | ✅ 校验器 + H5 负向测试 + 场景 5 |
+| H6 学习时长有效 | ✅ 时长与起止一致性校验 | ✅ 校验器（含跨午夜拒绝）+ H6 测试 |
+| H7 前置任务依赖 | ✅ 图校验 + 拓扑序 | ✅ 校验器 + H7 负向测试 + 依赖门控 |
+| H8 缓冲与休息不重复计算 | ✅ 分 `kind` 统计 + 重叠检测 + 逐日缓冲 | ✅ 校验器 + H8 负向测试 + 场景 8 |
+| H9 已完成时段不被改动 | ✅ 状态机 + 服务层保护 + 撤销保护 | ✅ 校验器 + H9 负向测试 + 应用预览保留检查 |
+| H10 锁定时段不被改动 | ✅ 移动拒绝 + 保留集合 + 容量记账 | ✅ 校验器 + H10 负向测试 + 场景 7 |
 
 ---
 
-## 三、人工验收步骤（阶段 1 可验证的部分）
+## 三、人工验收步骤（阶段 2 结束时可验证的部分）
 
 ### 准备
 
@@ -112,14 +112,19 @@ node scripts/serve.mjs          # 记住启动时打印的地址，默认 http:/
 | C3 | 把某一天的 `studyWindows` 改成 `[]` 并保存 | 保存成功并提示"所有日期都没有可学习时间…"这类提醒（属于合法但会导致排不出的配置） |
 | C4 | 点"恢复默认设置" | 二次确认后设置回到默认值；任务与计划历史不受影响 |
 
-### D. 计划与版本
+### D. 生成计划与调整预览（阶段 2 核心）
 
 | 步骤 | 预期现象 |
 |---|---|
 | D1 | 七天计划页 | 显示 7 天表头与 06:00–24:00 的小时刻度；无计划时显示空状态说明 |
-| D2 | 点"上一周 / 下一周 / 回到本周" | 表头日期随之变化；切到未来周时提示"正式计划没有覆盖这一周" |
-| D3 | 调整预览页 | 显示空状态（阶段 1 没有正式计划）；版本历史为空时不显示该卡片 |
-| D4 | 点"撤销上一步" | 按钮为禁用状态（没有可撤销的版本） |
+| D2 | 点右上角生成计划 | 自动跳到调整预览页；显示候选计划状态、各类差异数量、新增时段明细（含原因说明） |
+| D3 | 观察差异明细 | 能看到新增时段、每日学习量变化、截止风险评估等区块；**此时刷新页面**，候选计划仍在（可继续确认） |
+| D4 | 点放弃修改 | 提示已放弃候选计划、正式计划没有任何变化；七天计划仍为空 |
+| D5 | 再次点生成计划，然后点确认应用 | 提示已应用计划 v1；到七天计划页能看到具体时段与固定活动，每日统计出现数字 |
+| D6 | 回到调整预览点撤销上一步 | 提示撤销成功且版本号继续递增（v2），计划内容恢复 |
+| D7 | 生成预览后**不重新生成**，直接去任务列表把任务预计用时改大，再回预览点确认应用 | 被拒绝并提示预览已过期、请重新生成；正式计划保持不变 |
+| D8 | 到偏好设置把某天可学习时间改得很短，再重新生成预览 | 状态变为部分可行/不可行，列出无法安排的任务、原因码与建议处理方式 |
+| D9 | 点上一周 / 下一周 / 回到本周 | 表头日期随之变化；切到未来周时提示正式计划没有覆盖这一周 |
 
 ### E. 数据安全
 
@@ -144,19 +149,19 @@ node --test tests/integration/ui-smoke.test.js
 
 | 步骤 | 预期现象 |
 |---|---|
-| F1 | 运行 `node scripts/build-standalone.mjs` | 输出"已生成 dist/standalone.html（… 内联 32 个模块）" |
+| F1 | 运行 `node scripts/build-standalone.mjs` | 输出"已生成 dist/standalone.html（… 内联 42 个模块）" |
 | F2 | 双击 `dist/standalone.html` | 页面外观与功能与服务器版本一致，无控制台报错 |
 
 ---
 
-## 四、阶段 2 需要补的验收（预告）
+## 四、阶段 3 需要补的验收（预告）
 
 | 编号 | 内容 |
 |---|---|
-| E-1 | 引擎十步流程与硬约束校验器 H1–H10 的自动化测试（含全部负向测试） |
-| E-2 | 优先级排序：高难度任务不得挤掉更紧急且可完成的任务 |
-| E-3 | 拆分正确性：片段长度约束、尾差处理、剩余量守恒 |
-| E-4 | 超载报告：缺口分钟数、未安排原因码与建议，且不自动取消缓冲 |
-| E-5 | 确定性：同输入同版本连续 3 次运行，`JSON.stringify` 逐字节相等 |
-| E-6 | 差异计算：新增/移动/缩短/拆分/取消/不变/锁定影响/每日指标变化 |
-| E-7 | 风险评估：30 天窗口内"最早可行完成时间"与截止时间的比较 |
+| E-1 | 任务表单改成"先生成候选计划预览，确认后再写入" |
+| E-2 | 时段的锁定 / 解锁 / 移动交互（移动后询问是否锁定） |
+| E-3 | 固定活动管理页面（课程、睡眠、用餐、社团的新增/编辑/删除） |
+| E-4 | 每日视图（单日时间轴）与七天视图共用同一份计划数据 |
+| E-5 | 偏好设置图形化编辑（时间窗口选择器、滑块） |
+| E-6 | 七天窗口向未来滚动：保留已完成历史 + 重新规划未来七天 |
+| E-7 | 界面级交互测试（若引入 DOM 测试依赖需先经项目所有者批准） |

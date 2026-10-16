@@ -123,6 +123,10 @@ remainingMinutes(task) = max(0, plannedMinutes − completedMinutes(task))
 9. 验证整个计划是否满足全部硬约束。
 10. 生成计划差异预览，等待用户确认。
 
+**实现状态**：十步流程与全部模块已在 `src/engine/` 实现（阶段 2 完成）。
+引擎是纯函数：不读系统时钟、不读随机数、不访问 DOM / 存储 / 网络；派生时段 ID 由输入指纹推导，
+因此"同一输入 + 同一引擎版本"必然产出逐字段相同的计划（`tests/engine/scheduler.test.js` 场景 17）。
+
 **初始评分公式**
 
 ```
@@ -242,6 +246,21 @@ P = 0.35 × 截止紧迫度 + 0.30 × 难度 + 0.20 × 重要程度 + 0.15 × �
 - 不为了通过测试而删除测试、降低断言标准或忽略失败。
 
 ---
+
+## 4.3 阶段 2 的实现补充（与需求的对应关系）
+
+| 需求条目 | 实现位置 | 说明 |
+|---|---|---|
+| 十步排程流程 | `engine/scheduler.js` | 每步都有对应测试；校验失败即拒绝出计划 |
+| 优先级评分 | `engine/priority.js` | 分项可复算；排序主键是截止时间，评分是次序 |
+| 可用区间与 10% 缓冲 | `engine/capacity.js` | 逐日 `floor(净容量 × 10%)`，不跨日挪用 |
+| 任务拆分与尾差 | `engine/splitter.js` | 均匀切分优先；尾差排不下时如实报告 |
+| 锁定机制 | `engine/scheduler.js` + `constraints.js` | 锁定进入保留集合，参与容量计算且不被改动 |
+| 硬约束 H1–H10 | `engine/constraints.js` | 每条都有负向测试 |
+| 差异预览 | `engine/diff.js` + `services/planService.js` | 候选计划不写正式计划，确认后事务式写入 |
+| 可行性状态 | `engine/scheduler.js` | `feasible` / `partially_feasible` / `infeasible` / `invalid_input` |
+| 截止风险评估 | `engine/risk.js` | 30 天窗口内只读模拟"最早完成时刻" |
+| 版本与撤销 | `services/planService.js` | 版本单调递增，撤销不回滚学习事实 |
 
 ## 5. 第一版明确不做的功能
 

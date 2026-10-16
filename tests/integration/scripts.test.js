@@ -99,7 +99,7 @@ test('本地静态服务器：拒绝目录穿越与不存在的路径', async (t
   assert.ok([403, 404].includes(traversal.status), `路径穿越必须被拒绝，实际 ${traversal.status}`);
 });
 
-test('单文件构建：生成 dist/standalone.html，内联全部模块且没有残留模块语法', async () => {
+test('单文件构建：生成 dist/standalone.html，模块注册表完整且语法正确', async () => {
   const distFile = join(projectRoot, 'dist', 'standalone.html');
   await rm(distFile, { force: true });
 
@@ -114,9 +114,15 @@ test('单文件构建：生成 dist/standalone.html，内联全部模块且没�
   assert.match(html, /<style>/, '样式必须被内联');
   assert.match(html, /id="app"/);
   assert.match(html, /七天学习规划器/, '标题必须保留');
+  assert.match(html, /var __modules__ = Object\.create\(null\)/, '必须生成模块注册表');
+
+  const scriptBody = html.slice(html.indexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
+
+  // 每个模块都必须是 IIFE 形式，否则同名顶层声明会冲突
+  const moduleCount = (scriptBody.match(/__modules__\["src\//g) ?? []).length;
+  assert.ok(moduleCount >= 40, `应内联 40 个以上模块，实际登记 ${moduleCount} 处`);
 
   // 关键：内联后不能残留顶层 import / export 语句，否则浏览器会直接报语法错误
-  const scriptBody = html.slice(html.indexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
   assert.equal(/^\s*import\s/m.test(scriptBody), false, '内联脚本中不应残留 import 语句');
   assert.equal(/^\s*export\s/m.test(scriptBody), false, '内联脚本中不应残留 export 语句');
 
@@ -125,4 +131,15 @@ test('单文件构建：生成 dist/standalone.html，内联全部模块且没�
     // eslint-disable-next-line no-new-func
     new Function(scriptBody);
   }, '内联脚本必须能被解析（语法正确）');
+});
+
+test('单文件构建：注册表结构等价于真实模块图（每个模块声明的导出都存在）', async () => {
+  const html = await readFile(join(projectRoot, 'dist', 'standalone.html'), 'utf8');
+  const scriptBody = html.slice(html.indexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
+
+  // 每个模块的 IIFE 都必须返回 { named: {...} }，否则导入解构会得到 undefined
+  const returns = scriptBody.match(/return \{ named: \{[^}]*\} \};/g) ?? [];
+  const registrations = scriptBody.match(/__modules__\["src\/[^"]+"\] = \(function/g) ?? [];
+  assert.equal(returns.length, registrations.length, '每个模块都应返回导出对象');
+  assert.ok(registrations.length >= 40, `模块数量异常：${registrations.length}`);
 });
