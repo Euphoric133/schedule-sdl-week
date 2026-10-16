@@ -1420,3 +1420,106 @@ legend {
   }
   .focus-bar__task { display: none; }
 }
+
+/* ==========================================================================
+   响应式：手机与窄屏
+   桌面是"左侧栏 + 主区"的两列布局；窄屏改为单列纵向堆叠，
+   导航变成可横向滚动的一行，保证任何屏幕宽度下都能操作与阅读。
+   ========================================================================== */
+
+@media (max-width: 900px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-areas:
+      'brand'
+      'topbar'
+      'nav'
+      'main';
+  }
+
+  .app-brand {
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .app-topbar {
+    border-left: none;
+    border-bottom: 1px solid var(--color-border);
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  /* 导航改为横向滚动的标签条：不用汉堡菜单也能一键直达任意页面 */
+  .app-nav {
+    padding: var(--space-2) var(--space-3);
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+    gap: var(--space-2);
+    overflow-x: auto;
+  }
+
+  .app-nav__list {
+    flex-direction: row;
+    gap: var(--space-1);
+    min-width: max-content;
+  }
+
+  .app-nav__link {
+    white-space: nowrap;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  /* 窄屏下快捷键数字没有意义，隐藏以免占用宽度 */
+  .app-nav__key {
+    display: none;
+  }
+
+  .app-main {
+    padding: var(--space-3);
+  }
+
+  /* 表格在窄屏允许横向滚动，而不是把内容压变形 */
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  .home-hero {
+    padding: var(--space-4);
+  }
+
+  .home-hero__actions {
+    width: 100%;
+  }
+
+  .home-hero__actions .btn {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .metric-row {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  }
+
+  .home-tiles,
+  .stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .card {
+    padding: var(--space-3);
+  }
+
+  .task-item__head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  .task-item__actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}

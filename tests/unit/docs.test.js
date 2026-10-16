@@ -129,3 +129,35 @@ test('ARCHITECTURE 说明了分层与单向依赖，并覆盖引擎与新服务�
   assert.match(arch, /单向|依赖方向/);
   assert.match(arch, /mutations/, '必须说明草稿变更层（写入路径唯一实现）');
 });
+
+test('样式：响应式与主题覆盖到所有关键结构（不只是背景变色）', async () => {
+  const tokens = await readFile(join(projectRoot, 'src', 'ui', 'styles', 'tokens.css'), 'utf8');
+  const components = await readFile(join(projectRoot, 'src', 'ui', 'styles', 'components.css'), 'utf8');
+
+  // 主题：三种选择都要有对应规则，并且深色下重定义了**语义色**而不是只改背景
+  assert.match(tokens, /\[data-theme='dark'\]/, '必须有显式深色主题');
+  assert.match(tokens, /prefers-color-scheme: dark/, '必须支持跟随系统');
+  for (const token of ['--color-surface', '--color-text', '--color-border', '--color-primary']) {
+    const darkBlock = tokens.slice(tokens.indexOf("[data-theme='dark']"));
+    assert.ok(darkBlock.includes(token), `深色主题必须重定义 ${token}，否则会出现"只有背景变色"`);
+  }
+
+  // 壁纸：必须提供可读性控制（遮罩与模糊）
+  assert.match(tokens, /--wallpaper-scrim/, '壁纸必须支持遮罩');
+  assert.match(tokens, /--wallpaper-blur/, '壁纸必须支持模糊');
+  assert.match(tokens, /#app-wallpaper/, '壁纸必须是独立的背景层');
+
+  // 响应式：窄屏必须重新布局，而不是让侧边栏挤掉内容
+  assert.match(components, /@media \(max-width: 900px\)/, '必须有窄屏断点');
+  assert.match(components, /grid-template-areas:\s*\n?\s*'brand'/, '窄屏应改为单列布局');
+
+  // 动画必须尊重"减少动态效果"偏好
+  assert.match(tokens, /prefers-reduced-motion/, '必须支持减少动态效果');
+});
+
+test('样式：焦点可见性与屏幕阅读器工具类存在（可访问性基础）', async () => {
+  const components = await readFile(join(projectRoot, 'src', 'ui', 'styles', 'components.css'), 'utf8');
+  assert.match(components, /:focus-visible/, '必须有可见的键盘焦点样式');
+  assert.match(components, /\.sr-only/, '必须有屏幕阅读器专用工具类');
+  assert.match(components, /\.focus-bar/, '必须有固定专注功能栏的样式');
+});
