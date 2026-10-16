@@ -79,3 +79,141 @@
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ==========================================================================
+   主题：浅色 / 深色 / 跟随系统
+   规则：语义色一律通过令牌访问，任何组件都不得写死颜色。
+   深色主题只需重定义下面这些变量，所有页面、弹窗、输入框、日历与图表会自动适配。
+   ========================================================================== */
+
+/* 显式选择的深色主题 */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --color-bg: #12161c;
+  --color-surface: #1a1f27;
+  --color-surface-alt: #222833;
+  --color-border: #2e3641;
+  --color-border-strong: #435062;
+
+  --color-text: #e8edf4;
+  --color-text-muted: #a7b2c1;
+  --color-text-faint: #7b8798;
+
+  --color-primary: #6ba4f0;
+  --color-primary-hover: #8ab8f5;
+  --color-primary-soft: #1e2c42;
+
+  --color-study: #6ba4f0;
+  --color-study-soft: #1e2c42;
+  --color-fixed: #8b97a8;
+  --color-fixed-soft: #262d38;
+  --color-rest: #4fbf9a;
+  --color-rest-soft: #172f28;
+  --color-buffer: #d6ae4e;
+  --color-buffer-soft: #302818;
+  --color-locked: #9c85ee;
+  --color-locked-soft: #251f3d;
+
+  --color-danger: #f0776a;
+  --color-danger-soft: #37201d;
+  --color-warning: #e0b357;
+  --color-warning-soft: #332a17;
+  --color-success: #5cbd8b;
+  --color-success-soft: #172e23;
+
+  /* 深色下阴影要更重，否则卡片会"浮"不起来 */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+/* 跟随系统：仅在用户没有显式选择浅/深色时生效 */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='system'],
+  :root:not([data-theme]) {
+    color-scheme: dark;
+
+    --color-bg: #12161c;
+    --color-surface: #1a1f27;
+    --color-surface-alt: #222833;
+    --color-border: #2e3641;
+    --color-border-strong: #435062;
+
+    --color-text: #e8edf4;
+    --color-text-muted: #a7b2c1;
+    --color-text-faint: #7b8798;
+
+    --color-primary: #6ba4f0;
+    --color-primary-hover: #8ab8f5;
+    --color-primary-soft: #1e2c42;
+
+    --color-study: #6ba4f0;
+    --color-study-soft: #1e2c42;
+    --color-fixed: #8b97a8;
+    --color-fixed-soft: #262d38;
+    --color-rest: #4fbf9a;
+    --color-rest-soft: #172f28;
+    --color-buffer: #d6ae4e;
+    --color-buffer-soft: #302818;
+    --color-locked: #9c85ee;
+    --color-locked-soft: #251f3d;
+
+    --color-danger: #f0776a;
+    --color-danger-soft: #37201d;
+    --color-warning: #e0b357;
+    --color-warning-soft: #332a17;
+    --color-success: #5cbd8b;
+    --color-success-soft: #172e23;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45);
+  }
+}
+
+/* ==========================================================================
+   自定义壁纸
+   实现方式：壁纸放在一个固定的全屏背景层（#app-wallpaper）里，
+   内容层叠在它上面。这样壁纸不参与文档流，也不影响任何组件的定位。
+   可读性由两层保证：壁纸自身的遮罩（--wallpaper-scrim）+ 内容卡片的半透明底色。
+   ========================================================================== */
+
+:root {
+  --wallpaper-scrim: 0.55; /* 遮罩不透明度：0 = 不遮，1 = 完全遮住 */
+  --wallpaper-blur: 0px;
+  --wallpaper-fit: cover;
+}
+
+#app-wallpaper {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: var(--wallpaper-fit);
+  filter: blur(var(--wallpaper-blur));
+  /* 模糊会让边缘出现透明带，稍微放大一点把边缘推到视口之外 */
+  transform: scale(1.06);
+}
+
+#app-wallpaper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--color-bg);
+  opacity: var(--wallpaper-scrim);
+}
+
+/* 有壁纸时：容器与卡片改用半透明底色，让背景透出来但仍保证文字对比度 */
+:root[data-wallpaper='on'] .app,
+:root[data-wallpaper='on'] .app-main {
+  background: transparent;
+}
+
+:root[data-wallpaper='on'] .card,
+:root[data-wallpaper='on'] .app-nav,
+:root[data-wallpaper='on'] .app-topbar,
+:root[data-wallpaper='on'] .app-brand {
+  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+  backdrop-filter: blur(10px);
+}

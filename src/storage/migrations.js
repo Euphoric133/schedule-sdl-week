@@ -28,12 +28,16 @@ export const MIGRATIONS = Object.freeze({
 function fillMissingContainers(state) {
   const next = { ...state };
   let changed = false;
-  const containers = ['tasks', 'sessions', 'fixedActivities', 'planHistory'];
+  // 数组容器：旧版本数据缺少这些字段时补上空数组（新增功能不会让老数据读不出来）
+  const containers = ['tasks', 'sessions', 'fixedActivities', 'planHistory', 'focusRecords', 'rewardHistory'];
   for (const key of containers) {
     if (!Array.isArray(next[key])) {
       next[key] = [];
       changed = true;
     }
+  }
+  if (next.rewardLedger === undefined || next.rewardLedger === null || typeof next.rewardLedger !== 'object') {
+    next.rewardLedger = {};
   }
   if (next.pendingPreview === undefined) {
     next.pendingPreview = null;

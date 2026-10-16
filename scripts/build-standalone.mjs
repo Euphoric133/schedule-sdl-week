@@ -128,18 +128,30 @@ function transformModule(source, moduleId, exportsByAbsolute, idByAbsolute, abso
 
   out = out.replace(/^\s*import\s+['"][^'"]+['"];?[ \t]*$/gm, '');
 
-  const exportNames = [];
+  /**
+   * 导出表：`导出名 -> 本地名`。
+   *
+   * 必须区分这两种写法，否则会生成引用不存在变量的代码：
+   * - `export function foo() {}`  → 导出名与本地名都是 foo；
+   * - `export { bar as POMODORO_END_REASON }` → 导出名是 POMODORO_END_REASON，本地名是 bar。
+   *   只记录导出名（旧实现的做法）会让注册表里出现 `POMODORO_END_REASON`，
+   *   但模块作用域里根本没有这个变量，单文件版本一启动就 ReferenceError。
+   */
+  const exportMap = new Map();
   // 导出名必须在删除 export 关键字**之前**收集：删除之后源码里就没有 "export" 了。
   for (const match of out.matchAll(/^[ \t]*export\s+(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm)) {
-    exportNames.push(match[1]);
+    exportMap.set(match[1], match[1]);
   }
 
   out = out.replace(/^\s*export\s*\{([^}]*)\}\s*;?[ \t]*$/gm, (match, body) => {
     void match;
     for (const part of body.split(',')) {
-      const alias = part.trim().split(/\s+as\s+/);
+      const piece = part.trim();
+      if (!piece) continue;
+      const alias = piece.split(/\s+as\s+/);
+      const local = (alias[0] ?? '').trim();
       const exported = (alias[1] ?? alias[0] ?? '').trim();
-      if (exported) exportNames.push(exported);
+      if (exported && local) exportMap.set(exported, local);
     }
     return '';
   });
@@ -148,7 +160,7 @@ function transformModule(source, moduleId, exportsByAbsolute, idByAbsolute, abso
 
   if (/^export\s+default\s/m.test(source)) {
     out = out.replace(/^([ \t]*)export[ \t]+default[ \t]+/gm, '$1const __default__ = ');
-    exportNames.push('default');
+    exportMap.set('default', '__default__');
   }
 
   if (/^[ \t]*export[ \t]/m.test(out)) {
@@ -160,10 +172,17 @@ function transformModule(source, moduleId, exportsByAbsolute, idByAbsolute, abso
     throw new Error(`${moduleId} 中仍有无法处理的 import 语法：${leftover}`);
   }
 
-  const namedEntries = [...new Set(exportNames)].map((name) =>
-    name === 'default' ? 'default: __default__' : toObjectProperty(name),
+  // 导出名与本地名不同的，补一个等价的本地 const，让注册表可以按导出名直接引用
+  const aliases = [...exportMap.entries()]
+    .filter(([exported, local]) => exported !== local && exported !== 'default')
+    .map(([exported, local]) => `const ${exported} = ${local};`);
+
+  const namedEntries = [...exportMap.keys()].map((exported) =>
+    exported === 'default' ? 'default: __default__' : toObjectProperty(exported),
   );
-  const body = [importLines.filter(Boolean).join('\n'), out].filter((part) => part.trim().length > 0).join('\n');
+  const body = [importLines.filter(Boolean).join('\n'), out, aliases.join('\n')]
+    .filter((part) => part.trim().length > 0)
+    .join('\n');
 
   return `__modules__[${JSON.stringify(moduleId)}] = (function () {\n${body}\nreturn { named: {${namedEntries.join(', ')}} };\n})();`;
 }

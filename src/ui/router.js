@@ -6,18 +6,22 @@
  */
 
 export const ROUTES = Object.freeze([
-  { path: 'today', label: '今日总览', title: '今日总览' },
-  { path: 'week', label: '七天计划', title: '七天计划' },
-  { path: 'day', label: '每日视图', title: '每日视图' },
-  { path: 'tasks', label: '任务列表', title: '任务列表' },
-  { path: 'activities', label: '固定活动', title: '固定活动' },
-  { path: 'preview', label: '调整预览', title: '调整预览' },
-  { path: 'versions', label: '版本历史', title: '版本历史' },
-  { path: 'focus', label: '专注工作台', title: '专注工作台' },
-  { path: 'settings', label: '偏好设置', title: '偏好设置' },
+  { path: 'home', label: '首页', title: '今日总览', icon: '🏠' },
+  { path: 'week', label: '七天计划', title: '七天计划', icon: '🗓' },
+  { path: 'day', label: '每日视图', title: '每日视图', icon: '📆' },
+  { path: 'tasks', label: '学习任务', title: '学习任务', icon: '✅' },
+  { path: 'activities', label: '固定日程', title: '固定日程', icon: '📌' },
+  { path: 'focus', label: '专注番茄钟', title: '专注番茄钟', icon: '⏱' },
+  { path: 'rewards', label: '奖励转盘', title: '奖励转盘', icon: '🎡' },
+  { path: 'stats', label: '学习统计', title: '学习统计', icon: '📊' },
+  { path: 'preview', label: '调整预览', title: '调整预览', icon: '🔍' },
+  { path: 'versions', label: '版本历史', title: '版本历史', icon: '🕘' },
+  { path: 'appearance', label: '外观主题', title: '外观主题', icon: '🎨' },
+  { path: 'notifications', label: '通知提醒', title: '通知提醒', icon: '🔔' },
+  { path: 'settings', label: '偏好设置', title: '偏好设置', icon: '⚙️' },
 ]);
 
-export const DEFAULT_ROUTE = 'today';
+export const DEFAULT_ROUTE = 'home';
 
 /**
  * 解析当前 location.hash → { path, params, unknownPath }。
@@ -30,11 +34,13 @@ export function parseHash(hash = globalThis.location?.hash ?? '') {
   const [pathPart, queryPart] = raw.split('?');
   const requested = pathPart || DEFAULT_ROUTE;
   const params = new URLSearchParams(queryPart ?? '');
-  const known = ROUTES.some((r) => r.path === requested);
+  // 兼容旧链接：#/today 曾经是首页，改名为 home 后旧书签仍然可用
+  const normalized = requested === 'today' ? 'home' : requested;
+  const known = ROUTES.some((route) => route.path === normalized);
   if (!known) {
     return { path: requested, params, unknownPath: requested };
   }
-  return { path: requested, params, unknownPath: null };
+  return { path: normalized, params, unknownPath: null };
 }
 
 /** 跳转到指定路由（会触发 hashchange，由应用统一渲染） */

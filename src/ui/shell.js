@@ -152,6 +152,10 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
     currentRoute = route;
     // 页面切换时先停掉上一个页面的心跳，避免计时器在后台继续跑
     stopTicker();
+
+    // 防御：异步任务（例如心跳或延迟重绘）可能在文档已经卸载后才回来。
+    // 此时重建 DOM 只会抛错，直接返回才是正确行为。
+    if (typeof document === 'undefined') return;
     renderNav(route.path);
     renderNavFoot();
     renderBanner();

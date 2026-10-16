@@ -8,7 +8,7 @@
  */
 
 import { button, card, notice } from '../components.js';
-import { downloadText, el, toast } from '../dom.js';
+import { downloadText, el, isNodeLive, toast } from '../dom.js';
 import { defaultSettings, validateSettings } from '../../domain/schemas.js';
 import { formatIssue } from '../../domain/validation.js';
 import { WEEKDAY_NAMES_ZH, formatDuration } from '../../domain/time.js';
@@ -335,6 +335,8 @@ function renderStorageCard({ app, services, state }) {
   const reminderHost = el('div');
 
   app.storageUsage().then((usage) => {
+    // 用户可能已经离开设置页（节点被移除），此时写入会报错，因此先判断节点是否还活着
+    if (!isNodeLive(usedText) || !isNodeLive(quotaText)) return;
     usedText.textContent = usage.usedBytes === null ? '不可用' : formatBytes(usage.usedBytes);
     quotaText.textContent = usage.quotaBytes ? formatBytes(usage.quotaBytes) : '浏览器未提供';
   });

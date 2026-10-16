@@ -147,3 +147,25 @@ export function toast(message, level = 'info', timeoutMs = 4000) {
   setTimeout(() => node.remove(), timeoutMs);
   return node;
 }
+
+/**
+ * 节点是否还挂在当前文档上。
+ *
+ * 用途：异步回调（读存储配额、恢复壁纸、发送通知）可能在用户已经离开该页面
+ * 甚至环境已经卸载（测试里会卸载打桩 DOM）之后才回来。
+ * 这时再写 DOM 会抛错并变成未处理的 Promise 拒绝。先判断再写，问题就消失了。
+ */
+export function isNodeLive(node) {
+  if (!node) return false;
+  // 真实浏览器：isConnected 最可靠
+  if (typeof node.isConnected === 'boolean') return node.isConnected;
+  // 打桩环境：沿着 parentNode 走到 document 即可
+  let current = node;
+  while (current) {
+    if (current.parentNode === null || current.parentNode === undefined) {
+      return Boolean(current.__isDocumentRoot);
+    }
+    current = current.parentNode;
+  }
+  return false;
+}

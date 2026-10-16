@@ -66,6 +66,8 @@ export function applyDraftOp(state, op, ctx) {
       return cleanupCancelledSessionsOp(state, op);
     case 'cleanup.planHistory':
       return cleanupPlanHistoryOp(state, op);
+    case 'focus.record':
+      return focusRecordOp(state, op, ctx);
     case 'fixedActivity.add':
       return fixedActivityAddOp(state, op, ctx);
     case 'fixedActivity.update':
@@ -154,6 +156,9 @@ export function describeDraftOps(ops) {
         break;
       case 'cleanup.planHistory':
         parts.push('清理历史版本快照');
+        break;
+      case 'focus.record':
+        parts.push(op.completed ? '记录一个完成的番茄钟' : '记录一次提前结束的专注');
         break;
       case 'fixedActivity.add':
         parts.push(`新增固定活动「${op.input?.title ?? ''}」`);
@@ -436,6 +441,54 @@ function sessionDeleteOp(state, op) {
     };
   }
   return { ok: true, state: { ...state, sessions: state.sessions.filter((item) => item.id !== op.sessionId) }, issues: [] };
+}
+
+/**
+ * 记录一次专注（番茄钟）。
+ *
+ * 三条不变式：
+ * 1. **只记录真实投入**：`focusedSeconds` 来自真实时间戳算出的差值，
+ *    中途结束的记录 `completed: false`，绝不记为完成。
+ * 2. **一轮番茄 ≠ 任务完成**：这里只更新"已投入时长"，任务状态由用户决定。
+ * 3. **不重复**：同一轮结束会带一个唯一来源键，重复提交会被忽略（见 recordFocusInState）。
+ */
+function focusRecordOp(state, op, ctx) {
+  const focusedSeconds = Math.max(0, Math.round(Number(op.focusedSeconds) || 0));
+  if (focusedSeconds <= 0) {
+    return { ok: false, state, issues: [error(C.RANGE, 'focus.focusedSeconds', '专注时长必须大于 0 秒。', { focusedSeconds })] };
+  }
+  if (focusedSeconds > 12 * 60 * 60) {
+    return { ok: false, state, issues: [error(C.RANGE, 'focus.focusedSeconds', '单次专注时长不能超过 12 小时。', { focusedSeconds })] };
+  }
+
+  const record = {
+    id: op.recordId ?? `fcr_${Math.random().toString(36).slice(2, 10)}`,
+    date: op.date,
+    startedAt: op.startedAt ?? null,
+    endedAt: op.endedAt ?? ctx.nowIso,
+    focusedSeconds,
+    completed: Boolean(op.completed),
+    round: Number.isInteger(op.round) ? op.round : null,
+    sessionId: op.sessionId ?? null,
+    taskId: op.taskId ?? null,
+    taskTitle: op.taskTitle ?? null,
+    source: op.source ?? 'pomodoro',
+    createdAt: ctx.nowIso,
+  };
+
+  const existing = state.focusRecords ?? [];
+  // 幂等保护：同一个来源键只允许写入一次，重复提交直接忽略
+  if (op.sourceKey && existing.some((item) => item.sourceKey === op.sourceKey)) {
+    return { ok: true, state, issues: [], duplicate: true, record: existing.find((item) => item.sourceKey === op.sourceKey) };
+  }
+
+  return {
+    ok: true,
+    state: { ...state, focusRecords: [...existing, { ...record, sourceKey: op.sourceKey ?? null }] },
+    issues: [],
+    record,
+    createdId: record.id,
+  };
 }
 
 /* ------------------------------------------------------------------ *

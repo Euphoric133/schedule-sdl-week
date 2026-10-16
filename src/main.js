@@ -13,7 +13,14 @@ import { createTaskService } from './services/taskService.js';
 import { createPlanService } from './services/planService.js';
 import { createFocusService } from './services/focusService.js';
 import { createFixedActivityService } from './services/fixedActivityService.js';
+import { createAppearanceService } from './services/appearanceService.js';
+import { createNotificationService } from './services/notificationService.js';
+import { createPomodoroService } from './services/pomodoroService.js';
+import { createRewardService } from './services/rewardService.js';
+import { createStatsService } from './services/statsService.js';
+import { loadPreferences, savePreferences } from './services/preferences.js';
 import { createIdFactory } from './domain/ids.js';
+import { applyDraftOp } from './domain/mutations.js';
 import { addDays, wallTimeFromDateObject } from './domain/time.js';
 import { createShell } from './ui/shell.js';
 import { startRouter } from './ui/router.js';
@@ -24,6 +31,11 @@ import { renderPreview } from './ui/pages/preview.js';
 import { renderSettings } from './ui/pages/settings.js';
 import { renderFocus } from './ui/pages/focus.js';
 import { renderDay } from './ui/pages/day.js';
+import { renderHome } from './ui/pages/home.js';
+import { renderAppearance } from './ui/pages/appearance.js';
+import { renderNotifications } from './ui/pages/notifications.js';
+import { renderRewards } from './ui/pages/rewards.js';
+import { renderStats } from './ui/pages/stats.js';
 import { renderActivities } from './ui/pages/activities.js';
 import { renderVersions } from './ui/pages/versions.js';
 import { openTaskForm } from './ui/forms/taskForm.js';
@@ -131,6 +143,8 @@ function createUiService({ services }) {
  * @param {() => Date} [options.clock] 时钟（测试可注入固定时间，保证渲染可复现）
  */
 export function boot({ root = document.getElementById('app'), clock } = {}) {
+  /** shell 在下面创建；外观变化回调可能在创建之前被触发，因此先声明 */
+  let shell = null;
   if (!root) throw new Error('找不到挂载点 #app');
 
   const idFactory = createIdFactory();
@@ -148,12 +162,77 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
 
   services.taskService = createTaskService({ app, idFactory });
   services.fixedActivityService = createFixedActivityService({ app, idFactory });
+
+  /* —— 界面偏好与外观（主题、壁纸）—— */
+  services.preferences = loadPreferences();
+  services.appearanceService = createAppearanceService({
+    preferences: services.preferences,
+    onChange: (next) => {
+      services.preferences = next;
+      // 这里**刻意不触发整页重绘**。
+      // 原因：主题与壁纸是通过 <html> 上的属性与 CSS 变量生效的，改动后浏览器会立刻重绘；
+      // 如果再强制重建 DOM，会丢掉表单里正在输入的内容、打断动画，
+      // 还会把重绘调度推到当前任务之后（在测试或快速切页时可能落到已卸载的环境里）。
+      // 需要刷新自身状态的页面（设置页）用订阅回调局部更新自己。
+    },
+  });
+
+  /* —— 专注（番茄钟）—— */
+  services.pomodoroService = createPomodoroService({
+    appearanceService: services.appearanceService,
+    app,
+    now: () => services.now(),
+    // 计时精度只依赖真实毫秒时间戳；测试注入固定时钟时它也会跟着固定
+    nowMs: () => readNow().getTime(),
+  });
+  // 完成的专注写入业务数据：这是"学习事实"，必须参与统计与剩余工作量推导。
+  // 用 sourceKey 做幂等保护，重复提交同一轮不会写两次。
+  services.pomodoroService.setRecordSink((record) => {
+    const applied = applyDraftOp(
+      app.getState(),
+      {
+        kind: 'focus.record',
+        focusedSeconds: record.focusedSeconds,
+        completed: record.completed,
+        date: record.date,
+        round: record.round,
+        sessionId: record.sessionId,
+        taskId: record.taskId,
+        taskTitle: record.taskTitle,
+        source: 'pomodoro',
+        sourceKey: `pomodoro:${record.sessionId ?? 'none'}:${record.phase}:${record.round}`,
+      },
+      { idFactory, nowIso },
+    );
+    if (applied.ok && !applied.duplicate) app.commit(() => applied.state, { reason: 'focus-record' });
+  });
+
+  /* —— 奖励转盘 —— */
+  services.rewardService = createRewardService({
+    appearanceService: services.appearanceService,
+    app,
+    now: () => services.now(),
+  });
+
+  /* —— 通知提醒 —— */
+  services.notificationService = createNotificationService({
+    appearanceService: services.appearanceService,
+    now: () => services.now(),
+    clock: nowIso,
+  });
+
+  /* —— 学习统计 —— */
+  services.statsService = createStatsService({ app, now: () => services.now() });
   services.planService = createPlanService({ app, idFactory });
   services.focusService = createFocusService({ app, idFactory, now: services.now });
   services.ui = createUiService({ services });
 
   const todayWall = services.now();
+  // 主题必须在任何渲染之前落到 <html> 上：否则浅色主题下会先闪一下白底。
+  services.appearanceService.applyAll();
+
   const pages = {
+    home: renderHome,
     today: renderToday,
     week: renderWeek,
     day: renderDay,
@@ -162,10 +241,14 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
     preview: renderPreview,
     versions: renderVersions,
     settings: renderSettings,
+    appearance: renderAppearance,
+    notifications: renderNotifications,
     focus: renderFocus,
+    rewards: renderRewards,
+    stats: renderStats,
   };
 
-  const shell = createShell({
+  shell = createShell({
     root,
     app,
     services,
@@ -187,6 +270,18 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
   });
 
   startRouter((route) => shell.render(route));
+
+  // 恢复上次保存的壁纸（IndexedDB 异步，不阻塞首屏）
+  services.appearanceService.restoreWallpaper();
+
+  // 通知调度：只有在"支持 + 已授权 + 用户开启"时才会真正生效（服务内部判断）
+  services.notificationService.schedule(() => ({
+    sessions: app.getState().sessions ?? [],
+    tasks: app.getState().tasks ?? [],
+    plan: app.getState().officialPlan,
+    runningFocus: services.pomodoroService.getTimer(),
+  }));
+  services.notificationService.handleVisibility();
 
   return { app, services, shell, loadReport };
 }

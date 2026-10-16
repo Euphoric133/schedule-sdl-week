@@ -275,3 +275,102 @@ export function sumByKind(blocks, kind) {
 }
 
 export { clear, num, formatDuration, formatMinutes, weekdayOf };
+
+/* ------------------------------------------------------------------ *
+ * 统计与进度组件（首页、统计页、专注页共用）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 进度条。
+ *
+ * 无障碍：使用 role="progressbar" 并给出 aria-valuenow/min/max，
+ * 屏幕阅读器能读到真实进度，而不是只看到一个彩色方块。
+ */
+export function progressBar({ value = 0, label = null, hint = null, kind = 'primary', showValue = false } = {}) {
+  const clamped = Math.min(1, Math.max(0, Number(value) || 0));
+  const percent = Math.round(clamped * 100);
+  return el('div.progress', {}, [
+    label || showValue
+      ? el('div.progress__head', {}, [
+          label ? el('span.progress__label', { text: label }) : el('span'),
+          showValue ? el('span.progress__value', { text: `${percent}%` }) : null,
+        ])
+      : null,
+    el(
+      'div.progress__track',
+      {
+        role: 'progressbar',
+        'aria-valuenow': String(percent),
+        'aria-valuemin': '0',
+        'aria-valuemax': '100',
+        'aria-label': label ?? '进度',
+      },
+      [el(`div.progress__fill.progress__fill--${kind}`, { style: { width: `${percent}%` } })],
+    ),
+    hint ? el('div.progress__hint', { text: hint }) : null,
+  ]);
+}
+
+/**
+ * 统计磁贴：一个主数字 + 一句解释 + 可选进度条。
+ * 允许作为按钮使用（onClick 存在时）以便跳转到详情页。
+ */
+export function statTile({ label, value, hint, progress = null, kind = 'primary', onClick = null } = {}) {
+  const content = [
+    el('div.stat-tile__label', { text: label }),
+    el('div.stat-tile__value', { text: value }),
+    hint ? el('div.stat-tile__hint', { text: hint }) : null,
+    progress !== null && progress !== undefined ? progressBar({ value: progress, kind }) : null,
+  ];
+  if (onClick) {
+    return el('button.stat-tile.stat-tile--button', { type: 'button', on: { click: onClick } }, content);
+  }
+  return el('div.stat-tile', {}, content);
+}
+
+/** 横向占比条（科目分布等），带真实数值 */
+export function shareBars(items, { total = null, emptyText = '还没有数据', kind = 'primary' } = {}) {
+  if (!items || items.length === 0) {
+    return el('div.card__hint', { text: emptyText });
+  }
+  const sum = total ?? items.reduce((accumulator, item) => accumulator + item.value, 0);
+  const max = Math.max(...items.map((item) => item.value), 1);
+  return el(
+    'ul.share-bars',
+    {},
+    items.map((item) =>
+      el('li.share-bars__row', {}, [
+        el('div.share-bars__head', {}, [
+          el('span.share-bars__label', { text: item.label }),
+          el('span.share-bars__value', {
+            text: sum > 0 ? `${item.display ?? item.value}（${Math.round((item.value / sum) * 100)}%）` : String(item.display ?? item.value),
+          }),
+        ]),
+        el('div.share-bars__track', {}, [
+          el(`div.share-bars__fill.share-bars__fill--${kind}`, { style: { width: `${Math.round((item.value / max) * 100)}%` } }),
+        ]),
+      ]),
+    ),
+  );
+}
+
+/** 简单的柱状图（用于逐日趋势）。数据为空时明确说明，而不是画一条平线。 */
+export function barChart({ data, max = null, height = 120, emptyText = '还没有可以统计的数据' } = {}) {
+  if (!data || data.length === 0) return el('div.card__hint', { text: emptyText });
+  const peak = max ?? Math.max(1, ...data.map((item) => item.value));
+  return el(
+    'div.chart',
+    { style: { height: `${height}px` } },
+    data.map((item) =>
+      el('div.chart__col', { title: `${item.label}：${item.display ?? item.value}` }, [
+        el('div.chart__bar-wrap', {}, [
+          el(`div.chart__bar.chart__bar--${item.kind ?? 'primary'}`, {
+            style: { height: `${Math.round((item.value / peak) * 100)}%` },
+            'aria-label': `${item.label} ${item.display ?? item.value}`,
+          }),
+        ]),
+        el('div.chart__label', { text: item.short ?? item.label }),
+      ]),
+    ),
+  );
+}
