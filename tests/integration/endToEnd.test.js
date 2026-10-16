@@ -361,3 +361,56 @@ test('端到端：关键按钮都绑定了真实行为（不存在只有外观�
     env.cleanup();
   }
 });
+
+/* ================================================================== *
+ * 固定专注功能栏
+ * ================================================================== */
+
+test('专注栏：计时开始后出现在每一页，可暂停/继续/放弃，结束后消失', async () => {
+  const env = await launch();
+  try {
+    const shellRoot = () => env.dom.appHost.children[0];
+    const focusBar = () => shellRoot().byClass('focus-bar')[0];
+    assert.ok(focusBar(), '外壳里应有固定的专注栏容器');
+    // 打桩 DOM 把 hidden 当作属性保存，因此这里按属性判断（真实浏览器里两者等价）
+    const isHidden = () => focusBar().getAttribute('hidden') !== null;
+
+    // 未计时时隐藏
+    assert.equal(isHidden(), true, '未开始计时时专注栏应隐藏');
+
+    // 开始一轮专注
+    const session = { id: 'ses_bar', taskId: null, taskTitle: '英语阅读' };
+    env.instance.services.pomodoroService.startFocus(session);
+    env.go('#/tasks');
+    assert.equal(isHidden(), false, '计时中应显示专注栏');
+
+    const barText = () => focusBar().textContent;
+    assert.match(barText(), /专注/, '应显示当前阶段');
+    assert.match(barText(), /英语阅读/, '应显示当前任务');
+    assert.match(barText(), /\d{2}:\d{2}/, '应显示倒计时');
+    assert.match(barText(), /暂停/, '应提供暂停');
+    assert.match(barText(), /放弃/, '应提供放弃');
+
+    // 在非专注页面也能暂停 → 说明不必来回切页
+    const pauseButton = focusBar().all().find((n) => n.tagName === 'BUTTON' && n.textContent.trim() === '暂停');
+    pauseButton.click();
+    assert.equal(env.instance.services.pomodoroService.getTimer().paused, true, '在任务页也能暂停计时');
+    assert.match(focusBar().textContent, /已暂停/);
+
+    // 继续
+    const resumeButton = focusBar().all().find((n) => n.tagName === 'BUTTON' && n.textContent.trim() === '继续');
+    assert.ok(resumeButton, '暂停后应显示继续');
+    resumeButton.click();
+    assert.equal(env.instance.services.pomodoroService.getTimer().paused, false);
+
+    // 放弃后专注栏消失，且不写入任何学习记录
+    const before = env.instance.app.getState().focusRecords.length;
+    const discardButton = focusBar().all().find((n) => n.tagName === 'BUTTON' && n.textContent.trim() === '放弃');
+    discardButton.click();
+    assert.equal(env.instance.services.pomodoroService.getTimer().phase, 'idle');
+    assert.equal(isHidden(), true, '计时结束后专注栏应隐藏');
+    assert.equal(env.instance.app.getState().focusRecords.length, before, '放弃不产生学习记录');
+  } finally {
+    env.cleanup();
+  }
+});

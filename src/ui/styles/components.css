@@ -1336,3 +1336,87 @@ legend {
 .achievement__label {
   font-weight: 600;
 }
+
+/* ==========================================================================
+   固定专注功能栏：计时进行中时出现在每一页顶部
+   ========================================================================== */
+
+.focus-bar {
+  position: fixed;
+  left: var(--sidebar-width);
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5);
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--color-border);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+  font-size: var(--font-size-sm);
+}
+
+.focus-bar[hidden] {
+  display: none;
+}
+
+.focus-bar__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: focus-pulse 1.6s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+
+.focus-bar__dot.is-paused {
+  background: var(--color-warning);
+  animation: none;
+}
+
+@keyframes focus-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+.focus-bar__phase {
+  color: var(--color-text-muted);
+  flex: 0 0 auto;
+}
+
+.focus-bar__time {
+  font-size: var(--font-size-md);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.focus-bar__task {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+}
+
+.focus-bar__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+/* 有专注栏时给主内容留出底部空间，避免遮住最后一屏内容 */
+:root[data-focus-bar='on'] .app-main {
+  padding-bottom: 72px;
+}
+
+@media (max-width: 900px) {
+  .focus-bar {
+    left: 0;
+    padding: var(--space-2) var(--space-3);
+    flex-wrap: wrap;
+  }
+  .focus-bar__task { display: none; }
+}

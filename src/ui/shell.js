@@ -7,6 +7,8 @@
 
 import { append, clear, downloadText, el, startTicker, stopTicker, toast } from './dom.js';
 import { ROUTES, parseHash } from './router.js';
+import { formatSeconds, remainingSecondsOf } from '../services/pomodoroTimer.js';
+import { PHASE_LABELS_ZH } from '../services/pomodoroService.js';
 import { button, notice } from './components.js';
 
 /**
@@ -61,7 +63,16 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
   const toastHost = el('div', { id: 'toast-host', 'aria-live': 'polite', style: { position: 'fixed', right: 'var(--space-4)', bottom: 'var(--space-4)', zIndex: '50', maxWidth: '360px' } });
 
   // 布局区域：brand / topbar / nav / main（toast 与全局横幅是浮层，不参与网格）
-  const shell = el('div.app', {}, [brand, topbar, nav, main]);
+  /**
+   * 固定专注功能栏：计时进行中时出现在每一页顶部。
+   *
+   * 为什么需要：番茄钟要求"开始一项任务后能直接进入专注模式，不必反复切换页面"。
+   * 有了这条常驻栏，用户在周视图、任务列表或设置页都能看到剩余时间，
+   * 并且可以就地暂停 / 结束 / 回到专注页。
+   */
+  const focusBar = el('div.focus-bar', { hidden: true, role: 'status', 'aria-live': 'polite' });
+
+  const shell = el('div.app', {}, [brand, topbar, nav, main, focusBar]);
   installKeyboardShortcuts({ app, services, render: () => renderCurrent() });
   root.appendChild(shell);
   root.appendChild(banner);
@@ -159,6 +170,8 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
     renderNav(route.path);
     renderNavFoot();
     renderBanner();
+    // 专注栏要在每一页都刷新：计时中切到任意页面都能看到剩余时间并暂停/结束
+    renderFocusBar();
     const page = pages[route.path];
     clear(main);
     if (!page || route.unknownPath) {
@@ -204,7 +217,75 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
     render(currentRoute ?? parseHash());
   }
 
-  return { render, renderCurrent: shellRender, get currentRoute() { return currentRoute; }, main };
+  /**
+   * 渲染固定专注栏。
+   *
+   * 它只显示与操作当前计时，不修改任何业务数据；
+   * 结束操作会跳到专注页，让用户看到完整的结束选项（提前结束/顺延等），
+   * 而不是在这里偷偷把记录写掉。
+   */
+  function renderFocusBar() {
+    clear(focusBar);
+    const pomodoro = services.pomodoroService;
+    if (!pomodoro) {
+      focusBar.hidden = true;
+      return;
+    }
+    const timer = pomodoro.getTimer();
+    if (timer.phase === 'idle') {
+      focusBar.hidden = true;
+      document?.documentElement?.setAttribute('data-focus-bar', 'off');
+      return;
+    }
+    document?.documentElement?.setAttribute('data-focus-bar', 'on');
+
+    const remaining = remainingSecondsOf(timer, Date.now());
+    const paused = Boolean(timer.paused);
+    const phaseLabel = PHASE_LABELS_ZH[timer.phase] ?? '专注';
+
+    focusBar.hidden = false;
+    append(focusBar, [
+      el('span.focus-bar__dot', { class: paused ? 'is-paused' : null, 'aria-hidden': 'true' }),
+      el('span.focus-bar__phase', { text: paused ? `${phaseLabel}（已暂停）` : phaseLabel }),
+      el('strong.focus-bar__time', { text: formatSeconds(remaining) }),
+      el('span.focus-bar__task', { text: timer.taskTitle ?? '未关联任务' }),
+      el('div.focus-bar__actions', {}, [
+        el('button.btn.btn--sm', {
+          type: 'button',
+          on: {
+            click: () => {
+              if (timer.paused) pomodoro.resume();
+              else {
+                pomodoro.pause();
+                pomodoro.resumeMarkPause();
+              }
+              renderFocusBar();
+              shellRender();
+            },
+          },
+          text: paused ? '继续' : '暂停',
+        }),
+        el('button.btn.btn--sm', {
+          type: 'button',
+          on: { click: () => { globalThis.location.hash = '#/focus'; } },
+          text: '回到专注',
+        }),
+        el('button.btn.btn--sm.btn--ghost', {
+          type: 'button',
+          on: {
+            click: () => {
+              pomodoro.discard();
+              renderFocusBar();
+              shellRender();
+            },
+          },
+          text: '放弃',
+        }),
+      ]),
+    ]);
+  }
+
+  return { render, renderCurrent: shellRender, get currentRoute() { return currentRoute; }, main, renderFocusBar };
 }
 
 /**

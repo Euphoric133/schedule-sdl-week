@@ -161,6 +161,19 @@ class FakeElement {
     if (name === 'value') this.value = value;
     if (name === 'disabled') this.disabled = true;
   }
+  /**
+   * `hidden` 是真实 DOM 的**反射布尔属性**：读写它会同步到 attribute。
+   * 打桩必须一致，否则代码里 `node.hidden = false` 之后 getAttribute('hidden') 仍然是空字符串，
+   * "专注栏是否显示"这类断言就会得到错误结论。
+   */
+  get hidden() {
+    return this.hasAttribute('hidden');
+  }
+  set hidden(value) {
+    if (value) this.setAttribute('hidden', '');
+    else this.removeAttribute('hidden');
+  }
+
   getAttribute(name) {
     return this.attributes.has(name) ? this.attributes.get(name) : null;
   }
