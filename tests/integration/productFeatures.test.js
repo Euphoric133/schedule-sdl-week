@@ -1036,3 +1036,70 @@ test('剩余时长：不填声明值时行为与以前完全一致（向后兼�
   assert.equal(view.task.priorCompletedMinutes, 0);
   assert.equal(view.remainingMinutes, 90);
 });
+
+/* ================================================================== *
+ * 成就：全部由真实记录推导
+ * ================================================================== */
+
+test('成就：没有记录时全部未达成，且给出目标而不是空徽章', () => {
+  const env = makeEnv();
+  const achievements = env.stats.achievements();
+  assert.ok(achievements.length >= 5);
+  assert.equal(achievements.every((item) => item.achieved), false);
+  assert.equal(achievements.every((item) => item.target > 0), true, '每个成就都应有明确目标');
+  assert.equal(achievements.every((item) => typeof item.description === 'string' && item.description.length > 0), true);
+});
+
+test('成就：完成一个番茄后"第一次专注"达成，进度随之更新', () => {
+  const env = makeEnv();
+  const before = env.stats.achievements().find((item) => item.id === 'first_focus');
+  assert.equal(before.achieved, false);
+
+  env.app.commit(
+    (state) => ({
+      ...state,
+      focusRecords: [{ id: 'f1', date: NOW.date, focusedSeconds: 1500, completed: true }],
+    }),
+    { reason: 'test-seed' },
+  );
+
+  const after = env.stats.achievements().find((item) => item.id === 'first_focus');
+  assert.equal(after.achieved, true);
+  assert.equal(after.current, 1);
+  assert.equal(after.ratio, 1);
+});
+
+test('成就：累计十小时按真实专注分钟数推导，不做四舍五入取巧', () => {
+  const env = makeEnv();
+  const makeRecords = (totalSeconds) => [
+    { id: 'f1', date: NOW.date, focusedSeconds: totalSeconds, completed: true },
+  ];
+
+  env.app.commit((state) => ({ ...state, focusRecords: makeRecords(9 * 3600) }), { reason: 'test-seed' });
+  let achievement = env.stats.achievements().find((item) => item.id === 'ten_hours');
+  assert.equal(achievement.current, 9, '9 小时应显示 9 小时');
+  assert.equal(achievement.achieved, false);
+
+  env.app.commit((state) => ({ ...state, focusRecords: makeRecords(10 * 3600) }), { reason: 'test-seed' });
+  achievement = env.stats.achievements().find((item) => item.id === 'ten_hours');
+  assert.equal(achievement.achieved, true);
+});
+
+test('成就：连续三天只在真的连续时达成', () => {
+  const env = makeEnv();
+  env.app.commit(
+    (state) => ({
+      ...state,
+      sessions: [
+        { id: 's1', date: '2025-10-16', state: 'completed', plannedMinutes: 45, actualMinutes: 45, taskId: 't', startMinutes: 960, endMinutes: 1005 },
+        { id: 's2', date: '2025-10-15', state: 'completed', plannedMinutes: 45, actualMinutes: 45, taskId: 't', startMinutes: 960, endMinutes: 1005 },
+        { id: 's3', date: '2025-10-11', state: 'completed', plannedMinutes: 45, actualMinutes: 45, taskId: 't', startMinutes: 960, endMinutes: 1005 },
+      ],
+    }),
+    { reason: 'test-seed' },
+  );
+
+  const streakThree = env.stats.achievements().find((item) => item.id === 'streak_three');
+  assert.equal(streakThree.current, 2, '16 号与 15 号连续两天，11 号断开');
+  assert.equal(streakThree.achieved, false);
+});

@@ -1306,3 +1306,33 @@ legend {
 
 .trigger-row__state,
 .notify-row__state { flex: 0 0 auto; }
+
+/* —— 成就卡片 —— */
+.achievement-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.achievement {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+}
+
+.achievement.is-achieved {
+  border-color: var(--color-success);
+  background: var(--color-success-soft);
+}
+
+.achievement__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.achievement__label {
+  font-weight: 600;
+}

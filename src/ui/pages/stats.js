@@ -249,6 +249,30 @@ export function renderStats({ app, services, now }) {
     }),
   );
 
+  /* ---------- 成就 ---------- */
+  const achievements = stats.achievements();
+  const achievedCount = achievements.filter((item) => item.achieved).length;
+  nodes.push(
+    card({
+      title: `成就（已达成 ${achievedCount} / ${achievements.length}）`,
+      hint: '全部由真实记录推导；未达成的也会显示当前进度，方便你知道差多少',
+      body: el(
+        'div.achievement-grid',
+        {},
+        achievements.map((item) =>
+          el('div.achievement', { class: item.achieved ? 'is-achieved' : null }, [
+            el('div.achievement__head', {}, [
+              el('span.achievement__label', { text: item.label }),
+              item.achieved ? pill('已达成', 'success') : pill(`${item.current}/${item.target}${item.unit}`, 'neutral'),
+            ]),
+            el('div.card__hint', { text: item.description }),
+            progressBar({ value: item.ratio, kind: item.achieved ? 'rest' : 'primary' }),
+          ]),
+        ),
+      ),
+    }),
+  );
+
   /* ---------- 数据说明 ---------- */
   nodes.push(
     notice({

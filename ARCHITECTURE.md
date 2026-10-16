@@ -132,6 +132,25 @@ export function run(input) {}
 | `planService.js` | 预览生成、计划应用、版本链、撤销、过期检测、会话同步 | 未确认前不写业务数据；确认时数据与计划一次提交 |
 | `focusService.js` | 开始/结束学习、记录实际时长 | 同一天只允许一段进行中；结束只记录事实，不自动改未来安排 |
 
+### 2.5 产品化新增的模块（v1.0.0）
+
+| 模块 | 层 | 职责 | 关键约束 |
+|---|---|---|---|
+| `services/preferences.js` | services | 设备级偏好（外观/通知/专注/奖励） | 只存小体积 JSON；读取失败回退默认值 |
+| `services/appearanceService.js` | services | 主题与壁纸的应用 | 主题只改 `<html>` 属性，**不触发整页重绘** |
+| `storage/wallpaperStore.js` | storage | 壁纸二进制存取（IndexedDB） | 只存一张；失败安全降级；绝不上传 |
+| `services/notificationService.js` | services | 权限、调度、去重 | 按**真实时间戳**比较；持久化去重；页面关闭后不承诺 |
+| `services/pomodoroTimer.js` | services | 计时状态的**纯函数**层 | 结束时刻用绝对时间戳；暂停冻结剩余秒数 |
+| `services/pomodoroService.js` | services | 阶段流转与记录写入 | 一轮番茄**不**标记任务完成；休息不写入学习记录 |
+| `services/rewardService.js` | services | 奖项、触发规则、抽奖 | 机会 = `floor(真实进度/阈值) − 已发放`（幂等，防重复发奖） |
+| `services/statsService.js` | services | 全部统计与成就 | 只读真实记录；无数据时返回"未知"而不是 0 |
+| `ui/labels.js` | ui | 内部枚举 → 用户文案 | 界面**不得**直接渲染内部码 |
+
+**为什么把番茄钟拆成 `pomodoroTimer.js` + `pomodoroService.js`**：
+计时是全项目唯一对时间精度有硬要求的部分。把"给定时间戳 → 计算剩余时间"抽成纯函数后，
+标签页节流、电脑休眠、暂停恢复、刷新恢复这些场景都可以用构造的时间戳直接单元测试，
+而不需要真的等待时间流逝，也不需要启动应用。
+
 **草稿变更层（`src/domain/mutations.js`）**
 
 阶段 3 起，界面的每一次修改都描述成一个**变更操作**（op）：

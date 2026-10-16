@@ -333,12 +333,26 @@ function renderStorageCard({ app, services, state }) {
   const usedText = el('div.metric__value', { text: '计算中…', role: 'status', 'aria-live': 'polite' });
   const quotaText = el('div.metric__value', { text: '—' });
   const reminderHost = el('div');
+  const pressureHost = el('div');
 
   app.storageUsage().then((usage) => {
     // 用户可能已经离开设置页（节点被移除），此时写入会报错，因此先判断节点是否还活着
-    if (!isNodeLive(usedText) || !isNodeLive(quotaText)) return;
+    if (!isNodeLive(usedText) || !isNodeLive(quotaText) || !isNodeLive(pressureHost)) return;
     usedText.textContent = usage.usedBytes === null ? '不可用' : formatBytes(usage.usedBytes);
     quotaText.textContent = usage.quotaBytes ? formatBytes(usage.quotaBytes) : '浏览器未提供';
+
+    // 本地存储通常只有约 5 MB。接近上限时必须主动提醒，否则下一次保存会静默失败。
+    const SOFT_LIMIT_BYTES = 4 * 1024 * 1024;
+    if (usage.usedBytes !== null && usage.usedBytes > SOFT_LIMIT_BYTES) {
+      pressureHost.appendChild(
+        notice({
+          level: 'warning',
+          title: '本地数据接近浏览器容量上限',
+          message: `当前已使用 ${formatBytes(usage.usedBytes)}（浏览器通常只给约 5 MB）。建议先导出备份，然后在下面清理已取消的时段与旧版本记录；否则新的保存可能失败。`,
+          actions: [button('立即导出备份', { size: 'sm', onClick: () => exportBackup(app) })],
+        }),
+      );
+    }
   });
 
   const lastBackup = state.meta?.lastBackupAt ?? null;
@@ -368,6 +382,7 @@ function renderStorageCard({ app, services, state }) {
         el('div.metric', {}, [el('div.metric__label', { text: '上次导出备份' }), el('div.metric__value', { text: lastBackup ?? '从未导出' })]),
       ]),
       reminderHost,
+      pressureHost,
       el('div.form-actions', { style: { justifyContent: 'flex-start' } }, [
         button('导出备份', { variant: 'primary', onClick: () => exportBackup(app) }),
         button('导入备份…', { onClick: () => importBackup({ app, services }) }),

@@ -38,6 +38,20 @@ const REQUIRED_FILES = [
   'src/services/taskService.js',
   'src/services/planService.js',
   'src/services/focusService.js',
+  'src/services/preferences.js',
+  'src/services/appearanceService.js',
+  'src/services/notificationService.js',
+  'src/services/pomodoroTimer.js',
+  'src/services/pomodoroService.js',
+  'src/services/rewardService.js',
+  'src/services/statsService.js',
+  'src/storage/wallpaperStore.js',
+  'src/ui/labels.js',
+  'src/ui/pages/home.js',
+  'src/ui/pages/appearance.js',
+  'src/ui/pages/notifications.js',
+  'src/ui/pages/rewards.js',
+  'src/ui/pages/stats.js',
   'src/ui/shell.js',
   'src/ui/router.js',
   'src/ui/styles/tokens.css',
@@ -101,15 +115,17 @@ test('README 记录了实际的运行命令与依赖政策（防止文档与实�
   assert.match(readme, /依赖政策|零依赖/, 'README 必须写明依赖政策');
 });
 
-test('CHANGELOG 记录了阶段 1 的改动与已知限制', async () => {
+test('CHANGELOG 记录了每个版本的改动、测试结果与已知问题', async () => {
   const changelog = await readFile(join(projectRoot, 'CHANGELOG.md'), 'utf8');
-  assert.match(changelog, /阶段 1|0\.1\.0/, 'CHANGELOG 必须包含阶段 1 条目');
+  assert.match(changelog, /## \[1\.0\.0\]/, '必须包含当前版本条目');
+  assert.match(changelog, /测试结果/, 'CHANGELOG 必须记录真实测试结果');
   assert.match(changelog, /已知限制|已知问题/, 'CHANGELOG 必须记录已知限制');
 });
 
-test('ARCHITECTURE 说明了分层与单向依赖，并记录引擎尚未实现', async () => {
+test('ARCHITECTURE 说明了分层与单向依赖，并覆盖引擎与新服务层', async () => {
   const arch = await readFile(join(projectRoot, 'ARCHITECTURE.md'), 'utf8');
   assert.match(arch, /src\/domain/);
-  assert.match(arch, /src\/engine/, '必须为阶段 2 的引擎预留并说明分层');
+  assert.match(arch, /src\/engine/, '必须说明引擎的分层位置');
   assert.match(arch, /单向|依赖方向/);
+  assert.match(arch, /mutations/, '必须说明草稿变更层（写入路径唯一实现）');
 });

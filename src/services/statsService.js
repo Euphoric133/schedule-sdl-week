@@ -246,6 +246,94 @@ export function createStatsService({ app, now }) {
     return { ...day, streak, tasks: taskStats };
   }
 
+  /**
+   * 成就：全部由**真实记录**推导，不存储、不伪造。
+   *
+   * 每个成就都给出当前进度与目标，因此"未达成"也是可解释的信息，
+   * 而不是一个空徽章。没有任何记录时全部显示为未达成。
+   */
+  function achievements() {
+    const state = app.getState();
+    const today = now().date;
+    const streak = computeStreak(state, today);
+    const progress = computeFocusProgress(state);
+    const taskStats = tasks();
+    const rewardCount = (state.rewardHistory ?? []).length;
+
+    const definitions = [
+      {
+        id: 'first_focus',
+        label: '第一次专注',
+        description: '完成第一个番茄钟',
+        current: progress.completedRounds,
+        target: 1,
+        unit: '个',
+      },
+      {
+        id: 'ten_rounds',
+        label: '专注十轮',
+        description: '累计完成 10 个番茄钟',
+        current: progress.completedRounds,
+        target: 10,
+        unit: '个',
+      },
+      {
+        id: 'ten_hours',
+        label: '累计十小时',
+        description: '累计专注 10 小时',
+        current: Math.floor(progress.totalMinutes / 60),
+        target: 10,
+        unit: '小时',
+      },
+      {
+        id: 'streak_three',
+        label: '连续三天',
+        description: '连续 3 天有完成的学习记录',
+        current: streak.current,
+        target: 3,
+        unit: '天',
+      },
+      {
+        id: 'streak_seven',
+        label: '连续一周',
+        description: '连续 7 天有完成的学习记录',
+        current: streak.current,
+        target: 7,
+        unit: '天',
+      },
+      {
+        id: 'task_finisher',
+        label: '完成五个任务',
+        description: '把 5 个任务标记为已完成',
+        current: taskStats.completed,
+        target: 5,
+        unit: '个',
+      },
+      {
+        id: 'reward_ten',
+        label: '奖励十连',
+        description: '累计中奖 10 次',
+        current: rewardCount,
+        target: 10,
+        unit: '次',
+      },
+    ];
+
+    return definitions.map((definition) => ({
+      ...definition,
+      ratio: definition.target > 0 ? Math.min(1, definition.current / definition.target) : 0,
+      achieved: definition.current >= definition.target,
+    }));
+  }
+
+  /** 专注维度的汇总（成就与统计共用，避免两处口径不同） */
+  function computeFocusProgress(state) {
+    const records = state.focusRecords ?? [];
+    const completedRounds = records.filter((record) => record.completed).length;
+    const totalMinutes = Math.round(records.reduce((sum, record) => sum + (record.focusedSeconds ?? 0), 0) / 60);
+    return { completedRounds, totalMinutes };
+  }
+
   /** 是否完全没有数据（界面据此显示"还没有可统计的数据"而不是一堆 0 的图） */
   function hasAnyData() {
     const state = app.getState();
@@ -256,5 +344,16 @@ export function createStatsService({ app, now }) {
     );
   }
 
-  return { daily, weekly, bySubject, tasks, focus, rewards, today, hasAnyData, aggregateDay: (date) => aggregateDay(app.getState(), date) };
+  return {
+    daily,
+    weekly,
+    bySubject,
+    tasks,
+    focus,
+    rewards,
+    today,
+    achievements,
+    hasAnyData,
+    aggregateDay: (date) => aggregateDay(app.getState(), date),
+  };
 }
