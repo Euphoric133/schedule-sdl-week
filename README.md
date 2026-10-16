@@ -32,7 +32,7 @@
   每个未安排任务都有原因码、中文说明与可选处理建议；超载时如实报告，不偷偷取消缓冲。
 - 完整的领域数据模型、校验逻辑、本地持久化（自动备份 / 损坏恢复 / 导入导出严格校验）、
   六个页面与小时刻度时间轴、任务表单、危险操作二次确认。
-- **337 个自动化测试**（含 H1–H10 的负向测试与单文件产物的真实执行测试）。
+- **338 个自动化测试**（含 H1–H10 的负向测试与单文件产物的真实执行测试）。
 
 **还没做完的部分**
 
@@ -86,7 +86,7 @@ node scripts/build-standalone.mjs
 ### 运行测试
 
 ```bash
-node --test "tests/**/*.test.js"           # 全部测试（337 个）
+node --test "tests/**/*.test.js"           # 全部测试（338 个）
 node --test "tests/unit/*.test.js"         # 领域层
 node --test "tests/engine/*.test.js"       # 排程引擎（含 H1–H10 负向测试）
 node --test "tests/integration/*.test.js"  # 服务层、预览闭环、界面冒烟、构建产物

@@ -792,17 +792,77 @@ function optimizePlacements({ placements, policy, occupiedSpans, studyWindows, t
   const passesToRun = Math.max(0, Math.min(passes ?? policy.optimizationPasses, 5));
 
   for (let pass = 0; pass < passesToRun; pass += 1) {
-    const improved = tryCompact(current, { occupiedSpans, studyWindows, taskById });
+    // 占用集合必须包含**同一天的休息块**：休息也是真实占用时间轴的时间，
+    // 只考虑保留时段与固定活动会让"向前压缩"把学习片段挪到休息上（H2/H8 违规）。
+    const restSpans = current.filter((item) => item.kind === 'rest');
+    const improved = tryCompact(current, {
+      occupiedSpans: [...occupiedSpans, ...restSpans],
+      studyWindows,
+      taskById,
+    });
     if (!improved.changed) break;
     current = improved.placements;
   }
 
-  return current.sort(
+  const sorted = current.sort(
     (a, b) =>
       (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) ||
       a.startMinutes - b.startMinutes ||
       (a.id < b.id ? -1 : 1),
   );
+
+  // 最后一道保险：消解同一天内的区间重叠（按时间顺序把后面的块顺延，必要时放弃休息块）。
+  // 局部优化只保证"学习片段互不重叠"，但压缩后的学习片段仍可能与休息块相交，
+  // 因此在交付给硬约束校验器之前，这里必须把时间轴整理成互不重叠的序列。
+  return resolveOverlaps(sorted);
+}
+
+/**
+ * 消解计划内的区间重叠。
+ *
+ * 规则（确定性）：
+ * - 按 (日期, 开始时间, 类型, ID) 顺序处理；
+ * - 若某块与"已经确定下来的块"重叠：
+ *   - 休息块 → 顺延到间隙之后；若当天已无空间则放弃该休息块（休息不是硬性任务）；
+ *   - 学习块 → 顺延到空闲处；若顺延后超出当日最后一个可用窗口，则**保留原位置**，
+ *     交由硬约束校验器报告（绝不静默丢弃学习内容）。
+ */
+function resolveOverlaps(placements) {
+  const result = [];
+  const lastEndByDate = new Map();
+
+  for (const item of placements) {
+    const length = item.endMinutes - item.startMinutes;
+    const lastEnd = lastEndByDate.get(item.date);
+
+    if (lastEnd === undefined || item.startMinutes >= lastEnd) {
+      result.push(item);
+      lastEndByDate.set(item.date, item.endMinutes);
+      continue;
+    }
+
+    if (item.kind === 'rest') {
+      const shiftedStart = lastEnd;
+      if (shiftedStart + length <= 1440) {
+        result.push({ ...item, startMinutes: shiftedStart, endMinutes: shiftedStart + length });
+        lastEndByDate.set(item.date, shiftedStart + length);
+      }
+      // 放不下的休息直接省略（学习优先，休息不是硬性任务）
+      continue;
+    }
+
+    const shiftedStart = lastEnd;
+    if (shiftedStart + length <= 1440) {
+      result.push({ ...item, startMinutes: shiftedStart, endMinutes: shiftedStart + length });
+      lastEndByDate.set(item.date, shiftedStart + length);
+      continue;
+    }
+
+    // 无法顺延：保留原位置，交给校验器如实报告冲突
+    result.push(item);
+  }
+
+  return result;
 }
 
 function dedupePlacements(placements) {

@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { PLAN_STATUS } from '../../src/domain/plan.js';
 import { SESSION_STATE } from '../../src/domain/session.js';
 import { UNSCHEDULED_REASON } from '../../src/engine/policy.js';
+import { describeViolations } from '../../src/engine/constraints.js';
 import { blocksOfTask, engineContext, overlaps, plannedMinutesOf, stablePlanShape, studyBlocks } from '../helpers/engine.js';
 
 /* ------------------------------------------------------------------ *
@@ -521,6 +522,37 @@ test('场景 18b：凌晨（04:00 之前）的窗口归属前一天业务日，�
   }
   for (const block of studyBlocks(result.plan)) {
     assert.ok(block.startMinutes >= 0 && block.endMinutes <= 60, '凌晨窗口内的片段应落在 00:00–01:00');
+  }
+});
+
+test('回归：多任务 + 依赖 + 休息插入时，计划内不出现任何区间重叠', () => {
+  // 这个组合曾经触发真实缺陷：局部优化把学习片段向前压缩时没有避开休息块，
+  // 导致"休息 17:00–17:10"与"学习 17:00–17:45"重叠（H2/H8 违规，应用预览被拒绝）。
+  const env = engineContext();
+  env.addTask({ title: 'A', plannedMinutes: 120, deadlineDate: '2025-10-18' });
+  env.addTask({ title: 'B', subject: '英语', plannedMinutes: 90, deadlineDate: '2025-10-20' });
+  const dep = env.addTask({ title: 'C', subject: '物理', plannedMinutes: 150, deadlineDate: '2025-10-22' });
+  env.addTask({ title: 'D', subject: '物理', plannedMinutes: 60, deadlineDate: '2025-10-21', dependsOn: [dep.id] });
+
+  const result = env.run();
+  assert.equal(result.ok, true, describeViolations(result.violations ?? []));
+
+  const byDate = new Map();
+  for (const block of result.plan.blocks) {
+    if (block.kind === 'fixed') continue; // 固定活动之间允许重叠
+    if (!byDate.has(block.date)) byDate.set(block.date, []);
+    byDate.get(block.date).push(block);
+  }
+  for (const [date, list] of byDate) {
+    const sorted = [...list].sort((a, b) => a.startMinutes - b.startMinutes);
+    for (let i = 1; i < sorted.length; i += 1) {
+      const previous = sorted[i - 1];
+      const current = sorted[i];
+      assert.ok(
+        current.startMinutes >= previous.endMinutes,
+        `${date} 出现重叠：${previous.kind} ${previous.startMinutes}-${previous.endMinutes} 与 ${current.kind} ${current.startMinutes}-${current.endMinutes}`,
+      );
+    }
   }
 });
 
