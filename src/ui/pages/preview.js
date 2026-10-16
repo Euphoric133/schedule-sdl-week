@@ -1,12 +1,14 @@
 /**
- * 调整预览页（产品核心页）。
+ * 调整预览页：排程完成后的**确认步骤**。
  *
- * 阶段 1 状态：页面骨架、版本历史与"撤销上一次应用"已可用；
- * 候选计划的**差异明细**（新增/移动/缩短/拆分/取消/不变/锁定影响/每日指标变化）
- * 需要排程引擎（阶段 2）产出 diff 数据后填充，本页已按最终结构预留位置。
+ * 用户在这里只做一件事：看清楚"如果应用这份候选计划会发生什么"，然后确认或放弃。
+ * 它不是排程入口——排程入口是首页与七天计划页的「生成计划」按钮。
  *
- * 铁律：本页任何操作都不得在用户未确认时修改正式计划；
- * "放弃修改"必须是零副作用的操作。
+ * 铁律：
+ * - 任何操作都不得在用户未确认时修改正式计划；
+ * - 「放弃修改」必须零副作用；
+ * - 没有变化时明确说"本次无需调整"，而不是给用户一堆毫无意义的 0；
+ * - 候选计划与正式计划必须一眼可区分。
  */
 
 import { button, card, emptyState, notice, pill, versionTable } from '../components.js';
@@ -14,6 +16,7 @@ import { el, toast } from '../dom.js';
 import { formatDuration, formatMinutes } from '../../domain/time.js';
 import { PLAN_STATUS_LABELS_ZH } from '../../domain/plan.js';
 import { confirmDialog } from '../modal.js';
+import { reasonLabel } from '../labels.js';
 
 export function renderPreview({ app, services }) {
   const state = app.getState();
@@ -24,29 +27,37 @@ export function renderPreview({ app, services }) {
 
   const nodes = [];
 
+  const diff = preview?.diff ?? null;
+  const counts = diff?.counts ?? null;
+  const changeCount = counts
+    ? (counts.added ?? 0) + (counts.moved ?? 0) + (counts.resized ?? 0) + (counts.split ?? 0) + (counts.cancelled ?? 0)
+    : 0;
+
   nodes.push(
     el('header.page-head', {}, [
       el('div', {}, [
         el('h1', { text: '调整预览' }),
-        el('p.page-head__sub', { text: '任何改动都会先生成候选计划，只有你确认后才替换正式计划' }),
+        el('p.page-head__sub', {
+          text: preview
+            ? '确认步骤：下面是应用这份候选计划后会发生的变化。确认之前，正式计划不会有任何改动。'
+            : '这里显示排程结果供你确认。先到首页或七天计划页点「生成计划」。',
+        }),
       ]),
       el('div.page-head__actions', {}, [
+        button('重新生成', {
+          size: 'sm',
+          onClick: () => {
+            const result = services.ui.requestPreview({ changeSummary: '重新生成计划', trigger: 'preview-page' });
+            if (!result.ok) toast(result.message, 'error', 8000);
+          },
+        }),
         button('撤销上一步', {
           size: 'sm',
-          disabled: versions.filter((v) => !v.current).length === 0,
+          disabled: versions.filter((version) => !version.current).length === 0,
           onClick: () => handleUndo({ services, versions }),
         }),
       ]),
     ]),
-  );
-
-  nodes.push(
-    notice({
-      level: 'info',
-      title: '阶段 1：预览框架已就绪，差异明细待引擎接入',
-      message:
-        '排程引擎完成后，本页会逐项列出：新增了哪些时段、哪些被移动/缩短/拆分/取消、每项调整的原时间与新时间、调整原因、未受影响的安排、锁定时段是否被影响、每日学习量与休息/缓冲变化、以及无法安排的任务与原因。',
-    }),
   );
 
   // 屏幕阅读器提示：候选计划未生效，必须由用户确认
@@ -59,26 +70,53 @@ export function renderPreview({ app, services }) {
   }
 
   if (!preview) {
+    const hasTasks = (state.tasks ?? []).some((task) => task.status === 'not_started' || task.status === 'in_progress');
     nodes.push(
       emptyState({
         title: '当前没有待确认的候选计划',
-        message: plan && plan.version > 0
-          ? `正式计划为 v${plan.version}（${PLAN_STATUS_LABELS_ZH[plan.status] ?? plan.status}）。当你新增任务、修改截止时间、移动时段或修改可用时间时，这里会出现候选计划与差异预览。`
-          : '还没有正式计划。先创建任务，然后在阶段 2 完成后生成第一份计划。',
-        actions: [
-          plan && plan.version > 0
-            ? button('查看七天计划', { onClick: () => { globalThis.location.hash = '#/week'; } })
-            : button('前往任务列表', { variant: 'primary', onClick: () => { globalThis.location.hash = '#/tasks'; } }),
-        ],
+        message: !hasTasks
+          ? '还没有可以安排的学习任务。先到「任务」页新建任务（填好预计用时与截止日期），再回到首页点「生成七天计划」。'
+          : plan && plan.version > 0
+            ? `正式计划当前为 v${plan.version}（${PLAN_STATUS_LABELS_ZH[plan.status] ?? plan.status}）。当你新增任务、修改截止时间、移动时段或调整可用时间后，这里会出现候选计划与差异预览。`
+            : '已经有任务了。回到首页点「生成七天计划」，这里会显示排程结果与本次的全部变化。',
+        actions: !hasTasks
+          ? [button('去新建任务', { variant: 'primary', onClick: () => { globalThis.location.hash = '#/tasks'; } })]
+          : [
+              button('生成七天计划', {
+                variant: 'primary',
+                onClick: () => {
+                  const result = services.ui.requestPreview({ changeSummary: '生成计划', trigger: 'preview-empty' });
+                  if (!result.ok) toast(result.message, 'error', 8000);
+                },
+              }),
+              button('查看七天计划', { onClick: () => { globalThis.location.hash = '#/week'; } }),
+            ],
+      }),
+    );
+  } else if (changeCount === 0) {
+    // 没有变化时不能给用户一堆 0：明确告诉他"无需调整"，并说明这意味着什么
+    nodes.push(
+      card({
+        title: '本次无需调整',
+        hint: `候选计划与当前正式计划完全一致（保持不变的时段：${counts?.unchanged ?? 0} 个）`,
+        body: el('div', {}, [
+          el('p', {
+            text: '重新计算之后，所有学习时段、固定活动、休息与缓冲都与当前正式计划相同，因此没有需要你确认的改动。',
+          }),
+          el('div.card__hint', {
+            text: '如果你期待看到变化，通常是这几个原因：任务本身没有改动、可用时间没有改动、或者改动的部分已经被现有计划满足（例如把截止时间推迟，现有安排本来就更早）。',
+          }),
+          el('div.form-actions', {}, [
+            button('放弃修改', { variant: 'primary', onClick: () => handleDiscard({ services }) }),
+            button('仍然应用（生成一个新版本）', { onClick: () => handleApply({ services, preview, changeCount }) }),
+          ]),
+        ]),
       }),
     );
   } else {
-    const diff = preview.diff ?? {};
-    const counts = diff.counts ?? {};
-
     nodes.push(
       card({
-        title: `候选计划（基于 v${preview.baseVersion}）`,
+        title: `将发生的调整（${changeCount} 项）`,
         hint: '预览过期后不会被应用，避免用旧数据覆盖新数据',
         body: el('div', {}, [
           el('div.metric-row', {}, [
@@ -92,7 +130,7 @@ export function renderPreview({ app, services }) {
           ]),
           el('div.form-actions', {}, [
             button('放弃修改', { variant: 'ghost', onClick: () => handleDiscard({ services }) }),
-            button('确认应用', { variant: 'primary', onClick: () => handleApply({ services, preview }) }),
+            button('确认应用', { variant: 'primary', onClick: () => handleApply({ services, preview, state, changeCount }) }),
           ]),
         ]),
       }),
@@ -289,8 +327,8 @@ export function renderPreview({ app, services }) {
             {},
             diff.unscheduledAfter.map((item) =>
               el('li.diag-item', {}, [
-                el('span.diag-item__code', { text: item.reasonCode ?? 'unknown' }),
-                el('span', { text: `${item.taskTitle ?? item.taskId}：剩余 ${formatDuration(item.remainingMinutes ?? 0)}。${item.reasonText ?? ''}` }),
+                el('span.diag-item__code', { text: reasonLabel(item.reasonCode) }),
+                el('span', { text: `${item.taskTitle ?? '未命名任务'}：剩余 ${formatDuration(item.remainingMinutes ?? 0)}。${item.reasonText ?? ''}` }),
               ]),
             ),
           ),
@@ -336,9 +374,9 @@ export function renderPreview({ app, services }) {
                 {},
                 (plan.unscheduled ?? []).map((item) =>
                   el('li.diag-item', {}, [
-                    el('span.diag-item__code', { text: item.reasonCode ?? 'unknown' }),
+                    el('span.diag-item__code', { text: reasonLabel(item.reasonCode) }),
                     el('span', {
-                      text: `${item.taskTitle ?? item.taskId}：剩余 ${formatDuration(item.remainingMinutes ?? 0)}。${item.reasonText ?? ''}${
+                      text: `${item.taskTitle ?? '未命名任务'}：剩余 ${formatDuration(item.remainingMinutes ?? 0)}。${item.reasonText ?? ''}${
                         item.gapMinutes ? `（缺口 ${formatDuration(item.gapMinutes)}）` : ''
                       }`,
                     }),
@@ -406,32 +444,91 @@ async function handleUndo({ services, versions }) {
   toast(`已撤销：从 v${result.undoneFrom} 恢复到 v${result.restoredFrom} 的内容（新版本号 v${result.plan.version}）。`, 'success');
 }
 
+/**
+ * 生成"应用后会发生什么"的人类可读清单。
+ *
+ * 这里刻意不展示版本号、状态码、指纹等内部信息——用户关心的是
+ * "我接下来几天的安排会变成什么样"。
+ */
+function describeChanges({ preview, state }) {
+  const counts = preview.diff?.counts ?? {};
+  const bullets = [];
+
+  const sumMinutes = (list) => list.reduce((total, item) => total + ((item.endMinutes ?? 0) - (item.startMinutes ?? 0) || item.minutes || 0), 0);
+
+  if (counts.added) {
+    bullets.push(`新增 ${counts.added} 个学习时段${sumMinutes(preview.diff.added ?? []) > 0 ? `，共 ${formatDuration(sumMinutes(preview.diff.added))}` : ''}`);
+  }
+  if (counts.moved) bullets.push(`移动 ${counts.moved} 个学习时段到新的时间`);
+  if (counts.resized) bullets.push(`调整 ${counts.resized} 个学习时段的时长`);
+  if (counts.split) bullets.push(`把 ${counts.split} 个较长时段拆成多段`);
+  if (counts.cancelled) bullets.push(`取消 ${counts.cancelled} 个不再需要的时段（记录会保留为历史）`);
+  if (counts.unchanged) bullets.push(`${counts.unchanged} 个时段保持原样不变`);
+
+  const protectedCount = (state.sessions ?? []).filter(
+    (session) => session.state === 'completed' || session.locked === true || session.state === 'in_progress',
+  ).length;
+  if (protectedCount > 0) {
+    bullets.push(`已完成的 ${(state.sessions ?? []).filter((s) => s.state === 'completed').length} 条学习记录、已锁定的 ${(state.sessions ?? []).filter((s) => s.locked && s.state !== 'completed').length} 个时段都会被完整保留`);
+  }
+
+  const unscheduled = preview.diff?.unscheduledAfter ?? [];
+  if (unscheduled.length > 0) {
+    bullets.push(`有 ${unscheduled.length} 个任务这次仍然无法完全安排，预览里会说明原因`);
+  }
+  const risks = (preview.risks ?? []).filter((risk) => risk.level === 'at_risk' || risk.level === 'impossible');
+  if (risks.length > 0) {
+    bullets.push(`有 ${risks.length} 个任务存在逾期风险`);
+  }
+  if (bullets.length === 0) bullets.push('本次没有时段变化，应用后只会生成一个新版本');
+  return bullets;
+}
+
+async function handleApply({ services, preview, state, changeCount = 0 }) {
+  const bullets = describeChanges({ preview, state: state ?? { sessions: [] } });
+
+  const confirmed = await confirmDialog({
+    title: changeCount > 0 ? '确认应用这份计划？' : '确认生成一个新版本？',
+    message:
+      changeCount > 0
+        ? '应用后，未来七天的学习安排会按上面的清单更新；当前正式计划会存为一个可以撤销的历史版本。'
+        : '本次没有实际变化。应用只会记录一个新版本，计划内容与现在完全相同。',
+    bullets,
+    confirmLabel: changeCount > 0 ? '确认应用' : '仍然应用',
+    confirmVariant: 'primary',
+  });
+  if (!confirmed) return;
+
+  const result = services.applyPreview();
+  if (!result.ok) {
+    // 失败原因要说清楚，并且明确告诉用户"数据没有被改动"
+    const first = result.issues?.[0];
+    const isStale = result.code === 'stale_preview' || /过期|发生变化/.test(first?.message ?? '');
+    toast(
+      isStale
+        ? '这份预览已经过期：等待确认期间数据又变了，因此没有应用。请重新点「生成计划」再确认。'
+        : `${first?.message ?? '应用失败'}——正式计划与所有学习记录都没有被改动。`,
+      'error',
+      9000,
+    );
+    return;
+  }
+
+  toast(
+    changeCount > 0
+      ? `已应用计划：${changeCount} 项调整生效，可随时在「版本历史」撤销。`
+      : '已生成新版本（内容与之前相同）。',
+    'success',
+    6000,
+  );
+  globalThis.location.hash = '#/week';
+}
+
 async function handleDiscard({ services }) {
   const result = services.discardPreview();
   if (!result.ok) {
     toast(result.issues?.[0]?.message ?? '放弃失败。', 'error');
     return;
   }
-  toast('已放弃候选计划，正式计划没有任何变化。', 'success');
-}
-
-async function handleApply({ services, preview }) {
-  const confirmed = await confirmDialog({
-    title: '确认应用这份候选计划？',
-    message: '应用后正式计划会被替换为候选计划，并保留一个可撤销的历史版本。',
-    bullets: [
-      `基础版本：v${preview.baseVersion}`,
-      `候选状态：${PLAN_STATUS_LABELS_ZH[preview.candidate?.status] ?? '—'}`,
-      '已完成的时段会被完整保留，锁定不会被自动更改',
-    ],
-    confirmLabel: '确认应用',
-    confirmVariant: 'primary',
-  });
-  if (!confirmed) return;
-  const result = services.applyPreview();
-  if (!result.ok) {
-    toast(result.issues?.[0]?.message ?? '应用失败，正式计划未做修改。', 'error', 8000);
-    return;
-  }
-  toast(`已应用计划 v${result.plan.version}。`, 'success');
+  toast('已放弃候选计划，正式计划与所有学习记录没有任何变化。', 'success');
 }

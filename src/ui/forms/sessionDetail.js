@@ -12,6 +12,7 @@ import { append, clear, el, toast } from '../dom.js';
 import { button, pill } from '../components.js';
 import { SESSION_STATE } from '../../domain/session.js';
 import { formatDateWithWeekday, formatDuration, formatMinutes, isValidDateString, isValidTimeString } from '../../domain/time.js';
+import { placementReasonLabel } from '../labels.js';
 
 const STATE_LABELS = {
   [SESSION_STATE.FLEXIBLE]: '待进行（可调整）',
@@ -136,7 +137,7 @@ export function openSessionDetail({ sessionId, services }) {
       el('div.metric', {}, [el('div.metric__label', { text: '计划版本' }), el('div.metric__value', { text: session.planVersion ? `v${session.planVersion}` : '—' })]),
     ]),
     session.reasonCodes?.length > 0
-      ? el('div.card__hint', { text: `安排原因：${session.reasonCodes.map(reasonLabel).join('；')}` })
+      ? el('div.card__hint', { text: `安排原因：${session.reasonCodes.map(placementReasonLabel).join('；')}` })
       : null,
     isCompleted
       ? el('div.notice.notice--success', {}, [el('div', { text: '这是已完成的学习记录。它不会在任何重排或撤销中被删除或改回未完成。' })])
@@ -240,15 +241,3 @@ function stateKind(session) {
   return session.locked ? 'locked' : 'study';
 }
 
-const REASON_LABELS = {
-  preferred_focus_window: '落在你设置的偏好专注时段',
-  same_subject_continuity: '与同科目时段相邻，减少切换',
-  slot_fit: '与空闲时段长度贴合',
-  earlier_slot: '安排在当日较早时间',
-  urgent_deadline: '截止时间临近',
-  high_priority: '优先级较高',
-  undersized_final_chunk: '该任务最后的收尾片段',
-};
-function reasonLabel(code) {
-  return REASON_LABELS[code] ?? code;
-}

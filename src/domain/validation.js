@@ -85,10 +85,21 @@ export function mergeResults(...results) {
   return result(results.flatMap((r) => (r && Array.isArray(r.issues) ? r.issues : [])));
 }
 
-/** 面向用户的单行文案 */
+/**
+ * 面向用户的单行文案。
+ *
+ * 只返回中文消息：错误码（V001）与字段路径（deadlineDate）是给程序与日志看的，
+ * 直接显示在界面上只会让用户困惑。需要代码信息的场景请用 `formatIssueDebug`。
+ */
 export function formatIssue(issue) {
-  const where = issue.path ? `（${issue.path}）` : '';
-  return `[${issue.code}]${where} ${issue.message}`;
+  if (!issue) return '出现了未知问题。';
+  return issue.message ?? String(issue);
+}
+
+/** 带内部代码与字段路径的完整文案（日志、诊断、测试断言使用，不面向用户） */
+export function formatIssueDebug(issue) {
+  const where = issue?.path ? `（${issue.path}）` : '';
+  return `[${issue?.code}]${where} ${issue?.message}`;
 }
 
 /** 汇总为多行可读文本（用于导入失败提示与诊断面板） */

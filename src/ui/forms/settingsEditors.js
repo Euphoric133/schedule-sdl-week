@@ -14,6 +14,20 @@ import { formatIssue } from '../../domain/validation.js';
 
 const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7];
 
+/** 排程参数字段的中文名（错误提示里不能出现内部字段名） */
+const FIELD_LABELS_ZH = Object.freeze({
+  defaultMinChunkMinutes: '可拆分任务的最短时段',
+  defaultMaxChunkMinutes: '可拆分任务的最长时段',
+  nonSplittableMinMinutes: '不可拆分任务的最短时长',
+  nonSplittableMaxMinutes: '不可拆分任务的最长时长',
+  baseContinuousMinutes: '连续学习基础上限',
+  subjectSwitchPenaltyMinutes: '科目切换惩罚',
+  bufferRatio: '机动缓冲比例',
+  maxSessionsPerDay: '每日片段数上限',
+  riskWindowDays: '风险评估窗口',
+  planHistoryLimit: '保留版本数上限',
+});
+
 /** 每一行：星期 + 一组可增删的时间窗口 */
 function windowRow(day, windows) {
   const rows = [];
@@ -186,10 +200,10 @@ export function renderNumericEditor({ services, settings }) {
       numberField('nonSplittableMaxMinutes', '不可拆分任务：最长（分钟）', { min: 5, max: 1440 }),
       numberField('baseContinuousMinutes', '连续学习基础上限（分钟）', { min: 15, max: 480, hint: '按难度自适应：简单任务缩短、困难任务延长' }),
       numberField('subjectSwitchPenaltyMinutes', '科目切换惩罚（分钟）', { min: 0, max: 240, hint: '用于"同科目连续优先"的软偏好，不是硬约束' }),
-      numberField('bufferRatio', '机动缓冲比例（0–0.5）', { min: 0, max: 0.5, step: 0.05, hint: '逐日按 floor(净容量 × 比例) 预留，不跨日挪用' }),
+      numberField('bufferRatio', '机动缓冲比例（0–0.5）', { min: 0, max: 0.5, step: 0.05, hint: '逐日按净容量的这个比例预留；当天用不完不会挪到别的日期' }),
       numberField('maxSessionsPerDay', '每日片段数上限', { min: 1, max: 96, step: 1 }),
       numberField('riskWindowDays', '风险评估窗口（天）', { min: 1, max: 365, step: 1 }),
-      numberField('planHistoryLimit', '版本快照上限', { min: 1, max: 200, step: 1 }),
+      numberField('planHistoryLimit', '保留版本数上限', { min: 1, max: 200, step: 1 }),
     ]),
     el('fieldset', {}, [
       el('legend', { text: '休息规则（与机动缓冲分开统计）' }),
@@ -210,7 +224,7 @@ export function renderNumericEditor({ services, settings }) {
             if (key === 'restAfter' || key === 'restMinutes' || key === 'switchRest') continue;
             const value = Number(input.value);
             if (!Number.isFinite(value)) {
-              issues.push({ severity: 'error', code: 'V003', path: key, message: `「${key}」必须是数字。` });
+              issues.push({ severity: 'error', code: 'V003', path: key, message: `「${FIELD_LABELS_ZH[key] ?? '这一项'}」必须是数字。` });
               continue;
             }
             next[key] = value;
@@ -265,11 +279,11 @@ export function renderWeightsEditor({ services, settings }) {
     sumHost.textContent =
       Math.abs(total - 1) < 1e-9
         ? '四项权重之和为 1，符合常规设置。'
-        : `四项权重之和为 ${Math.round(total * 1000) / 1000}，计算时会自动归一化（结果不受影响）。`;
+        : `四项权重之和为 ${Math.round(total * 1000) / 1000}，计算时会按比例换算（结果不受影响）。`;
   };
 
   const host = el('div', {}, [
-    el('div', { class: 'card__hint', text: 'P = w1 × 截止紧迫度 + w2 × 难度 + w3 × 重要程度 + w4 × 拖延风险（评分只影响排序与放位偏好）' }),
+    el('div', { class: 'card__hint', text: '优先级由截止紧迫度、难度、重要程度、拖延风险加权求和（只影响排序与安排偏好）' }),
     el(
       'div.grid-2',
       { style: { marginTop: 'var(--space-2)' } },

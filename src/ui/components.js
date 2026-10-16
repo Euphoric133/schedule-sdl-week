@@ -108,14 +108,14 @@ export function diagList(items) {
     {},
     items.map((item) =>
       el('li.diag-item', {}, [
-        item.code ? el('span.diag-item__code', { text: item.code }) : null,
-        el('span', { text: item.message }),
+        item.code ? el('span.diag-item__code', { text: item.codeLabel ?? '' }) : null,
+        el('span', { text: issueMessage(item) }),
       ]),
     ),
   );
 }
 
-/** 任务列表（精简版：完整交互在阶段 3 实现） */
+/** 任务列表 */
 export function taskList(items, { renderActions } = {}) {
   if (items.length === 0) return null;
   return el(

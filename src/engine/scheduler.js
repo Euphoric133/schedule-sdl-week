@@ -210,6 +210,37 @@ export function run(input) {
     schedulableEntries.push(entry);
   }
 
+  /* ---------- 第 5b 步：没有可排内容的明确判定 ----------
+   * 不做这一步的后果很严重：用户在没有任务（或完全没有可用时间）时点"生成计划"，
+   * 会看到"完整可行 + 全部 0"，误以为系统已经生成了有意义的计划。
+   * 这里明确返回 invalid_input 并给出可执行的下一步建议。
+   */
+  const allTasks = state.tasks ?? [];
+  if (allTasks.length === 0) {
+    return invalidResult({
+      now,
+      windowStart,
+      windowEnd,
+      windowDays,
+      policy,
+      state,
+      baseVersion: input.baseVersion,
+      existingPlan: input.existingPlan,
+      taskById,
+      issues: [
+        {
+          severity: 'error',
+          code: VALIDATION_CODES.REQUIRED,
+          path: 'tasks',
+          message: '目前一个学习任务都没有，无法生成计划。请先在「任务」页新建至少一个任务，填好预计时长与截止日期。',
+        },
+      ],
+    });
+  }
+  // 说明：任务表非空但**没有可排任务**（例如全部已完成、已取消或已删除）是合法状态，
+  // 此时应当照常生成一份"没有学习安排"的计划，让用户可以预览影响（例如取消任务会释放哪些时段），
+  // 而不是报错拒绝。
+
   const orderedEntries = sortBySchedulePriority(schedulableEntries);
 
   const fragmentsByTask = new Map();

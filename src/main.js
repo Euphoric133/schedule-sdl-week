@@ -3,7 +3,7 @@
  *
  * 依赖方向（保持单向，不要打破）：
  *   ui  →  services  →  { domain, storage }
- *   engine（阶段 2）只依赖 domain，不依赖 ui / storage / services
+ *   engine 只依赖 domain，不依赖 ui / storage / services
  *
  * 本文件不做任何业务判断：只负责选择适配器、注入时钟与 ID 工厂、注册路由。
  */

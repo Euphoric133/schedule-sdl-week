@@ -178,7 +178,7 @@ function planHint(app, running) {
   const plan = app.getState().officialPlan;
   if (!plan) return '当前没有正式计划；本段一旦开始仍会被记录为学习事实。';
   return running
-    ? '本段已锁定，重新规划不会移动它。结束后的分支处理会先生成预览。'
+    ? '本段已锁定，重新规划不会移动它。结束时给出的后续调整会先生成预览。'
     : '开始后本段会被自动锁定；结束时可选择记录实际时长或（先生成预览）重新规划剩余工作。';
 }
 

@@ -1,7 +1,7 @@
 /**
  * 计划业务服务：正式计划 / 候选计划 / 预览 / 版本链 / 撤销 的**唯一**写入口。
  *
- * 完整的产品闭环（阶段 2 起可用）：
+ * 完整的产品闭环：
  *
  *   用户操作 → requestPreview()  → 引擎生成候选计划 + 差异（pendingPreview，只读草稿）
  *            → 用户确认 → applyPreview()   → 重新校验过期 → 事务式写入正式计划 + 版本快照
@@ -32,6 +32,7 @@ import { VALIDATION_CODES as C, error, result } from '../domain/validation.js';
 import { addDays, wallTimeFromDateObject, weekday } from '../domain/time.js';
 import { computeSchedulerInputHash, run as runScheduler } from '../engine/scheduler.js';
 import { applyDraftOps, describeDraftOps, evaluateCleanupImpact } from '../domain/mutations.js';
+import { diffPlans } from '../engine/diff.js';
 
 /**
  * @param {object} options
@@ -66,7 +67,7 @@ export function createPlanService({ app, idFactory }) {
 
   /**
    * 生成候选计划对象（由块集合与每日容量明细构造）。
-   * 引擎（阶段 2）会调用本函数把结果包装成完整的 SchedulePlan。
+   * 引擎会调用本函数把结果包装成完整的 SchedulePlan。
    */
   function buildCandidatePlan({
     blocks,
@@ -334,7 +335,7 @@ export function createPlanService({ app, idFactory }) {
 
   /**
    * 判断某个时段是否受保护（不可被自动排程改动）。
-   * 供 UI 显示锁定图标、以及阶段 2 引擎的保留集合构建使用。
+   * 供界面显示锁定图标、以及引擎构建保留集合时使用。
    */
   function isSessionProtected(session) {
     return isLockedForScheduling(session);
@@ -356,7 +357,7 @@ export function createPlanService({ app, idFactory }) {
    * @param {object} input
    * @param {{date: string, minutes: number}} input.now 当前本地墙上时间（由调用方注入，保证可测）
    * @param {Map<string, object>} [input.draft] 由 services 层构造的"变更后的草稿状态"
-   *   （阶段 3 的任务/设置编辑会传入；不传则使用当前状态）
+   *   （任务/设置编辑会传入；不传则使用当前状态）
    * @param {string} [input.changeSummary] 变更摘要（写入版本历史）
    * @param {string} [input.trigger] 触发来源
    * @returns {{ok: boolean, preview?: object, issues?: object[], code?: string, result?: object}}
@@ -368,7 +369,7 @@ export function createPlanService({ app, idFactory }) {
 
     /**
      * 变更来源有两种：
-     * - `ops`：数据变更描述（阶段 3 起界面统一走这条路），在内存里应用成草稿状态；
+     * - `ops`：数据变更描述（界面统一走这条路），在内存里应用成草稿状态；
      * - `draft`：调用方直接给出完整草稿状态（引擎测试与内部调用使用）。
      * 无论哪种，**都不会修改已保存的数据**。
      */
@@ -418,14 +419,16 @@ export function createPlanService({ app, idFactory }) {
       };
     }
 
-    const candidate = { ...engineResult.plan, generatedAt: nowIso() };
+    // 对齐会话身份后再计算差异与快照，保证"没变的安排"在各处都表现为没变
+    const alignedPlan = alignCandidateSessionIds(engineResult.plan, state);
+    const candidate = { ...alignedPlan, generatedAt: nowIso() };
     const summary = input.changeSummary ?? describeDraftOps(ops);
     const preview = {
       previewId: idFactory.next('preview'),
       baseVersion,
       baseInputHash,
       candidate,
-      diff: engineResult.diff,
+      diff: diffPlans(current, candidate, { taskById: engineResult.taskById ?? buildTaskMap(state) }),
       risks: engineResult.risks,
       diagnostics: engineResult.diagnostics,
       unscheduled: engineResult.unscheduled,
@@ -692,16 +695,68 @@ export function createPlanService({ app, idFactory }) {
    * - 窗口内其它旧时段（flexible）在本次排程中被替换 → 标记为 cancelled（保留记录，不物理删除）。
    * - 候选计划中的新学习块 → 创建 StudySession（state=flexible，source=engine，带 reasonCodes）。
    */
+  /**
+   * 把候选计划里的学习片段转换成 StudySession。
+   *
+   * **身份稳定**是这里最重要的事：如果每次重新规划都换一批新 ID，
+   * 差异引擎就会把"完全没变的时段"报成"全部取消 + 全部新增"，
+   * 用户点一次"生成计划"就以为整个计划被推翻了，历史记录也会迅速膨胀。
+   *
+   * 因此这里做两件事：
+   * 1. **身份匹配**：候选片段与既有片段（任务 + 日期 + 起止时间完全相同）视为同一段，
+   *    直接复用既有 ID 与其历史（例如已经累计的专注分钟数）。
+   * 2. **只取消真正被取代的**：身份没匹配上的既有片段才标记为已取消。
+   *
+   * 受保护时段（已完成 / 进行中 / 锁定）不参与匹配，永远原样保留。
+   */
+  /** 任务 id → 任务对象（差异文案需要任务标题） */
+  function buildTaskMap(state) {
+    return new Map((state.tasks ?? []).map((task) => [task.id, task]));
+  }
+
+  /** 会话身份键：任务 + 日期 + 起止时间 */
+  function sessionIdentityKey(taskId, date, startMinutes, endMinutes) {
+    return `${taskId}|${date}|${startMinutes}|${endMinutes}`;
+  }
+
+  /**
+   * 把候选计划里学习块的 `refId` 对齐到既有会话的身份上。
+   *
+   * 为什么要做这一步：引擎为每个片段派生的是**确定性但位置相关**的 ID。
+   * 只要重排后片段顺序变了，同一个安排也会拿到不同的 ID，
+   * 差异引擎就会把它报成"新增 + 取消"。这里按"任务 + 日期 + 起止时间"重新对齐，
+   * 让"没变的安排"在差异里真的显示为没变。
+   */
+  function alignCandidateSessionIds(candidate, draftState) {
+    const existing = draftState.sessions ?? [];
+    const index = new Map();
+    for (const session of existing) {
+      if (session.state === SESSION_STATE.CANCELLED) continue;
+      if (!isInWindow(session, candidate)) continue;
+      const key = sessionIdentityKey(session.taskId, session.date, session.startMinutes, session.endMinutes);
+      if (!index.has(key)) index.set(key, []);
+      index.get(key).push(session.id);
+    }
+
+    const used = new Set();
+    const blocks = (candidate.blocks ?? []).map((block) => {
+      if (block.kind !== BLOCK_KIND.STUDY) return block;
+      const key = sessionIdentityKey(block.taskId, block.date, block.startMinutes, block.endMinutes);
+      const pool = index.get(key);
+      const candidateId = pool && pool.length > 0 ? pool.shift() : null;
+      if (!candidateId || used.has(candidateId)) return block;
+      used.add(candidateId);
+      return { ...block, refId: candidateId };
+    });
+
+    return { ...candidate, blocks };
+  }
+
   function buildSessionPlan(candidate, draftState) {
     const existing = draftState.sessions ?? [];
-    const protectedIds = new Set(
-      existing
-        .filter((session) => session.state === SESSION_STATE.COMPLETED || session.locked === true || session.state === SESSION_STATE.IN_PROGRESS)
-        .map((session) => session.id),
-    );
-    // 只有"受保护"的既有会话才需要在候选计划的块里被跳过；
-    // 候选计划里其它块都是本次新排出来的，必须创建对应的 StudySession。
-    const reservedIds = protectedIds;
+    const isProtected = (session) =>
+      session.state === SESSION_STATE.COMPLETED || session.locked === true || session.state === SESSION_STATE.IN_PROGRESS;
+    const protectedIds = new Set(existing.filter(isProtected).map((session) => session.id));
 
     // 保留三类记录：
     // 1) 受保护时段（已完成 / 锁定 / 进行中）——绝不改动；
@@ -710,13 +765,49 @@ export function createPlanService({ app, idFactory }) {
     const kept = existing.filter(
       (session) => protectedIds.has(session.id) || !isInWindow(session, candidate) || session.state === SESSION_STATE.CANCELLED,
     );
-    const superseded = existing
-      .filter((session) => !protectedIds.has(session.id) && isInWindow(session, candidate) && session.state !== SESSION_STATE.CANCELLED)
-      .map((session) => ({ ...session, state: SESSION_STATE.CANCELLED, locked: false, updatedAt: nowIso() }));
 
-    const created = (candidate.blocks ?? [])
-      .filter((block) => block.kind === BLOCK_KIND.STUDY && block.refId && !reservedIds.has(block.refId) && !protectedIds.has(block.refId))
-      .map((block) => ({
+    // —— 身份索引：任务 + 日期 + 起止时间 → 可复用的既有片段 ——
+    // 已取消的记录不参与复用（否则新片段的 ID 会与历史记录重复），
+    // 改为让新片段拿一个新 ID，旧记录继续作为历史存在。
+    const identityKey = (taskId, date, startMinutes, endMinutes) => `${taskId}|${date}|${startMinutes}|${endMinutes}`;
+    const reusableByKey = new Map();
+    for (const session of existing) {
+      if (isProtected(session)) continue;
+      if (session.state === SESSION_STATE.CANCELLED) continue;
+      if (!isInWindow(session, candidate)) continue;
+      const key = identityKey(session.taskId, session.date, session.startMinutes, session.endMinutes);
+      if (!reusableByKey.has(key)) reusableByKey.set(key, []);
+      reusableByKey.get(key).push(session);
+    }
+
+    const studyBlocks = (candidate.blocks ?? []).filter(
+      (block) => block.kind === BLOCK_KIND.STUDY && block.refId && !protectedIds.has(block.refId),
+    );
+
+    const reusedSessionIds = new Set();
+    const carriedOver = [];
+    const created = [];
+
+    for (const block of studyBlocks) {
+      const key = identityKey(block.taskId, block.date, block.startMinutes, block.endMinutes);
+      const pool = reusableByKey.get(key);
+      const match = pool && pool.length > 0 ? pool.shift() : null;
+
+      if (match) {
+        // 同一段安排：沿用原 ID、原创建时间与已累计的专注数据，只刷新与本次计划相关的字段
+        reusedSessionIds.add(match.id);
+        carriedOver.push({
+          ...match,
+          plannedMinutes: block.endMinutes - block.startMinutes,
+          state: SESSION_STATE.FLEXIBLE,
+          reasonCodes: [...(block.meta?.reasons ?? [])],
+          planVersion: candidate.version,
+          updatedAt: nowIso(),
+        });
+        continue;
+      }
+
+      created.push({
         id: block.refId,
         taskId: block.taskId,
         date: block.date,
@@ -733,10 +824,24 @@ export function createPlanService({ app, idFactory }) {
         updatedAt: nowIso(),
         startedAt: null,
         completedAt: null,
+        elapsedMinutes: 0,
+        paused: false,
         history: [],
-      }));
+      });
+    }
 
-    return [...kept, ...superseded, ...created];
+    // 只有"被真正取代"的既有片段才标记为已取消
+    const superseded = existing
+      .filter(
+        (session) =>
+          !protectedIds.has(session.id) &&
+          !reusedSessionIds.has(session.id) &&
+          isInWindow(session, candidate) &&
+          session.state !== SESSION_STATE.CANCELLED,
+      )
+      .map((session) => ({ ...session, state: SESSION_STATE.CANCELLED, locked: false, paused: false, updatedAt: nowIso() }));
+
+    return [...kept, ...superseded, ...carriedOver, ...created];
   }
 
   function isInWindow(session, plan) {

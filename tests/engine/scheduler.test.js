@@ -10,6 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { PLAN_STATUS } from '../../src/domain/plan.js';
+import { TASK_STATUS } from '../../src/domain/task.js';
 import { SESSION_STATE } from '../../src/domain/session.js';
 import { UNSCHEDULED_REASON } from '../../src/engine/policy.js';
 import { describeViolations } from '../../src/engine/constraints.js';
@@ -604,16 +605,32 @@ test('依赖成环时返回 invalid_input（引擎无法为环排序）', () => 
   assert.ok(result.diagnostics.some((item) => item.code === 'V014'), '应指出循环依赖');
 });
 
-test('空数据：没有任何任务时返回完整但为空的可行计划', () => {
+test('空数据：一个任务都没有时明确拒绝，并给出可执行的引导（不谎报"完整可行"）', () => {
+  // 这条以前是"返回完整但为空的可行计划"，但那会让用户在看到"完整可行 + 全部 0"时
+  // 误以为系统已经生成了有意义的计划。现在必须明确拒绝并告诉用户下一步做什么。
   const env = engineContext();
   const result = env.run();
 
-  assert.equal(result.ok, true);
-  assert.equal(result.plan.status, PLAN_STATUS.FEASIBLE);
-  assert.deepEqual(result.unscheduled, []);
+  assert.equal(result.ok, false);
+  assert.equal(result.status, PLAN_STATUS.INVALID_INPUT);
+  assert.ok(result.issues.length > 0, '必须给出可读的问题说明');
+  assert.match(result.issues[0].message, /没有|新建/, '说明必须包含"没有任务"与"去新建"的信息');
+});
+
+test('空数据：任务全部已完成或已取消（但任务表非空）时照常生成"没有学习安排"的计划', () => {
+  // 与上一条的区别：这是"取消任务""完成所有任务"的合法结果，
+  // 必须能生成计划，用户才能预览取消操作会释放哪些时段。
+  const env = engineContext();
+  // 构造"已完成"的任务（进入不可排状态，但任务表本身非空）。
+  // 注意 createTask 一律以 not_started 创建，因此这里显式改状态。
+  const done = env.addTask({ title: '已完成的任务', plannedMinutes: 60, deadlineDate: '2025-10-20' });
+  done.status = TASK_STATUS.COMPLETED;
+  const result = env.run();
+
+  assert.equal(result.ok, true, describeViolations(result.violations ?? []));
   assert.equal(studyBlocks(result.plan).length, 0);
   assert.equal(result.plan.days.length, 7);
-  assert.ok(result.plan.blocks.every((block) => block.kind === 'buffer'), '没有任务时只有缓冲块');
+  assert.ok(result.plan.blocks.every((block) => block.kind === 'buffer'), '没有可排学习内容时只有缓冲块');
 });
 
 test('没有任何可用时间时报告"窗口过窄"，并给出不可行或部分可行状态', () => {

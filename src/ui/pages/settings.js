@@ -1,11 +1,10 @@
 /**
  * 偏好设置页。
  *
- * 阶段 1 提供：设置总览（可读地展示所有会影响排程的参数）、设置 JSON 编辑与校验、
- * 恢复默认设置、导出/导入备份、清空版本历史。
+ * 设置总览、逐项的图形化编辑控件（可学习时间、排程参数、休息规则、权重）、
+ * 设置 JSON 编辑与校验、外观与通知、数据备份与导入、历史清理。
  *
- * 阶段 3 提供：逐项的图形化编辑控件（时间窗口选择器、滑块等），
- * 并保证"修改设置 → 生成候选计划 → 确认后生效"的完整流程。
+ * 所有修改都遵循"修改 → 生成候选计划 → 确认后生效"，不会直接改动正在使用的计划。
  */
 
 import { button, card, notice } from '../components.js';
@@ -26,7 +25,7 @@ export function renderSettings({ app, services }) {
     el('header.page-head', {}, [
       el('div', {}, [
         el('h1', { text: '偏好设置' }),
-        el('p.page-head__sub', { text: '这些参数决定排程引擎如何计算可用时间、拆分任务与安排休息' }),
+        el('p.page-head__sub', { text: '这些参数决定系统如何计算可用时间、拆分任务与安排休息' }),
       ]),
       el('div.page-head__actions', {}, [
         button('导出备份', { onClick: () => exportBackup(app) }),
@@ -92,7 +91,7 @@ export function renderSettings({ app, services }) {
   nodes.push(
     card({
       title: '排程参数',
-      hint: `设置版本指纹基于当前值计算；任何改动都会使旧预览失效（这是有意设计）`,
+      hint: '候选计划基于当前设置生成；改动设置后旧预览会失效，需要重新生成',
       body: el('div', {}, [
         el('div.grid-2', {}, [
           definitionList('任务拆分', [
@@ -113,7 +112,7 @@ export function renderSettings({ app, services }) {
           definitionList('其它', [
             ['风险评估窗口', `${settings.riskWindowDays} 天`],
             ['业务日边界', `${String(settings.dayBoundaryHour).padStart(2, '0')}:00（此前算前一天）`],
-            ['版本快照上限', `${settings.planHistoryLimit} 个`],
+            ['保留版本数上限', `${settings.planHistoryLimit} 个`],
           ]),
         ]),
         el('div', { style: { marginTop: 'var(--space-4)' } }, [
@@ -293,7 +292,7 @@ function importBackup({ app, services }) {
       await confirmDialog({
         title: '导入被拒绝',
         message: '这份文件没有通过校验，现有数据没有被修改。',
-        bullets: errors.slice(0, 8).map((issue) => `${issue.code ? `[${issue.code}] ` : ''}${issue.message}`),
+        bullets: errors.slice(0, 8).map((issue) => issue.message),
         confirmLabel: '知道了',
         confirmVariant: 'primary',
         cancelLabel: '关闭',
@@ -387,7 +386,7 @@ function renderCleanupCard({ services, state }) {
 
   return card({
     title: '清理历史记录',
-    hint: '只清理已取消且从未开始过的时段记录，以及过期的版本快照；不会动已完成的学习记录',
+    hint: '只清理已取消且从未开始过的时段记录，以及超出版本上限的旧版本；不会动已完成的学习记录',
     flush: true,
     body: el('div', {}, [
       el('div.table-wrap', {}, [
@@ -400,7 +399,7 @@ function renderCleanupCard({ services, state }) {
               el('td', { text: `共 ${formatDuration(impact.removableMinutes)}（从未开始过，删除后不影响任何计划与统计）` }),
             ]),
             el('tr', {}, [
-              el('td', { text: '版本快照' }),
+              el('td', { text: '旧版本记录' }),
               el('td', { text: `${historyCount} 个` }),
               el('td', { text: '可只保留最近 5 个；当前正式计划不受影响' }),
             ]),
@@ -441,10 +440,10 @@ function renderCleanupCard({ services, state }) {
           disabled: historyCount <= 5,
           onClick: async () => {
             const confirmed = await confirmDialog({
-              title: '清理历史版本快照？',
-              message: '只保留最近 5 个版本，更早的快照将被删除；当前正式计划不受影响。',
+              title: '清理旧版本记录？',
+              message: '只保留最近 5 个版本，更早的记录将被删除；当前正式计划不受影响。',
               bullets: [
-                `将删除 ${Math.max(0, historyCount - 5)} 个快照（现有 ${historyCount} 个）`,
+                `将删除 ${Math.max(0, historyCount - 5)} 个旧版本（现有 ${historyCount} 个）`,
                 '当前正式计划保持为当前版本',
                 '删除后无法再撤销到更早的版本',
               ],
@@ -455,7 +454,7 @@ function renderCleanupCard({ services, state }) {
             if (!confirmed) return;
             const result = services.ui.cleanup([{ kind: 'cleanup.planHistory', keep: 5 }]);
             if (!result.ok) return toast(result.issues?.[0]?.message ?? '清理失败。', 'error');
-            toast(`已删除 ${result.removedCount} 个历史快照。`, 'success');
+            toast(`已删除 ${result.removedCount} 个旧版本记录。`, 'success');
           },
         }),
       ]),

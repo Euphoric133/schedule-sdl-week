@@ -14,6 +14,7 @@ import { el, toast } from '../dom.js';
 import { PLAN_STATUS_LABELS_ZH } from '../../domain/plan.js';
 import { formatDuration } from '../../domain/time.js';
 import { confirmDialog } from '../modal.js';
+import { triggerLabel } from '../labels.js';
 
 export function renderVersions({ app, services }) {
   const state = app.getState();
@@ -94,7 +95,7 @@ export function renderVersions({ app, services }) {
         ]),
         el('div', { style: { marginTop: 'var(--space-3)' } }, [
           el('div.card__hint', {
-            text: `引擎版本 ${plan.engineVersion ?? '—'} · 生成时间 ${plan.generatedAt ?? '—'} · 输入指纹 ${plan.inputHash ?? '—'}`,
+            text: `生成时间：${plan.generatedAt ?? '—'}　·　窗口：${plan.windowStart} → ${plan.windowEnd}`,
           }),
         ]),
       ]),
@@ -134,7 +135,7 @@ export function renderVersions({ app, services }) {
                 ]),
                 el('div.task-item__meta', {}, [
                   pill(snapshot.createdAt ?? '—', 'neutral'),
-                  pill(`触发：${snapshot.trigger ?? 'manual'}`, 'neutral'),
+                  pill(triggerLabel(snapshot.trigger), 'neutral'),
                 ]),
               ]),
             ]),

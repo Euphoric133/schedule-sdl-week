@@ -78,7 +78,7 @@ export function renderWeek({ app, services, route, now }) {
         level: 'info',
         title: '还没有正式计划',
         message:
-          '下方的时间轴框架已经可用（含小时刻度与四类块的图例）。排程引擎将在阶段 2 完成后把任务、固定活动、计划休息与机动缓冲填入时间轴，并给出可对比的调整预览。',
+          '下方时间轴按小时展示这一周。生成计划后，学习时段、固定活动、计划休息与机动缓冲都会填入时间轴，并给出可对比的调整预览。',
       }),
     );
   } else if (offsetWeeks !== 0 && plan.windowStart !== windowStart) {
@@ -86,7 +86,7 @@ export function renderWeek({ app, services, route, now }) {
       notice({
         level: 'info',
         title: '正式计划没有覆盖这一周',
-        message: `正式计划的时间窗口是 ${plan.windowStart} → ${plan.windowEnd}。滚动到新的一周需要重新规划（阶段 3 提供），当前窗口外没有安排。`,
+        message: `正式计划的时间窗口是 ${plan.windowStart} → ${plan.windowEnd}。当前窗口之外没有安排；要移动到新的一周，请用页面顶部的「计划窗口前移 / 后移一天」，或直接重新规划。`,
       }),
     );
   }

@@ -18,6 +18,7 @@ import {
   checkRequiredString,
   error,
   formatIssue,
+  formatIssueDebug,
   formatIssues,
   isNonEmptyString,
   isPlainObject,
@@ -106,12 +107,17 @@ test('checkEnum / checkOptionalEnum', () => {
   assert.equal(checkOptionalEnum('z', ['a'], 'p', '字段').code, VALIDATION_CODES.ENUM);
 });
 
-test('问题文案包含错误码与字段路径，便于用户定位（并可用于界面提示）', () => {
-  const issue = error('V010', 'tasks[0].maxChunkMinutes', '最长时段不合法。', { x: 1 });
-  assert.equal(issue.severity, SEVERITY.ERROR);
-  assert.equal(issue.details.x, 1);
-  assert.equal(formatIssue(issue), '[V010]（tasks[0].maxChunkMinutes） 最长时段不合法。');
-  assert.equal(formatIssue(warning('V000', '', '仅提示')), '[V000] 仅提示');
+test('面向用户的问题文案只给中文消息，不带内部错误码与字段名', () => {
+  // 之前的实现会显示成 "[V010]（tasks[0].maxChunkMinutes） 最长时段不合法。"，
+  // 把内部代码与字段路径暴露给用户。现在界面上只显示中文消息。
+  const issue = error('V010', 'tasks[0].maxChunkMinutes', '最长时段不合法。');
+  assert.equal(formatIssue(issue), '最长时段不合法。');
+  assert.equal(formatIssue(warning('V000', '', '仅提示')), '仅提示');
+  assert.equal(formatIssue(null), '出现了未知问题。');
+
+  // 需要内部信息时（日志、诊断、测试）用 formatIssueDebug
+  assert.equal(formatIssueDebug(issue), '[V010]（tasks[0].maxChunkMinutes） 最长时段不合法。');
+  assert.equal(formatIssueDebug(warning('V000', '', '仅提示')), '[V000] 仅提示');
 });
 
 test('formatIssues 限制条数并给出剩余数量', () => {

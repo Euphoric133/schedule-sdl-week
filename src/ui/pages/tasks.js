@@ -1,10 +1,10 @@
 /**
  * 任务列表页。
  *
- * 阶段 1 已可用：查看任务库、按状态/科目/截止筛选、切换排序、完成 / 取消 / 恢复 / 删除
+ * 查看任务库、按状态/科目/截止筛选、切换排序、完成 / 取消 / 恢复 / 删除。
  * （删除前必须展示真实影响面：会取消几段、共多少分钟、是否影响依赖它的任务）。
  *
- * 阶段 3 补充：新建与编辑表单（模态）、拖拽排序、以及"修改任务后先生成候选计划预览"。
+ * 新建与编辑表单（模态），以及"修改任务后先生成候选计划预览"。
  * 本页目前对任务的修改是立即生效的——这一点在 CHANGELOG 的"已知限制"中明确标注，
  * 避免用户误以为已经过预览确认。
  */
@@ -91,7 +91,7 @@ export function renderTasks({ app, services, route }) {
         field('排序', selectInput({
           value: sort,
           options: [
-            { value: 'deadline', label: '按截止时间（含 ID 兜底，结果稳定）' },
+            { value: 'deadline', label: '按截止时间' },
             { value: 'created', label: '按创建时间' },
           ],
           onChange: (value) => updateQuery({ sort: value }),
@@ -111,7 +111,7 @@ export function renderTasks({ app, services, route }) {
               title: '这里还没有任务',
               message:
                 allViews.length === 0
-                  ? '创建第一个学习任务：填写名称、科目、预计用时和截止时间，引擎接入后即可自动安排到七天计划中。'
+                  ? '创建第一个学习任务：填写名称、科目、预计用时和截止时间，系统会自动把它安排到七天计划中。'
                   : '试试把筛选条件改成"全部"，或清空科目筛选。',
               actions: [button('新建任务', { variant: 'primary', onClick: () => services.ui.openTaskForm(null) })],
             })

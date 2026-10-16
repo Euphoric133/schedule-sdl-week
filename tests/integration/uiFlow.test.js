@@ -109,15 +109,52 @@ test('任务：放弃预览时任务与计划都保持不变', () => {
   assert.equal(after, before, '放弃预览后业务数据必须完全不变');
 });
 
-test('任务：修改截止时间会改变候选计划的安排（差异里能看到移动或新增）', () => {
+test('任务：把截止时间提前，候选计划里所有时段都不晚于新截止时间', () => {
   const env = bootstrapped();
   const previewed = env.services.planService.requestPreview({
     now: NOW,
     ops: [{ kind: 'task.update', taskId: env.task.id, patch: { deadlineDate: '2025-10-17' } }],
   });
+  assert.equal(previewed.ok, true, previewed.issues?.map((i) => i.message).join('; '));
+
+  const blocks = previewed.preview.candidate.blocks.filter((block) => block.kind === 'study' && block.taskId === env.task.id);
+  assert.ok(blocks.length > 0, '应仍然安排出学习时段');
+  for (const block of blocks) {
+    assert.ok(block.date <= '2025-10-17', `时段 ${block.date} 不应晚于新的截止日期`);
+  }
+});
+
+test('任务：无改动重新规划时差异为零（不谎报"全部重排"）', () => {
+  // 真实缺陷回归：以前每次重排都会换一批会话 ID，导致"完全没变的时段"被报成
+  // "全部取消 + 全部新增"，用户点一次生成计划就以为整个计划被推翻了。
+  const env = bootstrapped();
+  const previewed = env.services.planService.requestPreview({ now: NOW, changeSummary: '重新规划' });
   assert.equal(previewed.ok, true);
-  const diff = previewed.preview.diff;
-  assert.ok(diff.counts.added + diff.counts.moved + diff.counts.resized > 0, '截止时间提前后安排应发生变化');
+  const counts = previewed.preview.diff.counts;
+  assert.deepEqual(
+    { added: counts.added, moved: counts.moved, resized: counts.resized, split: counts.split, cancelled: counts.cancelled },
+    { added: 0, moved: 0, resized: 0, split: 0, cancelled: 0 },
+    '没有任何数据改动时不应产生任何调整',
+  );
+  assert.ok(counts.unchanged > 0, '应当明确报告"保持不变"的时段数量');
+
+  // 应用之后会话 ID 也不应改变（否则历史记录会无谓膨胀）
+  const before = env.app.getState().sessions.map((session) => session.id).sort();
+  assert.equal(env.services.planService.applyPreview().ok, true);
+  const after = env.app.getState().sessions.map((session) => session.id).sort();
+  assert.deepEqual(after, before, '重新规划不应改变未变化时段的身份');
+});
+
+test('任务：真正改变时长会产生可解释的差异（而不是零值）', () => {
+  const env = bootstrapped();
+  const previewed = env.services.planService.requestPreview({
+    now: NOW,
+    ops: [{ kind: 'task.update', taskId: env.task.id, patch: { plannedMinutes: 240 } }],
+  });
+  assert.equal(previewed.ok, true, previewed.issues?.map((i) => i.message).join('; '));
+  const counts = previewed.preview.diff.counts;
+  const total = counts.added + counts.moved + counts.resized + counts.split;
+  assert.ok(total > 0, `预计用时从 90 分钟改成 240 分钟后必须产生差异，实际 counts=${JSON.stringify(counts)}`);
 });
 
 test('任务：依赖关系不合法时草稿被拒绝，不产生候选计划', () => {
