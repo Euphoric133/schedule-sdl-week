@@ -74,8 +74,17 @@ class FakeElement {
     this.classList.set = new Set(String(value).split(/\s+/).filter(Boolean));
   }
 
+  /**
+   * 与真实 DOM 一致：textContent 聚合所有子节点的文本。
+   *
+   * 这一点很重要：应用里的 `button('确认应用')` 是把文案作为**子文本节点**插入的，
+   * 如果这里只返回自身的 `_text`，那么所有按钮的 textContent 都是空的，
+   * 测试就无法按文案找到按钮（也就无法真正验证"点击按钮会发生什么"）。
+   */
   get textContent() {
-    return this._text;
+    if (this.tagName === '#text') return this._text ?? '';
+    if (this.children.length === 0) return this._text ?? '';
+    return this.children.map((child) => child.textContent ?? '').join('');
   }
   set textContent(value) {
     this._text = String(value);
@@ -111,6 +120,34 @@ class FakeElement {
     if (index >= 0) this.children.splice(index, 1);
     child.parentNode = null;
     return child;
+  }
+
+  /** 真实 DOM API：用新节点替换全部子节点 */
+  replaceChildren(...nodes) {
+    for (const child of this.children) child.parentNode = null;
+    this.children = [];
+    this._text = '';
+    for (const node of nodes) {
+      if (node === null || node === undefined) continue;
+      if (Array.isArray(node)) this.replaceChildren(...node);
+      else this.appendChild(node);
+    }
+    return undefined;
+  }
+
+  /** 真实 DOM API：在当前子树里按简单选择器查找（#id / .class / tag） */
+  querySelector(selector) {
+    const all = this.all();
+    if (selector.startsWith('#')) return all.find((node) => node.id === selector.slice(1)) ?? null;
+    if (selector.startsWith('.')) return all.find((node) => node.classList.contains(selector.slice(1))) ?? null;
+    return all.find((node) => node.tagName === selector.toUpperCase()) ?? null;
+  }
+
+  querySelectorAll(selector) {
+    const all = this.all();
+    if (selector.startsWith('#')) return all.filter((node) => node.id === selector.slice(1));
+    if (selector.startsWith('.')) return all.filter((node) => node.classList.contains(selector.slice(1)));
+    return all.filter((node) => node.tagName === selector.toUpperCase());
   }
 
   remove() {

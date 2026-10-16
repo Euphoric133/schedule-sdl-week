@@ -499,7 +499,7 @@ async function handleApply({ services, preview, state, changeCount = 0 }) {
   });
   if (!confirmed) return;
 
-  const result = services.applyPreview();
+  const result = services.ui.applyPreview();
   if (!result.ok) {
     // 失败原因要说清楚，并且明确告诉用户"数据没有被改动"
     const first = result.issues?.[0];
@@ -525,7 +525,7 @@ async function handleApply({ services, preview, state, changeCount = 0 }) {
 }
 
 async function handleDiscard({ services }) {
-  const result = services.discardPreview();
+  const result = services.ui.discardPreview();
   if (!result.ok) {
     toast(result.issues?.[0]?.message ?? '放弃失败。', 'error');
     return;

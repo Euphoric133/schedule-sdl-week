@@ -39,7 +39,7 @@ export function openTaskForm({ task = null, services }) {
         dependsOn: [...(task.dependsOn ?? [])],
         note: task.note ?? '',
       }
-    : { ...createTaskDraft(), deadlineDate: services.today() };
+    : { ...createTaskDraft(), deadlineDate: services.now().date };
 
   const inputs = {};
   const errorHost = el('div', { id: 'task-form-errors' });
