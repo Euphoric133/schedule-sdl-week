@@ -1,0 +1,23 @@
+{
+  "name": "seven-day-study-planner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "七天学习规划器 —— 无 AI、纯确定性规则算法的学生学习排程工具（本地浏览器运行）",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "serve": "node scripts/serve.mjs",
+    "test": "node --test \"tests/**/*.test.js\"",
+    "test:watch": "node --test --watch \"tests/**/*.test.js\"",
+    "test:unit": "node --test \"tests/unit/*.test.js\"",
+    "test:integration": "node --test \"tests/integration/*.test.js\"",
+    "build:standalone": "node scripts/build-standalone.mjs"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "comments": {
+    "dependencies": "第一版刻意保持零依赖：运行时不使用任何第三方库，排程引擎为纯函数。任何新增依赖必须先说明包名/用途/必要性/替代方案/影响并获得项目所有者批准（见 README「依赖政策」）。"
+  }
+}

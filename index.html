@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>七天学习规划器</title>
+    <meta
+      name="description"
+      content="面向学生的七天学习时间规划工具：输入任务、截止时间、固定活动与可用时间，用确定性规则算法生成未来七天的学习计划。"
+    />
+    <!-- 样式按职责拆分：令牌（颜色/间距）→ 基础排版 → 组件 -->
+    <link rel="stylesheet" href="./src/ui/styles/tokens.css" />
+    <link rel="stylesheet" href="./src/ui/styles/base.css" />
+    <link rel="stylesheet" href="./src/ui/styles/components.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">跳到主内容</a>
+
+    <!-- 应用外壳由 src/ui/shell.js 渲染，这里只提供语义化挂载点 -->
+    <div id="app"></div>
+
+    <!-- 禁止脚本时给出明确说明，而不是白屏 -->
+    <noscript>
+      <div style="max-width: 720px; margin: 48px auto; padding: 24px; border: 1px solid #dfe3e8; border-radius: 10px; font-family: system-ui, sans-serif">
+        <h1 style="font-size: 20px">需要启用 JavaScript</h1>
+        <p>七天学习规划器是纯本地运行的网页应用，所有排程计算都在你的浏览器中完成，因此必须启用 JavaScript。</p>
+        <p>启用后刷新本页面即可使用。你的学习数据不会上传到任何服务器。</p>
+      </div>
+    </noscript>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,20 @@
+# 依赖（当前为空，保留以便将来引入时不会误提交）
+node_modules/
+
+# 构建产物
+dist/
+
+# 本地备份 / 导出（用户数据，不入库）
+*.backup.json
+exports/
+
+# 操作系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+
+# 日志与临时文件
+*.log
+*.tmp

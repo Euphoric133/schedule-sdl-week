@@ -1,0 +1,81 @@
+/* ==========================================================================
+   设计令牌（Design Tokens）
+   所有颜色、间距、字号都集中在这里，禁止在其它样式文件中写死颜色值。
+   这样将来要加深色主题或调整视觉风格时，只需要改这一个文件。
+   ========================================================================== */
+
+:root {
+  /* —— 颜色：以"安静的学习工具"为目标，避免高饱和与大面积渐变 —— */
+  --color-bg: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f1f3f6;
+  --color-border: #dfe3e8;
+  --color-border-strong: #c3cad3;
+
+  --color-text: #1c2430;
+  --color-text-muted: #5b6675;
+  --color-text-faint: #8a94a3;
+
+  --color-primary: #2f6fd0;
+  --color-primary-hover: #265bb0;
+  --color-primary-soft: #e8f0fb;
+
+  --color-study: #2f6fd0; /* 学习时段 */
+  --color-study-soft: #dce9fa;
+  --color-fixed: #8a94a3; /* 固定活动 */
+  --color-fixed-soft: #edeff2;
+  --color-rest: #3f9e7f; /* 计划休息 */
+  --color-rest-soft: #dcefe8;
+  --color-buffer: #b8912f; /* 机动缓冲 */
+  --color-buffer-soft: #f6eed8;
+  --color-locked: #6b4fd0; /* 已锁定 */
+  --color-locked-soft: #e7e1fa;
+
+  --color-danger: #c0392b;
+  --color-danger-soft: #fbe9e7;
+  --color-warning: #a9720f;
+  --color-warning-soft: #fdf3dd;
+  --color-success: #2f7d55;
+  --color-success-soft: #e3f2ea;
+
+  /* —— 间距 —— */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* —— 字体 —— */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 20px;
+  --font-size-xl: 26px;
+
+  /* —— 圆角与阴影：少量、克制 —— */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --shadow-sm: 0 1px 2px rgba(28, 36, 48, 0.06);
+  --shadow-md: 0 2px 8px rgba(28, 36, 48, 0.08);
+
+  /* —— 布局尺寸 —— */
+  --sidebar-width: 208px;
+  --topbar-height: 56px;
+  --timeline-hour-height: 56px; /* 时间轴每小时像素高度 */
+  --timeline-start-hour: 6; /* 时间轴从 06:00 开始显示 */
+  --timeline-end-hour: 24; /* 到 24:00 */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
