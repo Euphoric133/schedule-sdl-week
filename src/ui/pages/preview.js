@@ -49,6 +49,15 @@ export function renderPreview({ app, services }) {
     }),
   );
 
+  // 屏幕阅读器提示：候选计划未生效，必须由用户确认
+  if (preview) {
+    nodes.push(
+      el('p.sr-only', { role: 'status', 'aria-live': 'polite' }, [
+        `已生成候选计划，基于版本 v${preview.baseVersion}，等待你确认应用或放弃修改。`,
+      ]),
+    );
+  }
+
   if (!preview) {
     nodes.push(
       emptyState({

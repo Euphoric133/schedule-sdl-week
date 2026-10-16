@@ -196,20 +196,51 @@ class FakeElement {
   }
 }
 
+/**
+ * 打桩里的定时器登记表：用于断言"离开页面后没有残留心跳"。
+ * 超时（setTimeout）也被接管：提示条会自动消失，如果不接管，
+ * 一个 9 秒的提示条超时会把 Node 测试进程拖住 9 秒才退出。
+ */
+const fakeTimers = new Set();
+const fakeTimeouts = new Set();
+
 function installFakeDom() {
+  // 一开始就接管定时器：应用启动阶段（boot）就可能注册心跳，
+  // 如果那时还是真实 setInterval，测试结束时会留下一个 1 秒定时器把进程拖住。
+  globalThis.setInterval = (callback, ms) => {
+    const handle = { callback, ms, cleared: false };
+    fakeTimers.add(handle);
+    return handle;
+  };
+  globalThis.clearInterval = (handle) => {
+    if (handle) handle.cleared = true;
+    fakeTimers.delete(handle);
+  };
+  globalThis.setTimeout = (callback, ms = 0) => {
+    const handle = { callback, ms, cleared: false };
+    fakeTimeouts.add(handle);
+    return handle;
+  };
+  globalThis.clearTimeout = (handle) => {
+    if (handle) handle.cleared = true;
+    fakeTimeouts.delete(handle);
+  };
+
   const body = new FakeElement('body');
   const documentElement = new FakeElement('html');
-  const toastHost = new FakeElement('div');
-  toastHost.id = 'toast-host';
+  // 说明：应用自己在 boot 时会创建一个 #toast-host，因此这里**不再**另外创建一个，
+  // 否则树里会出现两个同名元素，`qs('#toast-host')` 命中的可能是另一个，
+  // 导致"提示条落在哪里"的断言测的不是真实位置。
+  const toastHost = { get children() { return document.querySelector('#toast-host')?.children ?? []; } };
   const appHost = new FakeElement('div');
   appHost.id = 'app';
   body.appendChild(appHost);
-  body.appendChild(toastHost);
+  // 不再向 body 追加自建的 toast 容器（见上面的说明）
 
   const document = {
     documentElement,
     body,
-    getElementById: (id) => body.all().find((node) => node.id === id) ?? (id === 'app' ? appHost : id === 'toast-host' ? toastHost : null),
+    getElementById: (id) => body.all().find((node) => node.id === id) ?? (id === 'app' ? appHost : null),
     createElement: (tag) => new FakeElement(tag),
     createTextNode: (text) => {
       const node = new FakeElement('#text');
@@ -218,8 +249,23 @@ function installFakeDom() {
     },
     addEventListener() {},
     removeEventListener() {},
-    querySelector: () => null,
-    querySelectorAll: () => [],
+    /**
+     * 支持 `#id` 与 `.class` 两种简单选择器。
+     * 真实浏览器里 `qs('#toast-host')` 会命中页面上的容器，因此打桩也不能一律返回 null，
+     * 否则提示条会落到 body 上，"提示条会自动消失"这类断言就测不到真实位置。
+     */
+    querySelector: (selector) => {
+      const all = body.all();
+      if (selector.startsWith('#')) return all.find((node) => node.id === selector.slice(1)) ?? null;
+      if (selector.startsWith('.')) return all.find((node) => node.classList.contains(selector.slice(1))) ?? null;
+      return all.find((node) => node.tagName === selector.toUpperCase()) ?? null;
+    },
+    querySelectorAll: (selector) => {
+      const all = body.all();
+      if (selector.startsWith('#')) return all.filter((node) => node.id === selector.slice(1));
+      if (selector.startsWith('.')) return all.filter((node) => node.classList.contains(selector.slice(1)));
+      return all.filter((node) => node.tagName === selector.toUpperCase());
+    },
   };
 
   const storageMap = new Map();
@@ -241,9 +287,17 @@ function installFakeDom() {
     },
   };
 
-  // router.js 使用 globalThis.addEventListener 监听 hash 变化
-  globalThis.addEventListener = () => {};
-  globalThis.removeEventListener = () => {};
+  // router.js 与 shell.js 使用 globalThis.addEventListener 监听 hash 变化与键盘事件
+  const globalListeners = new Map();
+  globalThis.addEventListener = (type, handler) => {
+    if (!globalListeners.has(type)) globalListeners.set(type, []);
+    globalListeners.get(type).push(handler);
+  };
+  globalThis.removeEventListener = (type, handler) => {
+    const list = globalListeners.get(type) ?? [];
+    const index = list.indexOf(handler);
+    if (index >= 0) list.splice(index, 1);
+  };
   // dom.js 用 `child instanceof Node` 区分文本节点与元素，因此需要把打桩元素注册为 Node
   globalThis.Node = FakeElement;
   globalThis.document = document;
@@ -255,7 +309,30 @@ function installFakeDom() {
     getPropertyValue: (name) => (name === '--timeline-hour-height' ? '56px' : ''),
   });
 
-  return { document, body, appHost, toastHost, localStorage, location, window };
+  return {
+    document,
+    body,
+    appHost,
+    toastHost,
+    localStorage,
+    location,
+    window,
+    intervalCount: () => [...fakeTimers].filter((handle) => !handle.cleared).length,
+    /** 触发所有到期的假超时（提示条自动消失等） */
+    flushTimeouts: () => {
+      const due = [...fakeTimeouts].filter((handle) => !handle.cleared);
+      fakeTimeouts.clear();
+      for (const handle of due) handle.callback();
+      return due.length;
+    },
+    pendingTimeouts: () => [...fakeTimeouts].filter((handle) => !handle.cleared).length,
+    /** 派发一个全局键盘事件（模拟用户按键） */
+    dispatchKey: (key, extra = {}) => {
+      for (const handler of globalListeners.get('keydown') ?? []) {
+        handler({ key, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false, defaultPrevented: false, preventDefault() {}, target: null, ...extra });
+      }
+    },
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -324,6 +401,11 @@ test('界面启动：加载 src/main.js 能渲染外壳，并逐条渲染六个�
   delete globalThis.localStorage;
   delete globalThis.requestAnimationFrame;
   delete globalThis.getComputedStyle;
+  delete globalThis.setInterval;
+  delete globalThis.clearInterval;
+  delete globalThis.setTimeout;
+  delete globalThis.clearTimeout;
+  fakeTimers.clear();
 });
 
 test('界面渲染：七天计划页生成 7 个日期表头与 18 个整点刻度', async () => {
@@ -354,6 +436,11 @@ test('界面渲染：七天计划页生成 7 个日期表头与 18 个整点刻�
   delete globalThis.localStorage;
   delete globalThis.requestAnimationFrame;
   delete globalThis.getComputedStyle;
+  delete globalThis.setInterval;
+  delete globalThis.clearInterval;
+  delete globalThis.setTimeout;
+  delete globalThis.clearTimeout;
+  fakeTimers.clear();
 });
 
 test('界面渲染：有待确认候选计划时，预览页显示差异明细与确认按钮', async () => {
@@ -410,6 +497,11 @@ test('界面渲染：有待确认候选计划时，预览页显示差异明细�
   delete globalThis.localStorage;
   delete globalThis.requestAnimationFrame;
   delete globalThis.getComputedStyle;
+  delete globalThis.setInterval;
+  delete globalThis.clearInterval;
+  delete globalThis.setTimeout;
+  delete globalThis.clearTimeout;
+  fakeTimers.clear();
 });
 
 test('界面渲染：工作台在进行中会显示计时与"结束本段"操作（阶段 4 计时分支）', async () => {
@@ -468,6 +560,175 @@ test('界面渲染：工作台在进行中会显示计时与"结束本段"操作
   delete globalThis.localStorage;
   delete globalThis.requestAnimationFrame;
   delete globalThis.getComputedStyle;
+  delete globalThis.setInterval;
+  delete globalThis.clearInterval;
+  delete globalThis.setTimeout;
+  delete globalThis.clearTimeout;
+  fakeTimers.clear();
+});
+
+test('可访问性：时间轴可聚焦、每个时段有完整无障碍名称、计时器有 aria-live', async () => {
+  const dom = installFakeDom();
+  const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);
+  const instance = boot({ root: dom.appHost });
+
+  instance.services.taskService.addTask({
+    title: '线性代数作业',
+    subject: '数学',
+    plannedMinutes: 90,
+    deadlineDate: '2025-10-20',
+    deadlineTime: '23:00',
+    importance: 4,
+    difficulty: 4,
+    procrastination: 3,
+    splittable: true,
+    minChunkMinutes: 30,
+    maxChunkMinutes: 60,
+    dependsOn: [],
+    note: '',
+  });
+  const preview = instance.services.planService.requestPreview({ now: instance.services.now(), changeSummary: '生成计划' });
+  assert.equal(preview.ok, true);
+  assert.equal(instance.services.planService.applyPreview().ok, true);
+
+  dom.location.hash = '#/week';
+  instance.shell.render();
+
+  const main = dom.appHost.children[0].byClass('app-main')[0];
+  const timelineNodes = main.byClass('timeline');
+  assert.equal(timelineNodes.length, 1, '周视图应只有一个时间轴容器');
+
+  // 时间轴容器可聚焦，并带描述性标签
+  assert.equal(timelineNodes[0].getAttribute('tabindex'), '0', '时间轴应可聚焦，便于键盘滚动');
+  const timelineLabel = timelineNodes[0].getAttribute('aria-label') ?? '';
+  assert.match(timelineLabel, /7 天/, '无障碍标签应说明天数');
+  assert.match(timelineLabel, /整点刻度/, '无障碍标签应说明刻度');
+
+  // 每个学习时段块都是带完整名称的按钮（时间 + 时长 + 锁定状态）。
+  // 说明：块的类名带类型修饰（timeline__block--study / --fixed / --rest / --buffer），
+  // 因此这里按"学习时段"这一具体类型断言。
+  const blocks = main.byClass('timeline__block--study');
+  assert.ok(blocks.length > 0, '应渲染出学习时段块');
+  for (const block of blocks) {
+    assert.equal(block.tagName, 'BUTTON');
+    const label = block.getAttribute('aria-label') ?? '';
+    assert.match(label, /\d{2}:\d{2}–\d{2}:\d{2}/, `时段的无障碍名称应包含时间范围，实际：${label}`);
+    assert.ok(label.length > 8, '无障碍名称应包含任务与时长信息');
+  }
+
+  // 计时器：进行中时有 role=timer 与 aria-live
+  const session = instance.app.getState().sessions.find((item) => item.state === 'flexible');
+  assert.equal(instance.services.focusService.start(session.id).ok, true);
+  dom.location.hash = '#/focus';
+  instance.shell.render();
+
+  const focusMain = dom.appHost.children[0].byClass('app-main')[0];
+  const timers = focusMain.all().filter((node) => node.getAttribute('role') === 'timer');
+  assert.equal(timers.length, 1, '进行中应有一个 role=timer 的倒计时');
+  assert.equal(timers[0].getAttribute('aria-live'), 'polite', '倒计时应通过 aria-live 播报变化');
+
+  // 离开工作台后不得留下心跳（否则会在后台整页重绘）
+  dom.location.hash = '#/tasks';
+  instance.shell.render();
+  assert.equal(dom.intervalCount(), 0, '离开计时页面后不应残留定时器');
+
+  delete globalThis.Node;
+  delete globalThis.addEventListener;
+  delete globalThis.removeEventListener;
+  delete globalThis.document;
+  delete globalThis.window;
+  delete globalThis.location;
+  delete globalThis.localStorage;
+  delete globalThis.requestAnimationFrame;
+  delete globalThis.getComputedStyle;
+  delete globalThis.setInterval;
+  delete globalThis.clearInterval;
+  delete globalThis.setTimeout;
+  delete globalThis.clearTimeout;
+  fakeTimers.clear();
+});
+
+test('键盘操作：数字键跳转页面、g 触发规划、? 显示帮助；在输入框里不拦截按键', async () => {
+  const dom = installFakeDom();
+  const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);
+  const instance = boot({ root: dom.appHost });
+
+  // 导航项右侧显示快捷键数字（可发现性）
+  const nav = dom.appHost.children[0].byClass('app-nav__link');
+  assert.ok(nav.length >= 9, '侧边导航应包含全部页面');
+  assert.ok(
+    dom.appHost.children[0].byClass('app-nav__key').length >= 9,
+    '每个导航项都应显示快捷键数字',
+  );
+
+  // 数字键跳转
+  assert.doesNotThrow(() => dom.dispatchKey('3'));
+  assert.equal(dom.location.hash, '#/day', '按 3 应跳到每日视图');
+
+  // 输入框里按键不触发跳转
+  const input = dom.document.createElement('input');
+  dom.location.hash = '#/tasks';
+  assert.doesNotThrow(() => dom.dispatchKey('5', { target: input }));
+  assert.equal(dom.location.hash, '#/tasks', '在输入框中按键不应跳转');
+
+  // g 触发规划（无任务会失败，但不应抛异常）
+  assert.doesNotThrow(() => dom.dispatchKey('g'));
+
+  // ? 显示快捷键帮助（走提示条，不抛异常）
+  assert.doesNotThrow(() => dom.dispatchKey('?'));
+
+  delete globalThis.Node;
+  delete globalThis.addEventListener;
+  delete globalThis.removeEventListener;
+  delete globalThis.document;
+  delete globalThis.window;
+  delete globalThis.location;
+  delete globalThis.localStorage;
+  delete globalThis.requestAnimationFrame;
+  delete globalThis.getComputedStyle;
+  delete globalThis.setInterval;
+  delete globalThis.clearInterval;
+  delete globalThis.setTimeout;
+  delete globalThis.clearTimeout;
+});
+
+test('提示条：出现后按设定时间自动消失（否则会在页面上越堆越多）', async () => {
+  const dom = installFakeDom();
+  const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);
+  boot({ root: dom.appHost });
+
+  const { toast } = await import(pathToFileURL(join(projectRoot, 'src', 'ui', 'dom.js')).href);
+  // 提示条应当落在真实的 #toast-host 容器里（而不是散落在 body 上）。
+  // 注意：应用启动过程本身可能已经产生提示（例如存储不可用），因此用增量断言。
+  const host = dom.toastHost;
+  const baselineToasts = host.children.length;
+  const baselineTimeouts = dom.pendingTimeouts();
+
+  toast('测试提示', 'success', 4000);
+  assert.equal(host.children.length, baselineToasts + 1, '调用后提示条应出现在 #toast-host 内');
+  assert.equal(
+    host.children[baselineToasts].getAttribute('role'),
+    'status',
+    '提示条应作为状态通知被播报',
+  );
+  assert.equal(dom.pendingTimeouts(), baselineTimeouts + 1, '应为提示条登记一个自动消失的定时器');
+
+  dom.flushTimeouts();
+  assert.equal(host.children.length, 0, '定时器到期后所有提示条都应被移除');
+
+  delete globalThis.Node;
+  delete globalThis.addEventListener;
+  delete globalThis.removeEventListener;
+  delete globalThis.document;
+  delete globalThis.window;
+  delete globalThis.location;
+  delete globalThis.localStorage;
+  delete globalThis.requestAnimationFrame;
+  delete globalThis.getComputedStyle;
+  delete globalThis.setInterval;
+  delete globalThis.clearInterval;
+  delete globalThis.setTimeout;
+  delete globalThis.clearTimeout;
 });
 
 test('界面渲染：空数据时每个页面都显示空状态而不是崩溃或假数据', async () => {
@@ -515,4 +776,9 @@ test('界面渲染：空数据时每个页面都显示空状态而不是崩溃�
   delete globalThis.localStorage;
   delete globalThis.requestAnimationFrame;
   delete globalThis.getComputedStyle;
+  delete globalThis.setInterval;
+  delete globalThis.clearInterval;
+  delete globalThis.setTimeout;
+  delete globalThis.clearTimeout;
+  fakeTimers.clear();
 });

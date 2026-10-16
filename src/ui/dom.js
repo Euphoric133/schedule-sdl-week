@@ -102,6 +102,40 @@ export function downloadText(filename, text, mime = 'application/json') {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+/**
+ * 轻量"每秒心跳"调度器。
+ *
+ * 用途：让进行中的计时器每秒刷新显示。
+ * 设计约束：
+ * - 同一时刻只允许一个心跳（重复注册会先替换旧的），避免多个页面叠加出多个定时器；
+ * - 页面重新渲染时调用 `stopTicker()`，不会有定时器泄漏；
+ * - 不使用 requestAnimationFrame（它在后台标签页会暂停，倒计时会停止更新）。
+ */
+let tickerHandle = null;
+
+export function startTicker(callback, intervalMs = 1000) {
+  stopTicker();
+  tickerHandle = setInterval(() => {
+    try {
+      callback();
+    } catch {
+      // 单次刷新失败不应中断整个计时器
+    }
+  }, intervalMs);
+  return tickerHandle;
+}
+
+export function stopTicker() {
+  if (tickerHandle !== null) {
+    clearInterval(tickerHandle);
+    tickerHandle = null;
+  }
+}
+
+export function isTickerRunning() {
+  return tickerHandle !== null;
+}
+
 /** 提示条（页面级，轻量，不用 window.alert 打断用户） */
 export function toast(message, level = 'info', timeoutMs = 4000) {
   const host = qs('#toast-host') ?? document.body;

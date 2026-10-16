@@ -5,7 +5,7 @@
  * 避免每个页面各自绑定 hashchange 或 subscribe 造成重复渲染与内存泄漏。
  */
 
-import { append, clear, downloadText, el, toast } from './dom.js';
+import { append, clear, downloadText, el, startTicker, stopTicker, toast } from './dom.js';
 import { ROUTES, parseHash } from './router.js';
 import { button, notice } from './components.js';
 
@@ -62,6 +62,7 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
 
   // 布局区域：brand / topbar / nav / main（toast 与全局横幅是浮层，不参与网格）
   const shell = el('div.app', {}, [brand, topbar, nav, main]);
+  installKeyboardShortcuts({ app, services, render: () => renderCurrent() });
   root.appendChild(shell);
   root.appendChild(banner);
   root.appendChild(toastHost);
@@ -79,7 +80,7 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
 
   function renderNav(activePath) {
     clear(navList);
-    for (const route of ROUTES) {
+    ROUTES.forEach((route, index) => {
       const isActive = route.path === activePath;
       navList.appendChild(
         el('li', {}, [
@@ -88,12 +89,17 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
             {
               href: `#/${route.path}`,
               'aria-current': isActive ? 'page' : null,
+              // 把快捷键写进无障碍名称，键盘用户不必先看帮助
+              title: `快捷键 ${index + 1}`,
             },
-            [el('span', { text: route.label })],
+            [
+              el('span', { text: route.label }),
+              el('span', { class: 'app-nav__key', text: String(index + 1), 'aria-hidden': 'true' }),
+            ],
           ),
         ]),
       );
-    }
+    });
   }
 
   function renderNavFoot() {
@@ -144,6 +150,8 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
 
   function render(route = parseHash()) {
     currentRoute = route;
+    // 页面切换时先停掉上一个页面的心跳，避免计时器在后台继续跑
+    stopTicker();
     renderNav(route.path);
     renderNavFoot();
     renderBanner();
@@ -161,9 +169,16 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
       return;
     }
     try {
-      // 页面上下文：页面只能通过这些只读入口取数据，不直接访问存储
-      const content = page({ app, services, route, now, today: now().date });
+      // 页面上下文：页面只能通过这些只读入口取数据，不直接访问存储。
+      // `requestTick` 让"需要每秒刷新"的页面（如计时工作台）注册心跳。
+      let tickRequested = false;
+      const requestTick = (callback = () => shellRender()) => {
+        tickRequested = true;
+        startTicker(callback);
+      };
+      const content = page({ app, services, route, now, today: now().date, requestTick, renderPage: () => shellRender() });
       append(main, content);
+      if (!tickRequested) stopTicker();
     } catch (err) {
       // 单个页面渲染失败不能让整个应用白屏：显示错误并给出重试入口
       append(main, [
@@ -180,7 +195,63 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
     }
   }
 
-  return { render, get currentRoute() { return currentRoute; }, main };
+  /** 局部刷新当前页面（计时心跳使用，避免重建整个外壳） */
+  function shellRender() {
+    render(currentRoute ?? parseHash());
+  }
+
+  return { render, renderCurrent: shellRender, get currentRoute() { return currentRoute; }, main };
+}
+
+/**
+ * 全局键盘快捷键。
+ *
+ * 只做三件事，避免与浏览器快捷键冲突、也不做"隐藏功能"：
+ * - `1`–`9`：按侧边导航顺序跳转页面（与界面上显示的顺序一致，可从导航项提示中看到）
+ * - `g`：生成 / 重新规划（等价于点顶部的"生成计划"）
+ * - `?`：显示快捷键帮助
+ *
+ * 在输入框、下拉框、文本域或可编辑元素中按键时一律不触发，
+ * 因此不会影响用户正常打字。
+ */
+function installKeyboardShortcuts({ app, services, render }) {
+  globalThis.addEventListener?.('keydown', (event) => {
+    if (event.defaultPrevented) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+    const target = event.target;
+    const tag = String(target?.tagName ?? '').toLowerCase();
+    const editable = tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable === true;
+    if (editable) return;
+
+    const key = event.key;
+    if (key === '?' || (key === '/' && event.shiftKey)) {
+      event.preventDefault();
+      showShortcuts();
+      return;
+    }
+
+    const index = Number.parseInt(key, 10);
+    if (Number.isInteger(index) && index >= 1 && index <= ROUTES.length) {
+      event.preventDefault();
+      globalThis.location.hash = `#/${ROUTES[index - 1].path}`;
+      return;
+    }
+
+    if (key === 'g' || key === 'G') {
+      event.preventDefault();
+      const result = services.ui.requestPreview({ changeSummary: '通过快捷键重新规划', trigger: 'shortcut' });
+      if (!result.ok) toast(result.message, 'error', 8000);
+      void app;
+      void render;
+    }
+  });
+}
+
+/** 快捷键帮助（用普通文本，避免依赖额外的对话框实现） */
+function showShortcuts() {
+  const lines = ROUTES.map((route, index) => `${index + 1} = ${route.label}`).join('　');
+  toast(`快捷键：${lines}　g = 生成/重新规划　? = 本帮助`, 'info', 9000);
 }
 
 function planStatusLabel(status) {

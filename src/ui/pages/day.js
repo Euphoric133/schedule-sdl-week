@@ -103,6 +103,7 @@ export function renderDay({ app, services, route, now }) {
             today,
             startHour: 6,
             endHour: 24,
+            labelPrefix: `${formatDateWithWeekday(date)} 的时间轴`,
             onSelect: (block) => {
               if (block.kind === 'study' && block.refId) {
                 services.ui.openSessionDetail(block.refId);

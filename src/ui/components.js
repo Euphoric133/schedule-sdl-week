@@ -155,7 +155,7 @@ export function taskList(items, { renderActions } = {}) {
  * @param {number} [params.startHour]
  * @param {number} [params.endHour]
  */
-export function timeline({ dates, blocksByDate, today, onSelect, startHour = 6, endHour = 24 }) {
+export function timeline({ dates, blocksByDate, today, onSelect, startHour = 6, endHour = 24, labelPrefix = '学习时间轴' }) {
   const hours = [];
   for (let h = startHour; h < endHour; h += 1) hours.push(h);
 
@@ -190,13 +190,21 @@ export function timeline({ dates, blocksByDate, today, onSelect, startHour = 6, 
         cell.style.height = `calc(var(--timeline-hour-height) * ${hours.length})`;
         for (const block of blocksByDate.get(date) ?? []) {
           const top = ((block.startMinutes - startHour * 60) / 60) * hourPx();
-          const height = Math.max(18, ((block.endMinutes - block.startMinutes) / 60) * hourPx());
+          const height = Math.max(22, ((block.endMinutes - block.startMinutes) / 60) * hourPx());
           if (top + height <= 0 || top >= hourPx() * (endHour - startHour)) continue;
           const kindClass = block.kind === 'study' && block.locked ? 'timeline__block--study.is-locked' : `timeline__block--${block.kind}`;
+          // 每个块都是可聚焦按钮，并带完整的无障碍名称（包含时间与锁定状态），
+          // 这样键盘用户与屏幕阅读器都能逐块浏览时间轴，而不只是"看颜色"。
+          const accessibleName = `${BLOCK_KIND_LABELS_ZH[block.kind] ?? block.kind}｜${block.label}｜${formatMinutes(
+            block.startMinutes,
+          )}–${formatMinutes(block.endMinutes)}｜${formatDuration(block.endMinutes - block.startMinutes)}${
+            block.locked ? '｜已锁定' : ''
+          }`;
           const node = el(`button.${kindClass}`, {
             type: 'button',
+            'aria-label': accessibleName,
             style: { top: `${top}px`, height: `${height}px` },
-            title: `${block.label} ${formatMinutes(block.startMinutes)}–${formatMinutes(block.endMinutes)}`,
+            title: accessibleName,
             on: onSelect ? { click: () => onSelect(block, date) } : {},
           });
           append(node, [
@@ -219,7 +227,9 @@ export function timeline({ dates, blocksByDate, today, onSelect, startHour = 6, 
     'div.timeline',
     {
       role: 'group',
-      'aria-label': '学习时间轴',
+      // 可聚焦的滚动区域：键盘用户可以先聚焦进来，再用方向键滚动查看后面的时段
+      tabindex: '0',
+      'aria-label': `${labelPrefix}（${dates.length} 天，每天 ${startHour}:00 至 ${endHour}:00，共 ${hours.length} 个整点刻度）`,
       style: { gridTemplateRows: `auto repeat(${hours.length}, var(--timeline-hour-height))`, position: 'relative' },
     },
     [head, ...dayHeads, ...cells],

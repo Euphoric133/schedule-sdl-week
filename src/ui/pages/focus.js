@@ -15,7 +15,7 @@ import { SESSION_STATE } from '../../domain/session.js';
 import { TASK_STATUS } from '../../domain/task.js';
 import { formatDuration, formatMinutes } from '../../domain/time.js';
 
-export function renderFocus({ app, services, now }) {
+export function renderFocus({ app, services, now, requestTick }) {
   const state = app.getState();
   const today = now().date;
   const nowMinutes = now().minutes;
@@ -67,8 +67,12 @@ export function renderFocus({ app, services, now }) {
   const task = (state.tasks ?? []).find((item) => item.id === target.taskId) ?? null;
   const remainingTaskMinutes = task ? services.focusService.remainingMinutes(task.id) : 0;
 
-  nodes.push(renderTimerCard({ app, target, task, now, services, remainingTaskMinutes }));
-  nodes.push(renderTodayList({ todaySessions, services, now }));
+  // 计时进行中时注册"每秒心跳"，让剩余时间实时跳动；
+  // 暂停或未开始时不需要心跳（避免无意义的整页重绘）。
+  const ticking = running && !target.paused;
+  if (ticking && typeof requestTick === 'function') requestTick();
+
+  nodes.push(renderTimerCard({ app, target, task, now, services, remainingTaskMinutes, ticking }));
 
   if (running) {
     nodes.push(
@@ -88,15 +92,18 @@ export function renderFocus({ app, services, now }) {
  * 计时卡片
  * ------------------------------------------------------------------ */
 
-function renderTimerCard({ app, target, task, now, services, remainingTaskMinutes }) {
+function renderTimerCard({ app, target, task, now, services, remainingTaskMinutes, ticking }) {
   const running = target.state === SESSION_STATE.IN_PROGRESS;
   const paused = Boolean(target.paused);
   const elapsed = computeElapsedMinutes(target, now);
   const planned = target.plannedMinutes;
   const left = Math.max(0, planned - elapsed);
 
+  // 计时进行中时给数值加 aria-live，屏幕阅读器能听到变化；视觉上每秒更新
   const timerText = el('div.metric__value', {
     text: formatDuration(left),
+    role: ticking ? 'timer' : null,
+    'aria-live': ticking ? 'polite' : null,
     style: { fontSize: 'var(--font-size-xl)', fontVariantNumeric: 'tabular-nums' },
   });
   const elapsedText = el('div.card__hint', {

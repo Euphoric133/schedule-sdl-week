@@ -331,7 +331,7 @@ function importBackup({ app, services }) {
 
 /** 存储与备份卡片：占用空间、上次导出、备份提醒、导出/导入入口 */
 function renderStorageCard({ app, services, state }) {
-  const usedText = el('div.metric__value', { text: '计算中…' });
+  const usedText = el('div.metric__value', { text: '计算中…', role: 'status', 'aria-live': 'polite' });
   const quotaText = el('div.metric__value', { text: '—' });
   const reminderHost = el('div');
 

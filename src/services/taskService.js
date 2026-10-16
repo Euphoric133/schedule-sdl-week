@@ -1,24 +1,19 @@
 /**
- * 任务业务服务：所有对 Task / StudySession 的修改都必须经过这里。
+ * 任务业务服务：任务库的读取视图与"直接写入"入口。
  *
  * 职责边界（重要）：
- * - 本层负责「校验 + 影响面计算 + 写入」，不负责「排程」。
- * - 排程相关操作（生成候选计划、差异预览、应用、撤销）在 planService 中，
- *   并由预览机制统一收口。阶段 1 尚未实现引擎，因此本层的任务修改会立即落盘；
- *   阶段 2/3 引入候选计划后，界面必须在修改任务时先生成预览（见 CHANGELOG 已知限制）。
- * - 删除任务必须明确告知影响面；有历史时段的只做软删除，避免损坏计划数据。
+ * - **状态变更的唯一实现是 `domain/mutations.js`**。本层不再自己拼接新状态，
+ *   而是构造对应的 `op` 交给 `applyDraftOp`，再把结果提交持久化。
+ *   这样"预览草稿"与"直接写入"走的是同一套逻辑，不可能出现两者不一致。
+ * - 本层负责：读取视图（含剩余工作量、影响面评估）与提交持久化。
+ * - 排程相关操作（候选计划、差异预览、应用、撤销）在 `planService` 中。
+ * - 界面（阶段 3 起）统一走"先生成预览、确认后写入"，不会直接调用本层的写入方法；
+ *   本层的写入方法保留给内部调用、导入与自动化测试使用。
  */
 
-import {
-  TASK_STATUS,
-  applyTaskPatch,
-  createTask,
-  remainingMinutesForTask,
-  transitionTaskStatus,
-  validateTask,
-} from '../domain/task.js';
+import { TASK_STATUS, remainingMinutesForTask } from '../domain/task.js';
 import { SESSION_STATE } from '../domain/session.js';
-import { checkTaskDependencies } from '../domain/graph.js';
+import { applyDraftOp } from '../domain/mutations.js';
 import { VALIDATION_CODES as C, error, result } from '../domain/validation.js';
 
 /**
@@ -92,90 +87,69 @@ export function createTaskService({ app, idFactory }) {
   }
 
   /* ---------------------------------------------------------------- *
-   * 创建 / 修改
+   * 写入（统一委托给 domain/mutations.js 的纯函数）
    * ---------------------------------------------------------------- */
 
   /**
-   * 创建任务（含前置依赖校验与整体状态校验）。
-   *
-   * 注意：这里对**外部输入**做防御性检查。界面层与导入层可能把 null / 字符串直接传进来，
-   * 服务层必须返回结构化错误而不是抛异常——否则一次误操作就会让页面白屏。
+   * 应用一次变更并提交持久化（内部共用）。
+   * @param {object} op 变更描述（见 domain/mutations.js）
+   * @param {{reason: string, unwrap?: (payload: object) => object}} options
    */
-  function addTask(input) {
-    if (input === null || typeof input !== 'object' || Array.isArray(input)) {
-      return {
-        ok: false,
-        issues: [error(C.TYPE, 'task', '任务数据必须是一个对象（包含名称、科目、预计用时与截止时间）。', {
-          actual: Array.isArray(input) ? 'array' : typeof input,
-        })],
-      };
-    }
+  function applyAndCommit(op, { reason, unwrap }) {
+    const applied = applyDraftOp(app.getState(), op, { idFactory, nowIso: nowIso() });
+    if (!applied.ok) return { ok: false, issues: applied.issues ?? [] };
 
-    const candidate = createTask(input, { idFactory, nowIso: nowIso() });
-    const validation = validateTask(candidate, 'task');
-    if (!validation.ok) return { ok: false, issues: validation.issues };
+    const commitResult = app.commit(() => applied.state, { reason });
+    if (!commitResult.ok) return { ok: false, error: commitResult.error, issues: [] };
 
-    const dependencyIssues = checkDependencies(candidate);
-    if (dependencyIssues.length > 0) return { ok: false, issues: dependencyIssues };
-
-    const commitResult = app.commit((state) => ({ ...state, tasks: [...state.tasks, candidate] }), { reason: 'task-add' });
-    if (!commitResult.ok) return { ok: false, error: commitResult.error };
-    return { ok: true, task: candidate, warnings: validation.warnings };
-  }
-
-  /** 编辑任务：只更新白名单字段，返回新对象（旧对象保持不变，便于撤销与对比） */
-  function updateTask(id, patch) {
-    if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) {
-      return { ok: false, issues: [error(C.TYPE, 'patch', '修改内容必须是一个对象。', { actual: typeof patch })] };
-    }
-    const task = getTask(id);
-    if (!task) return { ok: false, issues: [error(C.REQUIRED, 'task', '要修改的任务不存在。', { taskId: id })] };
-
-    const next = applyTaskPatch(task, patch, { nowIso: nowIso() });
-    const validation = validateTask(next, 'task');
-    if (!validation.ok) return { ok: false, issues: validation.issues };
-
-    const dependencyIssues = checkDependencies(next, { ignoreSelf: true });
-    if (dependencyIssues.length > 0) return { ok: false, issues: dependencyIssues };
-
-    const commitResult = app.commit(
-      (state) => ({ ...state, tasks: state.tasks.map((t) => (t.id === id ? next : t)) }),
-      { reason: 'task-update' },
-    );
-    if (!commitResult.ok) return { ok: false, error: commitResult.error };
-    return { ok: true, task: next, warnings: validation.warnings };
-  }
-
-  /** 状态迁移（完成 / 取消 / 恢复 / 重新开始） */
-  function changeTaskStatus(id, to) {
-    const task = getTask(id);
-    if (!task) return { ok: false, issues: [error(C.REQUIRED, 'task', '任务不存在。', { taskId: id })] };
-    const { task: next, issue } = transitionTaskStatus(task, to, { nowIso: nowIso() });
-    if (issue) return { ok: false, issues: [issue] };
-
-    // 取消任务时，未完成的时段应一并取消，避免它们继续占用计划（已完成记录保留）
-    const sessions = getSessionsForTask(id);
-    const cancelSessions = to === TASK_STATUS.CANCELLED || to === TASK_STATUS.DELETED;
-    const nextSessions = cancelSessions
-      ? app.getState().sessions.map((s) =>
-          s.taskId === id && s.state !== SESSION_STATE.COMPLETED && s.state !== SESSION_STATE.CANCELLED
-            ? { ...s, state: SESSION_STATE.CANCELLED, locked: false, updatedAt: nowIso() }
-            : s,
-        )
-      : app.getState().sessions;
-
-    const commitResult = app.commit(
-      (state) => ({ ...state, tasks: state.tasks.map((t) => (t.id === id ? next : t)), sessions: nextSessions }),
-      { reason: 'task-status' },
-    );
-    if (!commitResult.ok) return { ok: false, error: commitResult.error };
-    return {
-      ok: true,
-      task: next,
-      cancelledSessions: cancelSessions
-        ? sessions.filter((s) => s.state !== SESSION_STATE.COMPLETED && s.state !== SESSION_STATE.CANCELLED).length
-        : 0,
+    const payload = {
+      issues: applied.issues ?? [],
+      removedCount: applied.removedCount,
+      removedMinutes: applied.removedMinutes,
+      createdId: applied.createdId,
     };
+    return unwrap ? unwrap(payload) : { ok: true, ...payload };
+  }
+
+  /** 创建任务 */
+  function addTask(input) {
+    return applyAndCommit({ kind: 'task.add', input }, {
+      reason: 'task-add',
+      unwrap: ({ createdId, issues }) => {
+        const task = getTask(createdId);
+        if (!task) return { ok: false, issues: issues ?? [] };
+        return { ok: true, task, warnings: issues.filter((issue) => issue.severity === 'warning') };
+      },
+    });
+  }
+
+  /** 编辑任务（只更新白名单字段；返回新对象，旧对象保持不变） */
+  function updateTask(id, patch) {
+    return applyAndCommit({ kind: 'task.update', taskId: id, patch }, {
+      reason: 'task-update',
+      unwrap: ({ issues }) => {
+        const task = getTask(id);
+        if (!task) return { ok: false, issues: issues ?? [] };
+        return { ok: true, task, warnings: issues.filter((issue) => issue.severity === 'warning') };
+      },
+    });
+  }
+
+  /** 状态迁移（完成 / 取消 / 恢复 / 重新开始）；取消与删除会连带取消待进行时段 */
+  function changeTaskStatus(id, to) {
+    const before = app.getState().sessions ?? [];
+    const cancellableBefore = before.filter(
+      (session) => session.taskId === id && session.state !== SESSION_STATE.COMPLETED && session.state !== SESSION_STATE.CANCELLED,
+    ).length;
+
+    return applyAndCommit({ kind: 'task.status', taskId: id, to }, {
+      reason: 'task-status',
+      unwrap: () => {
+        const task = getTask(id);
+        if (!task) return { ok: false };
+        return { ok: true, task, cancelledSessions: task.status === TASK_STATUS.DELETED || task.status === TASK_STATUS.CANCELLED ? cancellableBefore : 0 };
+      },
+    });
   }
 
   /**
@@ -188,39 +162,32 @@ export function createTaskService({ app, idFactory }) {
     const evaluated = evaluateTaskImpact(id);
     if (!evaluated.ok) return evaluated;
     const { impact } = evaluated;
+    const willBeHard = impact.totalSessions === 0 && hard;
 
-    if (impact.totalSessions === 0 && hard) {
-      const commitResult = app.commit((state) => ({ ...state, tasks: state.tasks.filter((t) => t.id !== id) }), {
-        reason: 'task-delete-hard',
-      });
-      if (!commitResult.ok) return { ok: false, error: commitResult.error };
-      return { ok: true, mode: 'hard', impact };
-    }
-
-    const statusResult = changeTaskStatus(id, TASK_STATUS.DELETED);
-    if (!statusResult.ok) return statusResult;
-    if (impact.totalSessions > 0 && !hard) {
-      return { ok: true, mode: 'soft', impact, cancelledSessions: statusResult.cancelledSessions };
-    }
-    if (impact.totalSessions === 0 && !hard) {
-      return { ok: true, mode: 'soft', impact, cancelledSessions: 0 };
-    }
-    // hard=true 但存在历史时段：出于数据安全拒绝物理删除，改为软删除
-    return {
-      ok: true,
-      mode: 'soft',
-      downgraded: true,
-      impact,
-      cancelledSessions: statusResult.cancelledSessions,
-      warnings: [
-        error(
-          C.ENTITY_DANGLING_REF,
-          'task',
-          '该任务已有学习记录，已改为"软删除"以保留历史；如需彻底清除，请先删除其学习记录。',
-          { taskId: id },
-        ),
-      ],
-    };
+    return applyAndCommit({ kind: 'task.delete', taskId: id, hard }, {
+      reason: willBeHard ? 'task-delete-hard' : 'task-delete-soft',
+      unwrap: () => {
+        if (willBeHard) return { ok: true, mode: 'hard', impact };
+        return {
+          ok: true,
+          mode: 'soft',
+          impact,
+          cancelledSessions: impact.activeSessions,
+          downgraded: hard && impact.totalSessions > 0,
+          warnings:
+            hard && impact.totalSessions > 0
+              ? [
+                  error(
+                    C.ENTITY_DANGLING_REF,
+                    'task',
+                    '该任务已有学习记录，已改为"软删除"以保留历史；如需彻底清除，请先清理它的学习记录。',
+                    { taskId: id },
+                  ),
+                ]
+              : [],
+        };
+      },
+    });
   }
 
   /** 恢复软删除的任务 */
@@ -231,15 +198,6 @@ export function createTaskService({ app, idFactory }) {
       return { ok: false, issues: [error(C.ENUM, 'task.status', '只有已删除的任务才能恢复。', { status: task.status })] };
     }
     return changeTaskStatus(id, TASK_STATUS.NOT_STARTED);
-  }
-
-  /**
-   * 依赖校验：自引用 / 悬空 / 环。
-   * 复用 domain/graph.js 的统一实现，避免界面、校验器与引擎三处各写一遍依赖规则。
-   */
-  function checkDependencies(candidate, { ignoreSelf = false } = {}) {
-    const existing = (app.getState()?.tasks ?? []).filter((t) => (ignoreSelf ? t.id !== candidate.id : true));
-    return checkTaskDependencies([...existing, candidate]);
   }
 
   /* ---------------------------------------------------------------- *

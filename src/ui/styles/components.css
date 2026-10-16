@@ -94,6 +94,15 @@
   background: var(--color-primary-soft);
   color: var(--color-primary-hover);
 }
+.app-nav__key {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-faint);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+
 .app-nav__foot {
   margin-top: auto;
   border-top: 1px solid var(--color-border);
@@ -430,6 +439,12 @@
     transparent var(--timeline-hour-height)
   );
 }
+.timeline__block:focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: 1px;
+  z-index: 3;
+}
+
 .timeline__block {
   position: absolute;
   left: 2px;
@@ -560,6 +575,25 @@ legend {
   color: var(--color-text-muted);
 }
 
+/* —— 可聚焦的滚动区域（时间轴）—— */
+.timeline:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* —— 屏幕阅读器专用提示 —— */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* —— 表格型列表（版本历史） —— */
 .table-wrap {
   overflow-x: auto;
@@ -620,7 +654,16 @@ legend {
     flex-direction: row;
     gap: var(--space-1);
   }
-  .app-nav__foot {
+  .app-nav__key {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-faint);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.app-nav__foot {
     margin-top: 0;
     border-top: none;
     padding-top: 0;
