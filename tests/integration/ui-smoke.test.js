@@ -412,6 +412,64 @@ test('界面渲染：有待确认候选计划时，预览页显示差异明细�
   delete globalThis.getComputedStyle;
 });
 
+test('界面渲染：工作台在进行中会显示计时与"结束本段"操作（阶段 4 计时分支）', async () => {
+  const dom = installFakeDom();
+  const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);
+  const instance = boot({ root: dom.appHost });
+
+  instance.services.taskService.addTask({
+    title: '线性代数作业',
+    subject: '数学',
+    plannedMinutes: 90,
+    deadlineDate: '2025-10-20',
+    deadlineTime: '23:00',
+    importance: 4,
+    difficulty: 4,
+    procrastination: 3,
+    splittable: true,
+    minChunkMinutes: 30,
+    maxChunkMinutes: 60,
+    dependsOn: [],
+    note: '',
+  });
+  const preview = instance.services.planService.requestPreview({ now: instance.services.now(), changeSummary: '生成计划' });
+  assert.equal(preview.ok, true, preview.issues?.map((i) => i.message).join('; '));
+  assert.equal(instance.services.planService.applyPreview().ok, true);
+
+  const session = instance.app.getState().sessions.find((item) => item.state === 'flexible');
+  assert.ok(session, '应有一个待进行的时段');
+  assert.equal(instance.services.focusService.start(session.id).ok, true);
+
+  dom.location.hash = '#/focus';
+  instance.shell.render();
+
+  const main = dom.appHost.children[0].byClass('app-main')[0];
+  const texts = main.all().map((node) => node.textContent).join('\n');
+  assert.match(texts, /正在专注/, '进行中应显示"正在专注"');
+  assert.match(texts, /剩余时间/, '应显示剩余时间');
+  assert.ok(main.all().some((node) => node.textContent === '暂停'), '应提供暂停按钮');
+  assert.ok(main.all().some((node) => node.textContent === '结束本段…'), '应提供结束按钮');
+  assert.match(texts, /已锁定/, '进行中的时段会被自动锁定');
+
+  // 暂停后状态文案变化
+  assert.equal(instance.services.focusService.pause(session.id, { elapsedMinutes: 12 }).ok, true);
+  instance.shell.render();
+  const pausedMain = dom.appHost.children[0].byClass('app-main')[0];
+  const pausedTexts = pausedMain.all().map((node) => node.textContent).join('\n');
+  assert.match(pausedTexts, /已暂停/, '暂停后应显示已暂停');
+  assert.ok(pausedMain.all().some((node) => node.textContent === '继续计时'), '暂停后应提供继续计时');
+
+  delete globalThis.Node;
+  delete globalThis.addEventListener;
+  delete globalThis.removeEventListener;
+  delete globalThis.document;
+  delete globalThis.window;
+  delete globalThis.location;
+  delete globalThis.localStorage;
+  delete globalThis.requestAnimationFrame;
+  delete globalThis.getComputedStyle;
+});
+
 test('界面渲染：空数据时每个页面都显示空状态而不是崩溃或假数据', async () => {
   const dom = installFakeDom();
   const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);
@@ -434,6 +492,9 @@ test('界面渲染：空数据时每个页面都显示空状态而不是崩溃�
   assert.match(settingsText, /排程参数/, '应提供排程参数的图形化编辑');
   assert.match(settingsText, /优先级权重/, '应提供权重编辑');
   assert.match(settingsText, /高级：设置 JSON 编辑/, 'JSON 编辑降级为高级入口');
+  assert.match(settingsText, /数据与备份/, '应显示存储与备份信息');
+  assert.match(settingsText, /清理历史记录/, '应提供清理历史入口');
+  assert.match(settingsText, /受保护的记录/, '清理面板必须说明哪些记录受保护');
 
   // 每日视图应显示当天容量与时间轴
   dom.location.hash = '#/day';

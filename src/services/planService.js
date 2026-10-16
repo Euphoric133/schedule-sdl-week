@@ -31,7 +31,7 @@ import { PLAN_HISTORY_LIMIT } from '../domain/schemas.js';
 import { VALIDATION_CODES as C, error, result } from '../domain/validation.js';
 import { addDays, wallTimeFromDateObject, weekday } from '../domain/time.js';
 import { computeSchedulerInputHash, run as runScheduler } from '../engine/scheduler.js';
-import { applyDraftOps, describeDraftOps } from '../domain/mutations.js';
+import { applyDraftOps, describeDraftOps, evaluateCleanupImpact } from '../domain/mutations.js';
 
 /**
  * @param {object} options
@@ -536,6 +536,38 @@ export function createPlanService({ app, idFactory }) {
     return { ok: true, plan: getOfficialPlan(), applied: preview };
   }
 
+  /**
+   * 执行清理操作（清理已取消的历史时段、裁剪版本快照）。
+   *
+   * 这是**用户显式触发**的破坏性操作，因此：
+   * - 绝不自动执行，也绝不在没有确认弹窗的情况下调用；
+   * - 只清理"已取消且从未开始过"的时段与超出保留上限的旧快照；
+   * - 已完成的学习记录与当前正式计划永远不在清理范围内。
+   */
+  function applyCleanup(ops) {
+    const state = app.getState();
+    const applied = applyDraftOps(state, ops, { idFactory, nowIso: nowIso() });
+    if (!applied.ok) return { ok: false, issues: applied.issues ?? [] };
+
+    const commitResult = app.commit(() => applied.state, { reason: 'cleanup' });
+    if (!commitResult.ok) return { ok: false, error: commitResult.error, issues: [] };
+
+    return {
+      ok: true,
+      removedCount: applied.removedCount ?? 0,
+      removedMinutes: applied.removedMinutes ?? 0,
+      plan: getOfficialPlan(),
+    };
+  }
+
+  /**
+   * 清理影响面（只读，不修改任何数据）。
+   * 界面用它先告诉用户"会删掉什么、能释放多少"，再让用户确认。
+   */
+  function cleanupImpact() {
+    return evaluateCleanupImpact(app.getState());
+  }
+
   /** 放弃候选计划：只清理 pendingPreview，正式计划与所有时段零改动 */
   function discardPreview() {
     if (!getPendingPreview()) {
@@ -715,6 +747,8 @@ export function createPlanService({ app, idFactory }) {
     requestPreview,
     applyPreview,
     discardPreview,
+    applyCleanup,
+    cleanupImpact,
     currentRisks,
     getOfficialPlan,
     getHistory,

@@ -56,6 +56,16 @@ export function applyDraftOp(state, op, ctx) {
       return sessionCancelOp(state, op, ctx);
     case 'session.complete':
       return sessionCompleteOp(state, op, ctx);
+    case 'session.pause':
+      return sessionPauseOp(state, op, ctx);
+    case 'session.extend':
+      return sessionExtendOp(state, op, ctx);
+    case 'session.delete':
+      return sessionDeleteOp(state, op);
+    case 'cleanup.cancelledSessions':
+      return cleanupCancelledSessionsOp(state, op);
+    case 'cleanup.planHistory':
+      return cleanupPlanHistoryOp(state, op);
     case 'fixedActivity.add':
       return fixedActivityAddOp(state, op, ctx);
     case 'fixedActivity.update':
@@ -75,17 +85,28 @@ export function applyDraftOp(state, op, ctx) {
   }
 }
 
-/** 依次应用多个变更（任一失败即整体放弃，保证草稿不会处于半应用状态） */
+/**
+ * 依次应用多个变更（任一失败即整体放弃，保证草稿不会处于半应用状态）。
+ *
+ * 除了新状态，还会汇总每个操作返回的统计字段（`removedCount` / `removedMinutes` / `createdId`），
+ * 这样服务层才能向用户报告"这次清理删掉了多少条"。
+ */
 export function applyDraftOps(state, ops, ctx) {
   let current = state;
   const issues = [];
+  const summary = { removedCount: 0, removedMinutes: 0, createdIds: [] };
+
   for (const op of ops ?? []) {
     const applied = applyDraftOp(current, op, ctx);
     if (!applied.ok) return { ok: false, state, issues: applied.issues ?? issues };
     current = applied.state;
     issues.push(...(applied.issues ?? []));
+    if (Number.isInteger(applied.removedCount)) summary.removedCount += applied.removedCount;
+    if (Number.isInteger(applied.removedMinutes)) summary.removedMinutes += applied.removedMinutes;
+    if (applied.createdId) summary.createdIds.push(applied.createdId);
   }
-  return { ok: true, state: current, issues };
+
+  return { ok: true, state: current, issues, ...summary };
 }
 
 /** 人类可读的变更摘要（写入版本历史与预览标题） */
@@ -118,6 +139,21 @@ export function describeDraftOps(ops) {
         break;
       case 'session.complete':
         parts.push('记录已完成时段');
+        break;
+      case 'session.pause':
+        parts.push(op.paused ? '暂停计时' : '继续计时');
+        break;
+      case 'session.extend':
+        parts.push('延长当前时段');
+        break;
+      case 'session.delete':
+        parts.push('清理历史时段记录');
+        break;
+      case 'cleanup.cancelledSessions':
+        parts.push('清理已取消的时段记录');
+        break;
+      case 'cleanup.planHistory':
+        parts.push('清理历史版本快照');
         break;
       case 'fixedActivity.add':
         parts.push(`新增固定活动「${op.input?.title ?? ''}」`);
@@ -324,6 +360,137 @@ function sessionCompleteOp(state, op, ctx) {
   };
 }
 
+/**
+ * 暂停计时：把进行中的时段标记为暂停，并记录已累计的分钟数。
+ * 这里保持 `state='in_progress'`（它仍然是"正在进行"的那一段），
+ * 只在 `paused: true` 上区分停下来还是走着——这样容量与锁定语义都不受影响。
+ */
+function sessionPauseOp(state, op, ctx) {
+  const session = (state.sessions ?? []).find((item) => item.id === op.sessionId);
+  if (!session) return { ok: false, state, issues: [error(C.REQUIRED, 'session', '学习时段不存在。', { sessionId: op.sessionId })] };
+  if (session.state !== SESSION_STATE.IN_PROGRESS) {
+    return { ok: false, state, issues: [error(C.ENUM, 'session.state', '只有正在进行中的时段才能暂停或继续。', { state: session.state })] };
+  }
+  return {
+    ok: true,
+    state: {
+      ...state,
+      sessions: state.sessions.map((item) =>
+        item.id === op.sessionId
+          ? { ...item, paused: Boolean(op.paused), elapsedMinutes: normalizeActual(op.elapsedMinutes, item), updatedAt: ctx.nowIso }
+          : item,
+      ),
+    },
+    issues: [],
+  };
+}
+
+/**
+ * 延长当前时段（用户选择"占用后面的时间把这一段做完"）。
+ * 只延长到用户给定的新结束时间；如果会与非固定活动重叠，由引擎的硬约束校验拦下。
+ */
+function sessionExtendOp(state, op, ctx) {
+  const session = (state.sessions ?? []).find((item) => item.id === op.sessionId);
+  if (!session) return { ok: false, state, issues: [error(C.REQUIRED, 'session', '学习时段不存在。', { sessionId: op.sessionId })] };
+  if (session.state === SESSION_STATE.COMPLETED) {
+    return { ok: false, state, issues: [error(C.ENUM, 'session.state', '已完成的时段不能再延长。', {})] };
+  }
+  const endMinutes = op.endMinutes;
+  const length = endMinutes - session.startMinutes;
+  if (!Number.isInteger(endMinutes) || length <= 0 || length > 8 * 60) {
+    return { ok: false, state, issues: [error(C.SESSION_LENGTH_INVALID, 'session', '延长后的时段长度必须在 1 分钟到 8 小时之间。', { endMinutes })] };
+  }
+  return {
+    ok: true,
+    state: {
+      ...state,
+      sessions: state.sessions.map((item) =>
+        item.id === op.sessionId
+          ? {
+              ...item,
+              endMinutes,
+              plannedMinutes: length,
+              source: 'user_move',
+              updatedAt: ctx.nowIso,
+              history: [
+                ...(item.history ?? []),
+                { at: ctx.nowIso, action: 'extend', from: { endMinutes: item.endMinutes }, to: { endMinutes } },
+              ],
+            }
+          : item,
+      ),
+    },
+    issues: [],
+  };
+}
+
+/** 删除单条历史时段记录（仅用于用户显式触发的清理） */
+function sessionDeleteOp(state, op) {
+  const session = (state.sessions ?? []).find((item) => item.id === op.sessionId);
+  if (!session) return { ok: false, state, issues: [error(C.REQUIRED, 'session', '学习时段不存在。', { sessionId: op.sessionId })] };
+  if (session.state === SESSION_STATE.COMPLETED) {
+    return {
+      ok: false,
+      state,
+      issues: [error(C.ENUM, 'session.state', '已完成的学习记录属于历史事实，不能删除。', { sessionId: op.sessionId })],
+    };
+  }
+  return { ok: true, state: { ...state, sessions: state.sessions.filter((item) => item.id !== op.sessionId) }, issues: [] };
+}
+
+/* ------------------------------------------------------------------ *
+ * 清理（只在用户显式触发时执行；绝不自动删除历史）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 计算清理影响面（不修改任何数据）。
+ * @returns {{removable: object[], removableMinutes: number, keepCompleted: number, keepActive: number}}
+ */
+export function evaluateCleanupImpact(state) {
+  const sessions = state.sessions ?? [];
+  const removable = sessions.filter(
+    (session) => session.state === SESSION_STATE.CANCELLED && session.actualMinutes === null && !session.startedAt,
+  );
+  return {
+    removable,
+    removableMinutes: removable.reduce((sum, session) => sum + (session.plannedMinutes ?? 0), 0),
+    keepCompleted: sessions.filter((session) => session.state === SESSION_STATE.COMPLETED).length,
+    keepActive: sessions.filter((session) => session.state === SESSION_STATE.FLEXIBLE || session.state === SESSION_STATE.IN_PROGRESS).length,
+    historyCount: (state.planHistory ?? []).length,
+  };
+}
+
+/** 清理"已取消且从未开始过"的时段记录（保留已完成与正在进行的记录） */
+function cleanupCancelledSessionsOp(state, op) {
+  const impact = evaluateCleanupImpact(state);
+  if (impact.removable.length === 0) {
+    return { ok: false, state, issues: [error(C.REQUIRED, 'sessions', '没有可以清理的已取消记录。', {})] };
+  }
+  void op;
+  const removableIds = new Set(impact.removable.map((session) => session.id));
+  return {
+    ok: true,
+    state: { ...state, sessions: (state.sessions ?? []).filter((session) => !removableIds.has(session.id)) },
+    issues: [],
+    removedCount: impact.removable.length,
+    removedMinutes: impact.removableMinutes,
+  };
+}
+
+/**
+ * 清理历史版本快照，只保留最近 N 个。
+ * 当前正式计划永远保留（它不在 planHistory 里）。
+ */
+function cleanupPlanHistoryOp(state, op) {
+  const keep = Number.isInteger(op.keep) && op.keep > 0 ? op.keep : 5;
+  const history = state.planHistory ?? [];
+  if (history.length <= keep) {
+    return { ok: false, state, issues: [error(C.REQUIRED, 'planHistory', `历史版本只有 ${history.length} 个，无需清理。`, {})] };
+  }
+  const removed = history.length - keep;
+  return { ok: true, state: { ...state, planHistory: history.slice(0, keep) }, issues: [], removedCount: removed };
+}
+
 /* ------------------------------------------------------------------ *
  * 固定活动
  * ------------------------------------------------------------------ */
@@ -390,6 +557,12 @@ function windowShiftOp(state, op, ctx) {
   // 但为了让候选计划与正式计划可比较，这里把窗口记录写进 pendingPreview，
   // 由 planService 在应用时把窗口一并写入新计划。
   return { ok: true, state, issues: [], windowStart: op.windowStart, windowDays: op.windowDays ?? 7 };
+}
+
+/** 归一化"已累计分钟数"：非法值退回时段原值，避免把计时数据写坏 */
+function normalizeActual(value, session) {
+  if (!Number.isInteger(value) || value < 0) return session.elapsedMinutes ?? 0;
+  return Math.min(value, 24 * 60);
 }
 
 /* ------------------------------------------------------------------ *

@@ -100,6 +100,17 @@ function createUiService({ services }) {
     /** 撤销上一次计划变更 */
     undoLastPlan: () => services.planService.undoLastApply(),
 
+    /**
+     * 清理历史记录（用户显式触发；绝不自动删除）。
+     * @param {Array<object>} ops 清理操作
+     */
+    cleanup(ops) {
+      return services.planService.applyCleanup(ops);
+    },
+
+    /** 导入前的预览（校验但不写入） */
+    previewImport: (text) => services.app.previewImport(text),
+
     /** 把计划窗口向前/向后移动若干天（保留已完成历史，重排未来七天） */
     shiftWindow(days) {
       const current = services.planService.getOfficialPlan();

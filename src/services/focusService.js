@@ -9,6 +9,7 @@
  */
 
 import { SESSION_STATE, completeSession, startSession } from '../domain/session.js';
+import { remainingMinutesForTask } from '../domain/task.js';
 
 /**
  * @param {object} options
@@ -114,5 +115,136 @@ export function createFocusService({ app, idFactory }) {
     };
   }
 
-  return { getSession, getRunningSession, start, finish, todayStats };
+  /**
+   * 暂停 / 继续当前时段。
+   *
+   * 为什么放在服务层而不是界面：计时状态（已累计分钟数）属于数据，
+   * 刷新页面后必须还能恢复，因此与其它数据一样走 `app.commit`。
+   */
+  function pause(sessionId, { elapsedMinutes } = {}) {
+    const session = getSession(sessionId);
+    if (!session) return fail('要暂停的学习时段不存在。');
+    if (session.state !== SESSION_STATE.IN_PROGRESS) return fail('只有正在进行中的时段才能暂停。');
+    if (session.paused) return { ok: true, session, alreadyPaused: true };
+
+    const commitResult = app.commit(
+      (state) => ({
+        ...state,
+        sessions: state.sessions.map((item) =>
+          item.id === sessionId
+            ? { ...item, paused: true, elapsedMinutes: normalizeElapsed(elapsedMinutes, item), updatedAt: nowIso() }
+            : item,
+        ),
+      }),
+      { reason: 'focus-pause' },
+    );
+    if (!commitResult.ok) return { ok: false, error: commitResult.error };
+    return { ok: true, session: getSession(sessionId) };
+  }
+
+  /** 继续计时（从暂停状态恢复） */
+  function resume(sessionId, { elapsedMinutes } = {}) {
+    const session = getSession(sessionId);
+    if (!session) return fail('要继续的学习时段不存在。');
+    if (session.state !== SESSION_STATE.IN_PROGRESS) return fail('只有正在进行中的时段才能继续。');
+    if (!session.paused) return { ok: true, session, alreadyRunning: true };
+
+    const commitResult = app.commit(
+      (state) => ({
+        ...state,
+        sessions: state.sessions.map((item) =>
+          item.id === sessionId
+            ? { ...item, paused: false, elapsedMinutes: normalizeElapsed(elapsedMinutes, item), updatedAt: nowIso() }
+            : item,
+        ),
+      }),
+      { reason: 'focus-resume' },
+    );
+    if (!commitResult.ok) return { ok: false, error: commitResult.error };
+    return { ok: true, session: getSession(sessionId) };
+  }
+
+  /**
+   * 评估"结束这一段"时的分支。
+   *
+   * 提前完成或超时都不允许自动改动后续安排，而是把可选处理方式告诉界面：
+   * - 还有剩余工作量 → 建议"顺延剩余工作"（生成重排预览）
+   * - 实际时长少于计划 → 询问是否顺延或就此结束
+   * - 实际时长超过计划 → 询问是否延长本段（占用缓冲）或占用后续时段
+   */
+  function evaluateFinish(sessionId, { actualMinutes } = {}) {
+    const session = getSession(sessionId);
+    if (!session) return fail('学习时段不存在。');
+    const task = (app.getState()?.tasks ?? []).find((item) => item.id === session.taskId) ?? null;
+    const actual = Number.isFinite(actualMinutes) ? Math.max(0, Math.round(actualMinutes)) : session.plannedMinutes;
+    const completedTaskMinutes = (app.getState()?.sessions ?? [])
+      .filter((item) => item.taskId === session.taskId && item.state === SESSION_STATE.COMPLETED)
+      .reduce((sum, item) => sum + (item.actualMinutes ?? item.plannedMinutes ?? 0), 0);
+    const remainingAfterThis = Math.max(0, (task?.plannedMinutes ?? 0) - completedTaskMinutes - actual);
+
+    return {
+      ok: true,
+      session,
+      task,
+      actualMinutes: actual,
+      planMinutes: session.plannedMinutes,
+      differenceMinutes: actual - session.plannedMinutes,
+      isOverrun: actual > session.plannedMinutes,
+      isEarly: actual < session.plannedMinutes,
+      remainingAfterThis,
+      taskWillBeComplete: remainingAfterThis === 0,
+      options: buildFinishOptions({ session, actual, remainingAfterThis }),
+    };
+  }
+
+  function buildFinishOptions({ session, actual, remainingAfterThis }) {
+    const options = [
+      { code: 'complete', label: '记录实际时长并结束本段', description: '不改动后续安排，剩余工作由你决定是否重新规划。' },
+    ];
+    if (remainingAfterThis > 0) {
+      options.push({
+        code: 'replan',
+        label: '结束并重新规划剩余工作',
+        description: '先生成候选计划预览，确认后才会调整后续安排。',
+      });
+    } else {
+      options.push({
+        code: 'complete_task',
+        label: '结束并把这个任务标记为已完成',
+        description: '剩余工作量为 0，可以一并把任务标记完成。',
+      });
+    }
+    if (actual > session.plannedMinutes) {
+      options.push({
+        code: 'extend',
+        label: `延长本段到 ${actual} 分钟`,
+        description: '把多出来的时间记在本段上（会占用后面的空白时间，需要生成预览确认）。',
+      });
+      options.push({
+        code: 'keep_plan',
+        label: '只记录实际时长，计划保持不变',
+        description: '计划里这一段仍是原来的时长，实际投入更长。',
+      });
+    }
+    void session;
+    return options;
+  }
+
+  function fail(message) {
+    return { ok: false, issues: [{ severity: 'error', code: 'V001', path: 'focus', message }] };
+  }
+
+  function normalizeElapsed(value, session) {
+    if (!Number.isInteger(value) || value < 0) return session.elapsedMinutes ?? 0;
+    return Math.min(value, 24 * 60);
+  }
+
+  /** 任务剩余工作量（工作台展示"还剩多少"时使用） */
+  function remainingMinutes(taskId) {
+    const task = (app.getState()?.tasks ?? []).find((item) => item.id === taskId) ?? null;
+    if (!task) return 0;
+    return remainingMinutesForTask(task, app.getState()?.sessions ?? []);
+  }
+
+  return { getSession, getRunningSession, start, pause, resume, finish, evaluateFinish, todayStats, remainingMinutes };
 }

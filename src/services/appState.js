@@ -164,6 +164,46 @@ export function createAppState(options = {}) {
     );
   }
 
+  /**
+   * 导入预览：解析并完整校验，但**不写入任何数据**。
+   *
+   * 界面用它先展示"这份备份包含什么、有没有问题"，用户确认后再调用 `importBackup`。
+   * 这样"看一眼再决定"与"真的导入"是两步，避免误操作覆盖现有数据。
+   */
+  function previewImport(text) {
+    const parsed = parseImport(text);
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        issues: parsed.issues,
+        errors: (parsed.issues ?? []).filter((issue) => issue.severity === 'error'),
+        error: parsed.error,
+      };
+    }
+    return {
+      ok: true,
+      summary: parsed.summary,
+      exportedAt: parsed.exportedAt,
+      warnings: (parsed.issues ?? []).filter((issue) => issue.severity === 'warning'),
+      issues: parsed.issues ?? [],
+    };
+  }
+
+  /** 存储占用（字节）与浏览器配额估算（可用时） */
+  async function storageUsage() {
+    const usedBytes = typeof adapter.usedBytes === 'function' ? adapter.usedBytes() : null;
+    let quotaBytes = null;
+    try {
+      if (typeof globalThis.navigator?.storage?.estimate === 'function') {
+        const estimate = await globalThis.navigator.storage.estimate();
+        quotaBytes = estimate?.quota ?? null;
+      }
+    } catch {
+      quotaBytes = null;
+    }
+    return { usedBytes, quotaBytes, persistenceAvailable };
+  }
+
   /** 导出当前数据为 JSON 文本（纯函数，不改状态） */
   function exportBackup() {
     const backup = buildBackup(state, { nowIso: clock() });
@@ -232,7 +272,9 @@ export function createAppState(options = {}) {
     persist,
     markBackupExported,
     exportBackup,
+    previewImport,
     importBackup,
     importFile,
+    storageUsage,
   };
 }
