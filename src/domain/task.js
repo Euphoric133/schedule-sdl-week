@@ -113,6 +113,11 @@ export function createTask(input, ctx) {
     title: typeof input.title === 'string' ? input.title.trim() : input.title,
     subject: typeof input.subject === 'string' ? input.subject.trim() : input.subject,
     plannedMinutes,
+    /**
+     * 用户手工声明的"已经完成的时长"（应用之外的学习，例如纸质作业）。
+     * 剩余时长 = plannedMinutes − (priorCompletedMinutes + 应用内完成记录)，始终是派生值。
+     */
+    priorCompletedMinutes: normalizePriorMinutes(input.priorCompletedMinutes),
     deadlineDate: input.deadlineDate,
     deadlineTime: input.deadlineTime,
     importance: input.importance,
@@ -164,6 +169,26 @@ export function validateTask(task, path = 'task') {
     max: PLANNED_MINUTES_MAX,
   });
   if (plannedIssue) issues.push(plannedIssue);
+
+  // 手工声明的"已完成时长"：必须是 ≥ 0 的整数，且不能超过预计总用时
+  // （否则剩余时长会变成负数，排程结果无法解释）
+  if (task.priorCompletedMinutes !== undefined && task.priorCompletedMinutes !== null) {
+    const prior = task.priorCompletedMinutes;
+    if (!Number.isInteger(prior) || prior < 0) {
+      issues.push(
+        error(C.RANGE, `${path}.priorCompletedMinutes`, '已完成时长必须是大于等于 0 的整数分钟。', { actual: prior }),
+      );
+    } else if (Number.isFinite(task.plannedMinutes) && prior > task.plannedMinutes) {
+      issues.push(
+        error(
+          C.TASK_OVER_COMPLETED,
+          `${path}.priorCompletedMinutes`,
+          `已完成时长（${prior} 分钟）不能超过预计总用时（${task.plannedMinutes} 分钟）。`,
+          { prior, plannedMinutes: task.plannedMinutes },
+        ),
+      );
+    }
+  }
 
   // 截止日期与时间：必须是**真实存在**的日历日与合法时刻
   // （例如 2025-02-30 或 25:99 必须在这里被拦住，而不是留给引擎去处理）
@@ -305,6 +330,34 @@ export function completedMinutesForTask(taskId, sessions = []) {
 }
 
 /**
+ * 任务已完成的总时长 = **用户手工声明的部分** + **应用内完成记录**。
+ *
+ * 为什么需要"手工声明"：很多学习发生在应用之外（纸质作业、线下课程、别的设备）。
+ * 只统计应用内记录会让这些任务永远显示"还剩全部"，排程也会重复安排已经做完的部分。
+ * 用户在任务里填"已完成 30 分钟"就是把这个事实告诉系统。
+ *
+ * 注意：剩余时长**依然是派生值**（预计总用时 − 已完成），从不单独存储，
+ * 因此不会出现"剩余时长与记录不一致"的脏数据。
+ */
+function normalizePriorMinutes(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.floor(number);
+}
+
+export function claimedPriorMinutes(task) {
+  const value = task?.priorCompletedMinutes;
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.floor(value);
+}
+
+/** 合计已完成时长（手工声明 + 应用内完成记录） */
+export function totalCompletedMinutesForTask(task, sessions = []) {
+  if (!task) return 0;
+  return claimedPriorMinutes(task) + completedMinutesForTask(task.id, sessions);
+}
+
+/**
  * 汇总某任务当前**未完成**时段的计划分钟数（排除 completed；包含 flexible / in_progress）。
  * 与 completedMinutes 一起用于 V016 一致性校验。
  */
@@ -325,7 +378,7 @@ export function remainingMinutesForTask(task, sessions = []) {
   if (task.status === TASK_STATUS.COMPLETED || task.status === TASK_STATUS.CANCELLED || task.status === TASK_STATUS.DELETED) {
     return 0;
   }
-  const remaining = (task.plannedMinutes ?? 0) - completedMinutesForTask(task.id, sessions);
+  const remaining = (task.plannedMinutes ?? 0) - totalCompletedMinutesForTask(task, sessions);
   return remaining > 0 ? remaining : 0;
 }
 
@@ -338,7 +391,7 @@ export function remainingMinutesForTask(task, sessions = []) {
  */
 export function validateTaskDurationConsistency(task, sessions, path = 'task') {
   const issues = [];
-  const completed = completedMinutesForTask(task.id, sessions);
+  const completed = totalCompletedMinutesForTask(task, sessions);
   if (completed > task.plannedMinutes) {
     issues.push(
       error(
@@ -383,6 +436,7 @@ export const TASK_PATCHABLE_FIELDS = Object.freeze([
   'maxChunkMinutes',
   'dependsOn',
   'note',
+  'priorCompletedMinutes',
 ]);
 
 /**

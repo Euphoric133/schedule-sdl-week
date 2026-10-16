@@ -121,8 +121,20 @@ export function taskList(items, { renderActions } = {}) {
   return el(
     'ul.task-list',
     {},
-    items.map(({ task, remainingMinutes, activeSessions, completedSessions, lockedSessions }) =>
-      el('li.task-item', {}, [
+    items.map(({ task, sessions, remainingMinutes, activeSessions, completedSessions, lockedSessions }) => {
+      // 每个任务的具体安排时间：用户最关心的信息之一，直接列出来而不必翻到周视图
+      const upcoming = [...(sessions ?? [])]
+        .filter((session) => session.state === 'flexible' || session.state === 'in_progress')
+        .sort((a, b) => (a.date === b.date ? a.startMinutes - b.startMinutes : a.date < b.date ? -1 : 1));
+      const scheduleText =
+        upcoming.length === 0
+          ? null
+          : `已安排 ${upcoming.length} 段：${upcoming
+              .slice(0, 4)
+              .map((session) => `${session.date.slice(5)} ${formatMinutes(session.startMinutes)}–${formatMinutes(session.endMinutes)}`)
+              .join('　')}${upcoming.length > 4 ? `　…还有 ${upcoming.length - 4} 段` : ''}`;
+
+      return el('li.task-item', {}, [
         el('div.task-item__head', {}, [
           el('div', {}, [
             el('span.task-item__title', { text: task.title }),
@@ -131,15 +143,17 @@ export function taskList(items, { renderActions } = {}) {
           el('div.task-item__meta', {}, [
             pill(`预计 ${formatDuration(task.plannedMinutes)}`, 'neutral'),
             pill(`剩余 ${formatDuration(remainingMinutes)}`, remainingMinutes > 0 ? 'warning' : 'success'),
+            task.priorCompletedMinutes > 0 ? pill(`已完成 ${formatDuration(task.priorCompletedMinutes)}`, 'study') : null,
             pill(`截止 ${task.deadlineDate} ${task.deadlineTime}`, 'neutral'),
             activeSessions > 0 ? pill(`待进行 ${activeSessions} 段`, 'study') : null,
             completedSessions > 0 ? pill(`已完成 ${completedSessions} 段`, 'success') : null,
             lockedSessions > 0 ? pill(`锁定 ${lockedSessions} 段`, 'locked') : null,
           ]),
         ]),
+        scheduleText ? el('div.card__hint', { text: scheduleText }) : null,
         renderActions ? el('div.task-item__actions', {}, renderActions({ task })) : null,
-      ]),
-    ),
+      ]);
+    }),
   );
 }
 

@@ -28,6 +28,7 @@ export function openTaskForm({ task = null, services }) {
         title: task.title,
         subject: task.subject,
         plannedMinutes: task.plannedMinutes,
+        priorCompletedMinutes: task.priorCompletedMinutes ?? 0,
         deadlineDate: task.deadlineDate,
         deadlineTime: task.deadlineTime,
         importance: task.importance,
@@ -43,6 +44,24 @@ export function openTaskForm({ task = null, services }) {
 
   const inputs = {};
   const errorHost = el('div', { id: 'task-form-errors' });
+
+  /** 实时显示"剩余时长"，让用户一眼看清这次填写会产生多少待安排工作量 */
+  const remainingHint = el('div.form-field__hint', { 'aria-live': 'polite' });
+  function updateRemainingHint() {
+    const planned = Number.parseInt(inputs.plannedMinutes?.value ?? '', 10);
+    const prior = Number.parseInt(inputs.priorCompletedMinutes?.value ?? '0', 10);
+    if (!Number.isFinite(planned)) {
+      remainingHint.textContent = '填写预计总用时后，这里会显示剩余时长。';
+      return;
+    }
+    const done = Number.isFinite(prior) && prior > 0 ? prior : 0;
+    const remaining = planned - done;
+    if (remaining < 0) {
+      remainingHint.textContent = `已完成（${done} 分钟）超过了预计总用时（${planned} 分钟），请调整。`;
+      return;
+    }
+    remainingHint.textContent = `剩余时长：${remaining} 分钟（预计总用时 ${planned} − 已完成 ${done}）`;
+  }
 
   const dialog = el('dialog', {
     style: {
@@ -124,6 +143,25 @@ export function openTaskForm({ task = null, services }) {
       el('div.form-grid', {}, [
         textField('plannedMinutes', '预计总用时（分钟，必填）', { type: 'number', min: 5, step: 5, hint: '必须是 5 的倍数，例如 45、90' }),
         el('div.form-field', {}, [
+          el('label', { for: 'af-priorCompleted', text: '已经完成（分钟，可留 0）' }),
+          (() => {
+            const input = el('input', {
+              type: 'number',
+              id: 'af-priorCompleted',
+              min: '0',
+              step: '5',
+              value: String(task?.priorCompletedMinutes ?? 0),
+              on: { input: () => updateRemainingHint() },
+            });
+            inputs.priorCompletedMinutes = input;
+            return input;
+          })(),
+          el('div.form-field__hint', {
+            text: '在应用之外完成的部分（纸质作业、线下课等）。填写后剩余时长会相应减少，排程不会再安排这部分。',
+          }),
+          remainingHint,
+        ]),
+        el('div.form-field', {}, [
           el('label', { for: 'tf-splittable' }, [splittable, el('span', { text: ' 允许拆分到多天/多段' })]),
           el('div.form-field__hint', { text: '不勾选时，该任务必须一次安排完整个时长（不可拆分）。' }),
         ]),
@@ -164,6 +202,7 @@ export function openTaskForm({ task = null, services }) {
       title: inputs.title.value.trim(),
       subject: inputs.subject.value.trim(),
       plannedMinutes: Number.parseInt(inputs.plannedMinutes.value, 10),
+      priorCompletedMinutes: Number.parseInt(inputs.priorCompletedMinutes.value, 10) || 0,
       deadlineDate: inputs.deadlineDate.value,
       deadlineTime: inputs.deadlineTime.value,
       importance: Number.parseInt(inputs.importance.value, 10),
@@ -206,6 +245,14 @@ export function openTaskForm({ task = null, services }) {
     }
     if (!isValidTimeString(values.deadlineTime)) {
       localIssues.push({ severity: 'error', code: 'V001', path: 'deadlineTime', message: '请填写合法的截止时间（例如 23:00）。' });
+    }
+    if (values.priorCompletedMinutes > values.plannedMinutes) {
+      localIssues.push({
+        severity: 'error',
+        code: 'V015',
+        path: 'priorCompletedMinutes',
+        message: '已完成时长不能超过预计总用时。',
+      });
     }
     if (Number.isInteger(values.plannedMinutes) && values.plannedMinutes % 5 !== 0) {
       localIssues.push({ severity: 'error', code: 'V003', path: 'plannedMinutes', message: '预计总用时需要是 5 的倍数，便于整齐地拆分时段。' });
@@ -250,6 +297,7 @@ export function openTaskForm({ task = null, services }) {
     dialog.remove();
   }
 
+  updateRemainingHint();
   document.body.appendChild(dialog);
   dialog.showModal();
   inputs.title.focus();

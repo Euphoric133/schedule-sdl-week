@@ -974,3 +974,65 @@ test('持久化：导入缺少新增字段的旧备份时自动补齐，不丢�
   assert.deepEqual(state.focusRecords, [], '缺少的新字段补为空数组');
   assert.deepEqual(state.rewardHistory, [], '缺少的新字段补为空数组');
 });
+
+/* ================================================================== *
+ * 剩余时长：可由用户声明"已完成的时长"，剩余是派生值
+ * ================================================================== */
+
+test('剩余时长：手工声明的已完成时长会减少剩余工作量，排程不再重复安排', () => {
+  const env = makeEnv();
+  env.services.taskService.addTask(
+    taskInput({ title: '线性代数作业', plannedMinutes: 120, deadlineDate: '2025-10-20', priorCompletedMinutes: 30 }),
+  );
+  const task = env.app.getState().tasks[0];
+  assert.equal(task.priorCompletedMinutes, 30, '声明值被保存');
+
+  // 剩余 = 120 − 30 = 90
+  assert.equal(env.services.taskService.listTaskViews()[0].remainingMinutes, 90);
+
+  // 引擎只排剩余的部分
+  const preview = env.services.planService.requestPreview({ now: NOW, changeSummary: '生成计划' });
+  assert.equal(preview.ok, true, preview.issues?.map((i) => i.message).join('; '));
+  const scheduled = preview.preview.candidate.blocks
+    .filter((block) => block.kind === 'study' && block.taskId === task.id)
+    .reduce((sum, block) => sum + (block.endMinutes - block.startMinutes), 0);
+  assert.equal(scheduled, 90, `只应安排剩余的 90 分钟，实际 ${scheduled}`);
+});
+
+test('剩余时长：应用内完成记录与手工声明会加在一起', () => {
+  const env = makeEnv();
+  env.services.taskService.addTask(
+    taskInput({ title: '英语阅读', plannedMinutes: 100, deadlineDate: '2025-10-20', priorCompletedMinutes: 25 }),
+  );
+  const task = env.app.getState().tasks[0];
+
+  // 应用内又完成 45 分钟
+  env.app.commit(
+    (state) => ({
+      ...state,
+      sessions: [
+        { id: 'ses_1', taskId: task.id, date: NOW.date, startMinutes: 960, endMinutes: 1005, plannedMinutes: 45, actualMinutes: 45, state: 'completed' },
+      ],
+    }),
+    { reason: 'test-seed' },
+  );
+
+  assert.equal(env.services.taskService.listTaskViews()[0].remainingMinutes, 30, '剩余 = 100 − 25 − 45');
+});
+
+test('剩余时长：声明值超过预计总用时会被校验拒绝（不允许负数剩余）', () => {
+  const env = makeEnv();
+  const created = env.services.taskService.addTask(
+    taskInput({ title: '超额声明', plannedMinutes: 60, deadlineDate: '2025-10-20', priorCompletedMinutes: 90 }),
+  );
+  assert.equal(created.ok, false, '不能声明比总用时更多的已完成时长');
+  assert.ok(created.issues.some((issue) => issue.severity === 'error'));
+});
+
+test('剩余时长：不填声明值时行为与以前完全一致（向后兼容）', () => {
+  const env = makeEnv();
+  env.services.taskService.addTask(taskInput({ title: '普通任务', plannedMinutes: 90, deadlineDate: '2025-10-20' }));
+  const view = env.services.taskService.listTaskViews()[0];
+  assert.equal(view.task.priorCompletedMinutes, 0);
+  assert.equal(view.remainingMinutes, 90);
+});
