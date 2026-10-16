@@ -128,8 +128,31 @@ export function run(input) {}
 |---|---|---|
 | `appState.js` | 唯一数据根、发布订阅、原子持久化 | 保存失败时**回滚内存状态**，内存与磁盘不会不一致 |
 | `taskService.js` | 任务 CRUD、状态迁移、影响面评估、软删除 | 非法输入不写库；删除必须报告影响面 |
-| `planService.js` | 计划应用、版本链、撤销、预览过期检测 | 版本不匹配或输入指纹变化时拒绝应用 |
+| `fixedActivityService.js` | 固定活动列表、影响面评估、按日展开、重复规则说明 | 删除前必须能回答"释放了多少可用时间" |
+| `planService.js` | 预览生成、计划应用、版本链、撤销、过期检测、会话同步 | 未确认前不写业务数据；确认时数据与计划一次提交 |
 | `focusService.js` | 开始/结束学习、记录实际时长 | 同一天只允许一段进行中；结束只记录事实，不自动改未来安排 |
+
+**草稿变更层（`src/domain/mutations.js`）**
+
+阶段 3 起，界面的每一次修改都描述成一个**变更操作**（op）：
+
+```
+{ kind: 'task.add',    input }
+{ kind: 'task.update', taskId, patch }
+{ kind: 'session.lock', sessionId, locked }
+{ kind: 'session.move', sessionId, date, startMinutes, endMinutes, lock?, force? }
+{ kind: 'fixedActivity.add' | 'update' | 'remove', … }
+{ kind: 'settings.update', settings }
+{ kind: 'window.shift', windowStart, windowDays }
+```
+
+`applyDraftOps(state, ops, ctx)` 是**纯函数**：输入状态与操作，输出新状态或结构化错误。
+它被用在同一流程的两端：
+
+1. `requestPreview` 时把 ops 应用到内存草稿上，交给引擎求解并生成差异预览；
+2. `applyPreview` 时在同一事务里重放同一批 ops，再写入计划与会话。
+
+这样"预览看到的"与"确认后写入的"必然是同一套逻辑，不会出现两者不一致。
 
 ### 2.5 `src/ui/`
 

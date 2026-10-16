@@ -44,10 +44,13 @@ async function collectModules(file, collected = new Map(), stack = []) {
   }
 
   const source = await readFile(absolute, 'utf8');
+  // 去掉注释后再检测动态 import：JSDoc 里的 `{import('./x.js').T}` 是类型注解，
+  // 不是运行时代码，不该被当成动态导入拒绝掉。
+  const codeOnly = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
   if (/^\s*export\s+\*/m.test(source)) {
     throw new Error(`${relative(projectRoot, absolute)} 使用了 \`export * from\`，当前内联脚本不支持，请改为显式列出导出。`);
   }
-  if (/\bimport\s*\(\s*['"`]/.test(source)) {
+  if (/\bimport\s*\(\s*['"`]/.test(codeOnly)) {
     throw new Error(`${relative(projectRoot, absolute)} 使用了动态 import()，当前内联脚本不支持，请改用静态 import。`);
   }
 

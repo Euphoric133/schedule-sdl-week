@@ -49,6 +49,22 @@ export function renderWeek({ app, services, route, now }) {
             if (!result.ok) toast(result.message, 'error', 8000);
           },
         }),
+        button('计划窗口前移一天', {
+          size: 'sm',
+          title: '保留已完成历史，重新规划未来七天',
+          onClick: () => {
+            const result = services.ui.shiftWindow(-1);
+            if (!result.ok) toast(result.message, 'error', 8000);
+          },
+        }),
+        button('计划窗口后移一天', {
+          size: 'sm',
+          title: '保留已完成历史，重新规划未来七天',
+          onClick: () => {
+            const result = services.ui.shiftWindow(1);
+            if (!result.ok) toast(result.message, 'error', 8000);
+          },
+        }),
         button('← 上一周', { size: 'sm', onClick: () => gotoWeek(offsetWeeks - 1) }),
         button('回到本周', { size: 'sm', disabled: offsetWeeks === 0, onClick: () => gotoWeek(0) }),
         button('下一周 →', { size: 'sm', onClick: () => gotoWeek(offsetWeeks + 1) }),
@@ -82,7 +98,18 @@ export function renderWeek({ app, services, route, now }) {
       actions: [legend()],
       // 无论有没有计划都渲染时间轴框架：用户需要先看到"时间轴长什么样、有哪些刻度与图例"，
       // 而不是被一个空状态挡住；没有安排时列上会显示"暂无安排"。
-      body: timeline({ dates, blocksByDate, today, startHour: 6, endHour: 24, onSelect: (block) => showBlockDetail(block) }),
+      body: timeline({
+        dates,
+        blocksByDate,
+        today,
+        startHour: 6,
+        endHour: 24,
+        // 学习时段 → 打开详情抽屉（锁定 / 移动 / 取消）；其它块 → 轻量提示
+        onSelect: (block) => {
+          if (block.kind === 'study' && block.refId) services.ui.openSessionDetail(block.refId);
+          else showBlockDetail(block);
+        },
+      }),
     }),
   );
 
@@ -171,7 +198,7 @@ function gotoWeek(offset) {
   globalThis.location.hash = offset === 0 ? '#/week' : `#/week?offset=${offset}`;
 }
 
-/** 时段详情：阶段 3 会替换为可操作的右侧抽屉（锁定 / 移动 / 缩短） */
+/** 非学习块的轻量提示（固定活动 / 休息 / 缓冲没有可执行的操作） */
 function showBlockDetail(block) {
   const host = document.getElementById('toast-host') ?? document.body;
   const node = el('div.notice.notice--info', { role: 'status' }, [

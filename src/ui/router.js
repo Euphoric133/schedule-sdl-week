@@ -8,8 +8,11 @@
 export const ROUTES = Object.freeze([
   { path: 'today', label: '今日总览', title: '今日总览' },
   { path: 'week', label: '七天计划', title: '七天计划' },
+  { path: 'day', label: '每日视图', title: '每日视图' },
   { path: 'tasks', label: '任务列表', title: '任务列表' },
+  { path: 'activities', label: '固定活动', title: '固定活动' },
   { path: 'preview', label: '调整预览', title: '调整预览' },
+  { path: 'versions', label: '版本历史', title: '版本历史' },
   { path: 'focus', label: '专注工作台', title: '专注工作台' },
   { path: 'settings', label: '偏好设置', title: '偏好设置' },
 ]);
@@ -38,6 +41,29 @@ export function parseHash(hash = globalThis.location?.hash ?? '') {
 export function navigate(path, params = {}) {
   const query = new URLSearchParams(params).toString();
   globalThis.location.hash = `#/${path}${query ? `?${query}` : ''}`;
+}
+
+/** 读取当前路由的查询参数（供页面在事件处理里构造新链接） */
+export function currentParams() {
+  const hash = globalThis.location?.hash ?? '';
+  const query = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+  return new URLSearchParams(query);
+}
+
+/**
+ * 用一个补丁更新当前路由的查询参数（不改变 path）。
+ * 用于"每日视图切换日期""任务列表切换筛选"这类不跳页的状态变化。
+ */
+export function updateParams(patch = {}) {
+  const hash = globalThis.location?.hash ?? `#/${DEFAULT_ROUTE}`;
+  const [pathPart] = hash.split('?');
+  const params = currentParams();
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null || value === undefined || value === '') params.delete(key);
+    else params.set(key, String(value));
+  }
+  const query = params.toString();
+  globalThis.location.hash = `${pathPart}${query ? `?${query}` : ''}`;
 }
 
 /**

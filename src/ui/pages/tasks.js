@@ -62,9 +62,9 @@ export function renderTasks({ app, services, route }) {
   nodes.push(
     notice({
       level: 'info',
-      title: '阶段 1 行为说明',
+      title: '所有改动都会先生成预览',
       message:
-        '当前对任务的增删改会立即写入正式数据。排程引擎接入后（阶段 2/3），修改任务会先生成"候选计划 + 差异预览"，只有你确认后才生效。',
+        '新建、编辑、完成、取消、删除任务都会先生成"候选计划 + 差异预览"，只有你确认后才写入数据。放弃预览时任务与计划都保持不变。',
     }),
   );
 
@@ -124,66 +124,82 @@ export function renderTasks({ app, services, route }) {
   return nodes;
 }
 
-function actionButtons(task, { app, services }) {
+function actionButtons(task, { services }) {
   const isActive = task.status === TASK_STATUS.NOT_STARTED || task.status === TASK_STATUS.IN_PROGRESS;
   const buttons = [];
 
   if (task.status === TASK_STATUS.DELETED) {
-    buttons.push(button('恢复', {
-      size: 'sm',
-      onClick: () => {
-        const result = services.taskService.restoreTask(task.id);
-        if (!result.ok) return toast(result.issues?.[0]?.message ?? '恢复失败。', 'error');
-        toast(`已恢复任务「${task.title}」。`, 'success');
-      },
-    }));
+    buttons.push(
+      button('恢复', {
+        size: 'sm',
+        onClick: () => {
+          const result = services.ui.previewWith([{ kind: 'task.status', taskId: task.id, to: TASK_STATUS.NOT_STARTED }], {
+            changeSummary: `恢复任务「${task.title}」`,
+            trigger: 'tasks-page',
+          });
+          if (!result.ok) toast(result.message, 'error', 8000);
+        },
+      }),
+    );
     return buttons;
   }
 
   buttons.push(button('编辑', { size: 'sm', onClick: () => services.ui.openTaskForm(task.id) }));
 
   if (isActive) {
-    buttons.push(button('标记完成', {
-      size: 'sm',
-      onClick: () => {
-        const result = services.taskService.changeTaskStatus(task.id, TASK_STATUS.COMPLETED);
-        if (!result.ok) return toast(result.issues?.[0]?.message ?? '操作失败。', 'error');
-        toast(`已完成任务「${task.title}」。已产生的学习记录会完整保留。`, 'success');
-      },
-    }));
-    buttons.push(button('取消任务', {
-      size: 'sm',
-      onClick: async () => {
-        const evaluated = services.taskService.evaluateTaskImpact(task.id);
-        if (!evaluated.ok) return toast(evaluated.issues[0].message, 'error');
-        const confirmed = await confirmDialog({
-          title: `取消任务「${task.title}」？`,
-          message: '取消后该任务不再参与排程；已完成的学习记录会保留。',
-          bullets: [
-            `将取消 ${evaluated.impact.activeSessions} 个待进行的学习时段（共 ${formatDuration(evaluated.impact.activeMinutes)}）`,
-            `已完成的 ${evaluated.impact.completedSessions} 个时段会完整保留`,
-            evaluated.impact.dependents.length > 0
-              ? `有 ${evaluated.impact.dependents.length} 个任务依赖它：${evaluated.impact.dependents.map((d) => d.title).join('、')}`
-              : '没有其它任务依赖它',
-          ],
-          confirmLabel: '确认取消任务',
-          confirmVariant: 'danger',
-        });
-        if (!confirmed) return;
-        const result = services.taskService.changeTaskStatus(task.id, TASK_STATUS.CANCELLED);
-        if (!result.ok) return toast(result.issues?.[0]?.message ?? '操作失败。', 'error');
-        toast(`已取消任务「${task.title}」，同时取消了 ${result.cancelledSessions} 个待进行时段。`, 'success');
-      },
-    }));
+    buttons.push(
+      button('标记完成', {
+        size: 'sm',
+        onClick: () => {
+          const result = services.ui.previewWith([{ kind: 'task.status', taskId: task.id, to: TASK_STATUS.COMPLETED }], {
+            changeSummary: `完成任务「${task.title}」`,
+            trigger: 'tasks-page',
+          });
+          if (!result.ok) toast(result.message, 'error', 8000);
+        },
+      }),
+    );
+    buttons.push(
+      button('取消任务', {
+        size: 'sm',
+        onClick: async () => {
+          const evaluated = services.taskService.evaluateTaskImpact(task.id);
+          if (!evaluated.ok) return toast(evaluated.issues[0].message, 'error');
+          const confirmed = await confirmDialog({
+            title: `取消任务「${task.title}」？`,
+            message: '取消后该任务不再参与排程；已完成的学习记录会保留。确认后会先生成候选计划预览。',
+            bullets: [
+              `将取消 ${evaluated.impact.activeSessions} 个待进行的学习时段（共 ${formatDuration(evaluated.impact.activeMinutes)}）`,
+              `已完成的 ${evaluated.impact.completedSessions} 个时段会完整保留`,
+              evaluated.impact.dependents.length > 0
+                ? `有 ${evaluated.impact.dependents.length} 个任务依赖它：${evaluated.impact.dependents.map((item) => item.title).join('、')}`
+                : '没有其它任务依赖它',
+            ],
+            confirmLabel: '取消任务并生成预览',
+            confirmVariant: 'danger',
+          });
+          if (!confirmed) return;
+          const result = services.ui.previewWith([{ kind: 'task.status', taskId: task.id, to: TASK_STATUS.CANCELLED }], {
+            changeSummary: `取消任务「${task.title}」`,
+            trigger: 'tasks-page',
+          });
+          if (!result.ok) toast(result.message, 'error', 8000);
+        },
+      }),
+    );
   } else if (task.status === TASK_STATUS.COMPLETED || task.status === TASK_STATUS.CANCELLED) {
-    buttons.push(button('恢复为未开始', {
-      size: 'sm',
-      onClick: () => {
-        const result = services.taskService.changeTaskStatus(task.id, TASK_STATUS.NOT_STARTED);
-        if (!result.ok) return toast(result.issues?.[0]?.message ?? '操作失败。', 'error');
-        toast('已恢复为未开始。', 'success');
-      },
-    }));
+    buttons.push(
+      button('恢复为未开始', {
+        size: 'sm',
+        onClick: () => {
+          const result = services.ui.previewWith([{ kind: 'task.status', taskId: task.id, to: TASK_STATUS.NOT_STARTED }], {
+            changeSummary: `恢复任务「${task.title}」为未开始`,
+            trigger: 'tasks-page',
+          });
+          if (!result.ok) toast(result.message, 'error', 8000);
+        },
+      }),
+    );
   }
 
   buttons.push(
@@ -199,22 +215,25 @@ function actionButtons(task, { app, services }) {
           message: impact.message,
           bullets: [
             impact.totalSessions === 0
-              ? '该任务没有任何学习记录，删除后无法通过界面恢复（可提前导出备份）'
+              ? '该任务没有任何学习记录，确认后会彻底删除（可提前导出备份）'
               : `将取消 ${impact.activeSessions} 个待进行时段（${formatDuration(impact.activeMinutes)}）`,
             impact.completedSessions > 0 ? `${impact.completedSessions} 个已完成的学习记录会保留（作为历史）` : '没有已完成的学习记录',
             impact.lockedSessions > 0 ? `其中 ${impact.lockedSessions} 个时段处于锁定状态，锁定也会一并解除` : '没有锁定的时段',
             impact.dependents.length > 0
               ? `${impact.dependents.length} 个任务依赖它，删除后这些任务将无法安排`
               : '没有其它任务依赖它',
+            '确认后会先生成候选计划预览，你可以看到具体影响再决定是否应用',
           ],
-          confirmLabel: impact.canHardDelete ? '彻底删除' : '标记为已删除',
+          confirmLabel: '删除并生成预览',
           confirmVariant: 'danger',
           requireAcknowledge: impact.canHardDelete,
         });
         if (!confirmed) return;
-        const result = services.taskService.deleteTask(task.id, { hard: impact.canHardDelete });
-        if (!result.ok) return toast(result.issues?.[0]?.message ?? '删除失败。', 'error');
-        toast(result.mode === 'hard' ? '已彻底删除该任务。' : '已标记为已删除（可从"已删除"筛选中恢复）。', 'success');
+        const result = services.ui.previewWith(
+          [{ kind: 'task.delete', taskId: task.id, hard: impact.canHardDelete }],
+          { changeSummary: `删除任务「${task.title}」`, trigger: 'tasks-page' },
+        );
+        if (!result.ok) toast(result.message, 'error', 8000);
       },
     }),
   );

@@ -4,7 +4,9 @@
  * 设计原因：
  * - 字段与 domain/task.js 的模型一一对应，校验也复用 domain 的 validateTask，
  *   因此界面里不存在"第二套规则"，不会出现"界面能提交但引擎读不懂"的数据。
- * - 表单先做本地校验并就近显示错误，全部通过后才写入数据；写入失败时保留用户输入。
+ * - **提交只生成候选计划预览**（阶段 3 起）：任务数据不会立即写入，
+ *   而是先随候选计划一起展示影响，用户确认后才事务式落盘。放弃预览则什么都不变。
+ * - 表单先做本地校验并就近显示错误，全部通过后才请求预览；失败时保留用户输入。
  */
 
 import { append, clear, el, toast } from '../dom.js';
@@ -146,7 +148,7 @@ export function openTaskForm({ task = null, services }) {
     ]),
     el('div.form-actions', {}, [
       button('取消', { variant: 'ghost', onClick: () => close() }),
-      el('button.btn.btn--primary', { type: 'submit', text: isEdit ? '保存修改' : '创建任务' }),
+      el('button.btn.btn--primary', { type: 'submit', text: isEdit ? '保存并生成预览' : '创建并生成预览' }),
     ]),
   ]);
 
@@ -213,21 +215,33 @@ export function openTaskForm({ task = null, services }) {
       return;
     }
 
-    const result = isEdit ? services.taskService.updateTask(task.id, values) : services.taskService.addTask(values);
+    // 关键：只生成预览，不直接写入任务数据。
+    // 用户在预览页可以看到"这个任务会被安排到哪些时段、对其它任务有什么影响"，确认后才落盘。
+    const op = isEdit
+      ? { kind: 'task.update', taskId: task.id, patch: values }
+      : { kind: 'task.add', input: values };
+
+    const result = services.ui.previewWith([op], {
+      changeSummary: isEdit ? `修改任务「${values.title}」` : `新增任务「${values.title}」`,
+      trigger: 'task-form',
+    });
+
     if (!result.ok) {
-      showErrors(result.issues ?? [{ severity: 'error', code: 'V000', path: '', message: result.error?.message ?? '保存失败。' }]);
+      showErrors(
+        result.issues?.length
+          ? result.issues
+          : [{ severity: 'error', code: 'V000', path: '', message: result.message ?? '无法生成预览。' }],
+      );
       return;
     }
 
-    // 编辑时如果任务的预计用时变化，已有未完成时段可能超出剩余工作量，这里如实提示
-    if (isEdit && result.task.plannedMinutes !== task.plannedMinutes) {
-      const remaining = services.taskService.listTaskViews({ includeDeleted: true }).find((v) => v.task.id === task.id)?.remainingMinutes ?? 0;
-      if (remaining === 0 && result.task.status !== TASK_STATUS.COMPLETED) {
-        toast('预计用时已减少，请检查该任务是否还有未完成的学习时段（可能已被取消）。', 'warning', 7000);
-      }
-    }
-
-    toast(isEdit ? `已保存「${result.task.title}」的修改。` : `已创建任务「${result.task.title}」。`, 'success');
+    toast(
+      isEdit
+        ? '已生成候选计划预览：确认后才会保存这次修改。'
+        : '已生成候选计划预览：确认后才会创建这个任务。',
+      'success',
+      6000,
+    );
     close();
   }
 

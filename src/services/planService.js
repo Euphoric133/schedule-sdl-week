@@ -31,6 +31,7 @@ import { PLAN_HISTORY_LIMIT } from '../domain/schemas.js';
 import { VALIDATION_CODES as C, error, result } from '../domain/validation.js';
 import { addDays, wallTimeFromDateObject, weekday } from '../domain/time.js';
 import { computeSchedulerInputHash, run as runScheduler } from '../engine/scheduler.js';
+import { applyDraftOps, describeDraftOps } from '../domain/mutations.js';
 
 /**
  * @param {object} options
@@ -361,9 +362,28 @@ export function createPlanService({ app, idFactory }) {
    * @returns {{ok: boolean, preview?: object, issues?: object[], code?: string, result?: object}}
    */
   function requestPreview(input = {}) {
-    const state = input.draft ?? app.getState();
     // "现在"必须显式传入（引擎是纯函数）。未传时从状态容器的时钟推导，便于界面直接调用。
     const now = input.now ?? wallTimeFromDateObject(new Date(app.clock()));
+    const baseState = app.getState();
+
+    /**
+     * 变更来源有两种：
+     * - `ops`：数据变更描述（阶段 3 起界面统一走这条路），在内存里应用成草稿状态；
+     * - `draft`：调用方直接给出完整草稿状态（引擎测试与内部调用使用）。
+     * 无论哪种，**都不会修改已保存的数据**。
+     */
+    const ops = input.ops ?? [];
+    let state = input.draft ?? baseState;
+    let windowStart = input.windowStart ?? now.date;
+    if (ops.length > 0) {
+      const applied = applyDraftOps(baseState, ops, { idFactory, nowIso: nowIso() });
+      if (!applied.ok) {
+        return { ok: false, code: 'invalid_draft', status: 'invalid_input', issues: applied.issues ?? [], diagnostics: [] };
+      }
+      state = applied.state;
+      const shift = ops.find((op) => op.kind === 'window.shift');
+      if (shift?.windowStart) windowStart = shift.windowStart;
+    }
 
     const current = getOfficialPlan();
     const baseVersion = current?.version ?? 0;
@@ -371,11 +391,12 @@ export function createPlanService({ app, idFactory }) {
     // 这样"预览生成后数据又被改动"就能被精确检测出来。
     const baseInputHash = computeLiveInputHash(app.getState(), now);
 
+    const windowDays = input.windowDays ?? 7;
     const engineResult = runScheduler({
       state,
       now,
-      windowStart: input.windowStart ?? now.date,
-      windowDays: input.windowDays ?? 7,
+      windowStart,
+      windowDays,
       existingPlan: current,
       baseVersion: baseVersion + 1,
       planId: idFactory.next('plan'),
@@ -394,6 +415,7 @@ export function createPlanService({ app, idFactory }) {
     }
 
     const candidate = { ...engineResult.plan, generatedAt: nowIso() };
+    const summary = input.changeSummary ?? describeDraftOps(ops);
     const preview = {
       previewId: idFactory.next('preview'),
       baseVersion,
@@ -404,8 +426,10 @@ export function createPlanService({ app, idFactory }) {
       diagnostics: engineResult.diagnostics,
       unscheduled: engineResult.unscheduled,
       createdAt: nowIso(),
-      changeSummary: input.changeSummary ?? '重新规划',
+      changeSummary: summary,
       trigger: input.trigger ?? 'preview',
+      /** 应用时需要一并写入的数据变更（确认之前一直只是草稿） */
+      ops,
       /** 引擎产出的会话快照：应用时会据此创建/更新 StudySession */
       sessionPlan: buildSessionPlan(candidate, state),
     };
@@ -453,20 +477,35 @@ export function createPlanService({ app, idFactory }) {
     const protectedIssue = checkProtectedSessions(preview.sessionPlan, state.sessions ?? []);
     if (protectedIssue) return { ok: false, issues: [protectedIssue] };
 
+    // 重放草稿变更：这是"确认后写入"的关键一步。失败即整体放弃，绝不留半应用状态。
+    const replayed = applyDraftOps(state, preview.ops ?? [], { idFactory, nowIso: nowIso() });
+    if (!replayed.ok) {
+      return {
+        ok: false,
+        code: 'draft_replay_failed',
+        issues: [
+          error(C.MIGRATION_FAILED, 'preview.ops', `无法应用候选计划中的数据变更：${replayed.issues?.[0]?.message ?? '未知原因'}`, {}),
+          ...(replayed.issues ?? []),
+        ],
+      };
+    }
+    const nextState = replayed.state;
+
     const snapshot = current ? createPlanSnapshot({ plan: current, nowIso: nowIso(), changeSummary: lastMutationSummary(current), trigger: preview.trigger }) : null;
 
     const commitResult = app.commit(
-      (currentState) => {
-        const history = snapshot ? [snapshot, ...currentState.planHistory] : [...currentState.planHistory];
+      () => {
+        const history = snapshot ? [snapshot, ...nextState.planHistory] : [...nextState.planHistory];
         return {
-          ...currentState,
+          ...nextState,
           sessions: preview.sessionPlan,
           officialPlan: { ...preview.candidate, version: preview.candidate.version },
           planHistory: history.slice(0, historyLimit),
           pendingPreview: null,
           meta: {
-            ...currentState.meta,
+            ...nextState.meta,
             lastPlanMutation: { at: nowIso(), summary: preview.changeSummary ?? '应用计划', trigger: preview.trigger ?? 'preview-confirm' },
+            initialWindowStart: preview.candidate.windowStart,
           },
         };
       },
@@ -582,7 +621,13 @@ export function createPlanService({ app, idFactory }) {
     // 候选计划里其它块都是本次新排出来的，必须创建对应的 StudySession。
     const reservedIds = protectedIds;
 
-    const kept = existing.filter((session) => protectedIds.has(session.id) || !isInWindow(session, candidate));
+    // 保留三类记录：
+    // 1) 受保护时段（已完成 / 锁定 / 进行中）——绝不改动；
+    // 2) 窗口之外的时段——窗口滚动时它们不属于本次重排范围；
+    // 3) 已经取消的时段——历史记录，不再参与排程。
+    const kept = existing.filter(
+      (session) => protectedIds.has(session.id) || !isInWindow(session, candidate) || session.state === SESSION_STATE.CANCELLED,
+    );
     const superseded = existing
       .filter((session) => !protectedIds.has(session.id) && isInWindow(session, candidate) && session.state !== SESSION_STATE.CANCELLED)
       .map((session) => ({ ...session, state: SESSION_STATE.CANCELLED, locked: false, updatedAt: nowIso() }));

@@ -9,6 +9,7 @@ import { createAppState } from '../../src/services/appState.js';
 import { createTaskService } from '../../src/services/taskService.js';
 import { createPlanService } from '../../src/services/planService.js';
 import { createFocusService } from '../../src/services/focusService.js';
+import { createFixedActivityService } from '../../src/services/fixedActivityService.js';
 import { createMemoryAdapter } from '../../src/storage/memoryAdapter.js';
 import { FIXED_NOW, fixedClock, testIdFactory } from './clock.js';
 
@@ -37,6 +38,7 @@ export function createTestApp(options = {}) {
     now: () => ({ date: wall.date, minutes: wall.minutes, weekday: wall.weekday }),
   };
   services.taskService = createTaskService({ app, idFactory });
+  services.fixedActivityService = createFixedActivityService({ app, idFactory });
   services.planService = createPlanService({ app, idFactory });
   services.focusService = createFocusService({ app, idFactory, now: services.now });
 

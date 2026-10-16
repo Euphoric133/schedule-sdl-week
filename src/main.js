@@ -12,8 +12,9 @@ import { createAppState } from './services/appState.js';
 import { createTaskService } from './services/taskService.js';
 import { createPlanService } from './services/planService.js';
 import { createFocusService } from './services/focusService.js';
+import { createFixedActivityService } from './services/fixedActivityService.js';
 import { createIdFactory } from './domain/ids.js';
-import { wallTimeFromDateObject } from './domain/time.js';
+import { addDays, wallTimeFromDateObject } from './domain/time.js';
 import { createShell } from './ui/shell.js';
 import { startRouter } from './ui/router.js';
 import { renderToday } from './ui/pages/today.js';
@@ -22,52 +23,92 @@ import { renderTasks } from './ui/pages/tasks.js';
 import { renderPreview } from './ui/pages/preview.js';
 import { renderSettings } from './ui/pages/settings.js';
 import { renderFocus } from './ui/pages/focus.js';
-import { openTaskForm } from './ui/pages/taskForm.js';
+import { renderDay } from './ui/pages/day.js';
+import { renderActivities } from './ui/pages/activities.js';
+import { renderVersions } from './ui/pages/versions.js';
+import { openTaskForm } from './ui/forms/taskForm.js';
+import { openFixedActivityForm } from './ui/forms/fixedActivityForm.js';
+import { openSessionDetail } from './ui/forms/sessionDetail.js';
 
 const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
-/** 界面服务：把"打开某个表单/对话框"这类跨页面动作集中在一处，避免页面之间互相 import */
+/**
+ * 界面服务：把"打开表单 / 触发预览 / 应用或撤销"这类跨页面动作集中在一处，
+ * 避免页面之间互相 import，也保证所有写操作都经过同一套"预览 → 确认"流程。
+ *
+ * 约定：这里的每个方法都返回 `{ ok, message?, preview?, plan? }`，绝不抛异常给页面。
+ * 页面只需要根据 ok 决定是否 toast 提示，不用关心引擎与事务细节。
+ */
 function createUiService({ services }) {
+  /** 统一处理一次"带数据变更的预览请求" */
+  function previewWith(ops, options = {}) {
+    const result = services.planService.requestPreview({
+      now: services.now(),
+      ops,
+      changeSummary: options.changeSummary,
+      trigger: options.trigger ?? 'ui',
+    });
+    if (!result.ok) {
+      const first = result.issues?.[0];
+      return {
+        ok: false,
+        message: first?.message ?? '无法生成计划预览。',
+        issues: result.issues ?? [],
+        status: result.status ?? null,
+      };
+    }
+    if (options.navigate !== false) globalThis.location.hash = '#/preview';
+    return { ok: true, preview: result.preview };
+  }
+
+  /** 仅重新规划（不修改任何数据），例如用户手动点"重新规划" */
+  function replan(options = {}) {
+    return previewWith([], { ...options, changeSummary: options.changeSummary ?? '重新规划' });
+  }
+
   return {
     /** 当前本地日期（表单默认值等使用；由入口的时钟注入，便于测试固定时间） */
     today: () => services.now().date,
+
+    /** 打开任务表单（新建或编辑） */
     openTaskForm(taskId) {
       const task = taskId ? services.taskService.getTask(taskId) : null;
       openTaskForm({ task, services });
     },
-    /**
-     * 生成（或重新生成）候选计划预览。
-     *
-     * 这是阶段 2 接入引擎后的核心入口：任何改动都先走这里拿到候选计划与差异，
-     * 由用户在预览页确认后才写入正式计划。
-     *
-     * @param {object} [options]
-     * @param {string} [options.changeSummary] 变更摘要（写入版本历史）
-     * @param {string} [options.trigger] 触发来源
-     * @param {boolean} [options.navigate] 是否自动跳转到预览页（默认 true）
-     */
-    requestPreview(options = {}) {
-      const result = services.planService.requestPreview({
-        now: services.now(),
-        changeSummary: options.changeSummary,
-        trigger: options.trigger,
-      });
-      if (!result.ok) {
-        const first = result.issues?.[0];
-        return {
-          ok: false,
-          message: first?.message ?? '生成计划失败。',
-          issues: result.issues ?? [],
-          status: result.status ?? null,
-        };
-      }
-      if (options.navigate !== false) globalThis.location.hash = '#/preview';
-      return { ok: true, preview: result.preview };
+
+    /** 打开固定活动表单 */
+    openFixedActivityForm(activityId) {
+      const activity = activityId ? services.fixedActivityService.get(activityId) : null;
+      openFixedActivityForm({ activity, services });
     },
 
-    /** 撤销上一次计划变更（供界面按钮调用） */
-    undoLastPlan() {
-      return services.planService.undoLastApply();
+    /** 打开时段详情抽屉 */
+    openSessionDetail(sessionId) {
+      openSessionDetail({ sessionId, services });
+    },
+
+    /** 触发重新规划（无数据变更） */
+    requestPreview: replan,
+
+    /** 带数据变更的预览（任务表单、设置页、时段操作都走这里） */
+    previewWith,
+
+    /** 应用待确认计划 */
+    applyPreview: () => services.planService.applyPreview(),
+    /** 放弃待确认计划 */
+    discardPreview: () => services.planService.discardPreview(),
+    /** 撤销上一次计划变更 */
+    undoLastPlan: () => services.planService.undoLastApply(),
+
+    /** 把计划窗口向前/向后移动若干天（保留已完成历史，重排未来七天） */
+    shiftWindow(days) {
+      const current = services.planService.getOfficialPlan();
+      const base = current?.windowStart ?? services.now().date;
+      const windowStart = addDays(base, days);
+      return previewWith([{ kind: 'window.shift', windowStart, windowDays: 7 }], {
+        changeSummary: `把计划窗口移动到 ${windowStart}`,
+        trigger: 'window-shift',
+      });
     },
   };
 }
@@ -95,6 +136,7 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
   };
 
   services.taskService = createTaskService({ app, idFactory });
+  services.fixedActivityService = createFixedActivityService({ app, idFactory });
   services.planService = createPlanService({ app, idFactory });
   services.focusService = createFocusService({ app, idFactory, now: services.now });
   services.ui = createUiService({ services });
@@ -103,8 +145,11 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
   const pages = {
     today: renderToday,
     week: renderWeek,
+    day: renderDay,
     tasks: renderTasks,
+    activities: renderActivities,
     preview: renderPreview,
+    versions: renderVersions,
     settings: renderSettings,
     focus: renderFocus,
   };

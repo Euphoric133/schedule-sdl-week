@@ -119,6 +119,16 @@ export function run(input) {
   const windowSessions = (state.sessions ?? []).filter(inWindow);
   const reservedSessions = windowSessions.filter((session) => hardReserved(session) && session.state !== SESSION_STATE.CANCELLED);
 
+  /**
+   * 窗口**之外**的已完成/锁定时段。
+   *
+   * 它们不参与本次窗口的容量计算，但必须原样出现在候选计划里：
+   * 否则"把窗口向后滚动"这一步会让已经完成的学习记录从计划中消失（H9 违规）。
+   */
+  const outOfWindowReserved = (state.sessions ?? []).filter(
+    (session) => !inWindow(session) && hardReserved(session) && session.state !== SESSION_STATE.CANCELLED,
+  );
+
   const reservedSpans = mergeSpans(
     reservedSessions
       .filter((session) => session.state !== SESSION_STATE.COMPLETED || session.date >= windowStart)
@@ -304,7 +314,7 @@ export function run(input) {
     meta: { undersized: placement.undersized, reasons: placement.reasons, plannedMinutes: placement.plannedMinutes },
   }));
 
-  const reservedBlocks = reservedSessions.map((session) => ({
+  const reservedBlocks = [...reservedSessions, ...outOfWindowReserved].map((session) => ({
     id: `blk_reserved_${session.id}`,
     kind: BLOCK_KIND.STUDY,
     date: session.date,

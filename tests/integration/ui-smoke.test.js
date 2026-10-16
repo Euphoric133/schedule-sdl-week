@@ -274,7 +274,7 @@ test('界面启动：加载 src/main.js 能渲染外壳，并逐条渲染六个�
   const appShell = dom.appHost.children[0];
   assert.ok(appShell, '应渲染出应用外壳');
   assert.ok(appShell.classList.contains('app'), `外壳应带 .app 类，实际：${appShell.className}`);
-  assert.ok(appShell.byClass('app-nav__link').length >= 6, '侧边导航应包含全部六个页面入口');
+  assert.ok(appShell.byClass('app-nav__link').length >= 9, '侧边导航应包含全部九个页面入口');
   assert.ok(appShell.byClass('app-topbar').length === 1, '应渲染顶栏');
   assert.ok(appShell.byClass('app-main').length === 1, '应渲染主内容区');
 
@@ -286,7 +286,20 @@ test('界面启动：加载 src/main.js 能渲染外壳，并逐条渲染六个�
   assert.equal(parsed.schemaVersion, 1);
 
   // 逐条路由渲染（覆盖六个页面 + 未知路由 + 带参数的 week 路由）
-  const routes = ['#/today', '#/week', '#/week?offset=1', '#/tasks', '#/preview', '#/settings', '#/focus', '#/unknown-page'];
+  const routes = [
+    '#/today',
+    '#/week',
+    '#/week?offset=1',
+    '#/day',
+    '#/day?date=2025-10-18',
+    '#/tasks',
+    '#/activities',
+    '#/preview',
+    '#/versions',
+    '#/settings',
+    '#/focus',
+    '#/unknown-page',
+  ];
   for (const hash of routes) {
     dom.location.hash = hash;
     assert.doesNotThrow(() => module.shell.render(), `渲染 ${hash} 时不应抛异常`);
@@ -411,6 +424,26 @@ test('界面渲染：空数据时每个页面都显示空状态而不是崩溃�
     const hasState = main.byClass('state').length > 0 || main.all().some((node) => /还没有|暂无|没有/.test(node.textContent));
     assert.ok(hasState, `${hash} 在空数据时应给出明确的空状态说明`);
   }
+
+  // 偏好设置页在阶段 3 提供图形化编辑区（可学习时间 / 排程参数 / 权重）
+  dom.location.hash = '#/settings';
+  module.shell.render();
+  const settingsMain = dom.appHost.children[0].byClass('app-main')[0];
+  const settingsText = settingsMain.all().map((node) => node.textContent).join('\n');
+  assert.match(settingsText, /可学习时间（按星期）/, '应提供可学习时间的图形化编辑');
+  assert.match(settingsText, /排程参数/, '应提供排程参数的图形化编辑');
+  assert.match(settingsText, /优先级权重/, '应提供权重编辑');
+  assert.match(settingsText, /高级：设置 JSON 编辑/, 'JSON 编辑降级为高级入口');
+
+  // 每日视图应显示当天容量与时间轴
+  dom.location.hash = '#/day';
+  module.shell.render();
+  const dayMain = dom.appHost.children[0].byClass('app-main')[0];
+  assert.ok(dayMain.byClass('timeline__hour').length === 18, '每日视图也应有 18 个整点刻度');
+  assert.ok(
+    dayMain.all().some((node) => /当日容量与安排/.test(node.textContent)),
+    '每日视图应展示当天容量',
+  );
 
   delete globalThis.Node;
   delete globalThis.addEventListener;

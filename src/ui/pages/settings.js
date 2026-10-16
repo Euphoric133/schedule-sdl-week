@@ -14,6 +14,7 @@ import { defaultSettings, validateSettings } from '../../domain/schemas.js';
 import { formatIssue } from '../../domain/validation.js';
 import { WEEKDAY_NAMES_ZH, formatDuration } from '../../domain/time.js';
 import { confirmDialog } from '../modal.js';
+import { renderNumericEditor, renderStudyWindowsEditor, renderWeightsEditor } from '../forms/settingsEditors.js';
 
 export function renderSettings({ app, services }) {
   const state = app.getState();
@@ -33,12 +34,17 @@ export function renderSettings({ app, services }) {
     ]),
   );
 
+  // —— 图形化编辑区 ——
+  nodes.push(renderStudyWindowsEditor({ services, settings }));
+  nodes.push(renderNumericEditor({ services, settings }));
+  nodes.push(renderWeightsEditor({ services, settings }));
+
   nodes.push(
     notice({
       level: 'info',
-      title: '修改设置会影响整份计划',
+      title: '修改设置会先生成候选计划预览',
       message:
-        '阶段 1 可以通过下方的 JSON 编辑区修改设置（先校验、后保存，校验失败不会写入）。阶段 3 会提供逐项图形化控件，并在修改后先生成候选计划供你确认。',
+        '上方每个编辑区保存时都会生成"候选计划 + 差异预览"，你确认之后设置才会生效；放弃预览则设置保持不变。下方的 JSON 编辑区用于批量修改或导入参数，同样会先生成预览。',
     }),
   );
 
@@ -133,8 +139,8 @@ export function renderSettings({ app, services }) {
 
   nodes.push(
     card({
-      title: '设置 JSON 编辑（立即生效前会先校验）',
-      hint: '校验失败时不会写入任何数据，当前设置保持不变',
+      title: '高级：设置 JSON 编辑',
+      hint: '校验失败时不会写入任何数据；校验通过后先生成候选计划预览，确认后才生效',
       body: el('div', {}, [
         errorHost,
         textarea,
@@ -146,7 +152,7 @@ export function renderSettings({ app, services }) {
               errorHost.replaceChildren();
             },
           }),
-          button('校验并保存', {
+          button('校验并生成预览', {
             variant: 'primary',
             onClick: () => {
               let parsed;
@@ -163,19 +169,26 @@ export function renderSettings({ app, services }) {
                 showSettingsErrors(errorHost, validation.issues);
                 return;
               }
-              const result = app.commit((current) => ({ ...current, settings: parsed }), { reason: 'settings-update' });
-              if (!result.ok) {
-                showSettingsErrors(errorHost, [
-                  { severity: 'error', code: 'V062', path: 'storage', message: result.error?.message ?? '保存失败。' },
-                ]);
+              // 设置改动会改变可用时间与拆分规则，因此同样先生成候选计划预览
+              const previewed = services.ui.previewWith([{ kind: 'settings.update', settings: parsed }], {
+                changeSummary: '修改偏好设置',
+                trigger: 'settings-page',
+              });
+              if (!previewed.ok) {
+                showSettingsErrors(
+                  errorHost,
+                  previewed.issues?.length
+                    ? previewed.issues
+                    : [{ severity: 'error', code: 'V062', path: 'settings', message: previewed.message ?? '无法生成预览。' }],
+                );
                 return;
               }
               errorHost.replaceChildren();
               if (validation.warnings.length > 0) {
                 showSettingsErrors(errorHost, validation.warnings);
-                toast('设置已保存，但有几条提示需要你注意。', 'warning', 6000);
+                toast('已生成预览；设置里有几条提示需要你注意。', 'warning', 7000);
               } else {
-                toast('设置已保存。请重新生成计划以应用新的参数。', 'success');
+                toast('已生成候选计划预览：确认后设置才会生效。', 'success', 6000);
               }
             },
           }),

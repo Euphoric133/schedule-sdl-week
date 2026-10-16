@@ -262,6 +262,18 @@ P = 0.35 × 截止紧迫度 + 0.30 × 难度 + 0.20 × 重要程度 + 0.15 × �
 | 截止风险评估 | `engine/risk.js` | 30 天窗口内只读模拟"最早完成时刻" |
 | 版本与撤销 | `services/planService.js` | 版本单调递增，撤销不回滚学习事实 |
 
+## 4.4 阶段 3 的实现补充（交互层面）
+
+| 需求条目 | 实现位置 | 说明 |
+|---|---|---|
+| 任何改动先生成候选计划 | `domain/mutations.js` + `services/planService.js` | 任务增删改、时段锁定/移动/取消、固定活动增删改、设置修改、窗口滚动全部走 `ops → 草稿 → 预览 → 确认` |
+| 只有确认后才更新正式计划 | `planService.applyPreview` | 确认时先重放 ops，再在同一事务写入 `sessions` + `officialPlan` + 版本快照 |
+| 放弃预览原计划不变 | `planService.discardPreview` | 只清空 `pendingPreview`，业务数据逐字段不变（有测试断言） |
+| 锁定是硬约束 | `ui/forms/sessionDetail.js` + `engine/constraints.js` | 界面移动锁定前会解释并拒绝；引擎侧锁定块进入保留集合 |
+| 每日视图与七天视图同源 | `ui/pages/day.js` | 都读 `officialPlan.blocks`，不各自计算 |
+| 窗口滚动保留历史 | `scheduler.js` + `planService` | 窗口之外的已完成/锁定时段仍进入候选计划 |
+| 危险操作必须说明影响 | `ui/pages/activities.js`、`ui/pages/tasks.js`、`ui/modal.js` | 删除前列出真实数字（释放的可用时间 / 取消的时段分钟数 / 依赖它的任务） |
+
 ## 5. 第一版明确不做的功能
 
 | 不做 | 原因 |
