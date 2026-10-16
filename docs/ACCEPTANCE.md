@@ -36,7 +36,7 @@
 | 16 | 计划预览过期时不能覆盖更新后的正式计划 | `tests/integration/planService.test.js`、`tests/integration/lifecycle.test.js` | ✅ | 版本不匹配与输入指纹变化均拒绝应用 |
 | 17 | 相同输入两次运行相同算法版本结果一致 | `tests/integration/lifecycle.test.js`（框架级一致性）、`tests/unit/graph.test.js`（排序确定性） | 🟡 | 服务层确定性已测；引擎级"逐字节相同"待阶段 2 |
 | 18 | 时区与跨午夜情况下日期与时段顺序正确 | `tests/unit/time.test.js`（16 个用例）、`tests/unit/fixedActivity.test.js` | ✅ | 日期解析绕开 UTC 陷阱、跨午夜切分、业务日边界、墙钟↔时间戳可逆 |
-| 19 | 刷新、空数据和边界输入不会导致页面崩溃 | `tests/integration/lifecycle.test.js`（9 类破坏性输入）、`tests/unit/schemas.test.js` | 🟡 | 服务层鲁棒性已测；浏览器渲染崩溃需人工确认（👤） |
+| 19 | 刷新、空数据和边界输入不会导致页面崩溃 | `tests/integration/lifecycle.test.js`（9 类破坏性输入）、`tests/unit/schemas.test.js`、`tests/integration/ui-smoke.test.js`（渲染不抛异常） | 🟡 | 服务层鲁棒性与**界面渲染不抛异常**已自动化；CSS 布局与真实点击仍需人工确认（👤） |
 | 20 | 新功能不得破坏已通过的核心回归测试 | 全量测试 + 本表 | ✅ | 每次改动运行 `node --test "tests/**/*.test.js"` |
 
 补充的**负向测试**（"构造违反约束的数据、断言校验器必须报错"，防止校验器本身失效）：
@@ -130,7 +130,17 @@ node scripts/serve.mjs          # 记住启动时打印的地址，默认 http:/
 | E3 | 用合法的备份文件导入 | 提示导入成功与任务数量；数据被整体替换 |
 | E4 | 导出后清空浏览器数据并刷新 | 数据为空（符合预期）；再导入备份文件可完全恢复 |
 
-### F. 单文件版本
+### F. 自动化界面冒烟（无需浏览器）
+
+```bash
+node --test tests/integration/ui-smoke.test.js
+```
+
+预期：3 个测试全部通过。它使用最小 DOM 打桩让 `src/main.js` 真正执行，验证外壳渲染、
+六条路由逐条渲染不抛异常、未知路由给出"页面不存在"提示、时间轴有 7 个日期表头与 18 个整点刻度、
+空数据时各页都有空状态。**它不能代替下方的浏览器人工验收**（CSS 布局、真实点击、焦点行为不在覆盖范围内）。
+
+### G. 单文件版本
 
 | 步骤 | 预期现象 |
 |---|---|

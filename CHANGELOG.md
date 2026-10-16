@@ -66,12 +66,12 @@
 
 - `README.md`、`PROJECT_SPEC.md`、`ARCHITECTURE.md`、`CHANGELOG.md`、`docs/ACCEPTANCE.md`
 
-**测试 `tests/`（19 个测试文件）**
+**测试 `tests/`（20 个测试文件）**
 
 - `helpers/`：`clock.js`（固定时钟与 ID 工厂）、`fixtures.js`（样本实体）、`app.js`（完整应用装配）
 - `unit/`：`time`、`ids`、`validation`、`task`、`session`、`fixedActivity`、`calendarBlock`、`graph`、
   `plan`、`schemas`、`storage`、`docs`
-- `integration/`：`appState`、`taskService`、`planService`、`lifecycle`、`scripts`
+- `integration/`：`appState`、`taskService`、`planService`、`lifecycle`、`ui-smoke`、`scripts``
 
 ### 实现内容（已具备的行为）
 
@@ -89,8 +89,12 @@
 7. **预览过期检测**：应用候选计划时校验基础版本与输入指纹，不匹配即拒绝并提示重新生成。
 8. **界面可运行**：六个页面路由、小时刻度时间轴、任务新建/编辑表单、危险操作二次确认
    （含真实影响面数字）、空状态/错误状态/无可行计划状态、键盘可达（跳转链接、焦点样式、`<dialog>` 焦点管理）。
-9. **单文件交付**：`node scripts/build-standalone.mjs` 生成 286 KB 的 `dist/standalone.html`，
+9. **单文件交付**：`node scripts/build-standalone.mjs` 生成 287 KB 的 `dist/standalone.html`，
    可双击直接用，且构建脚本会在残留动态导入或外部依赖时明确报错。
+10. **界面启动有自动化冒烟测试**：`tests/integration/ui-smoke.test.js` 用最小 DOM 打桩让
+    `src/main.js` 的浏览器分支真正跑起来，验证外壳渲染、六条路由逐一渲染不抛异常、
+    未知路由给出明确提示、时间轴 7 个日期表头与 18 个整点刻度、空数据时各页有空状态。
+    这个测试在本阶段抓出了三个真实缺陷（见下方"阶段 1 修复的问题"）。
 
 ### 测试结果（真实执行）
 
@@ -98,13 +102,13 @@
 
 ```
 $ node --test "tests/**/*.test.js"
-ℹ tests 200
-ℹ pass 200
+ℹ tests 210
+ℹ pass 210
 ℹ fail 0
-ℹ duration_ms 432
+ℹ duration_ms 429
 
 $ node scripts/build-standalone.mjs
-已生成 dist/standalone.html（286 KB，内联 32 个模块）
+已生成 dist/standalone.html（287 KB，内联 32 个模块）
 ```
 
 测试覆盖的要点：
@@ -122,7 +126,28 @@ $ node scripts/build-standalone.mjs
   预览过期拒绝应用、撤销版本号递增、撤销保护新完成记录
 - 端到端：新用户 → 创建任务 → 刷新仍在；完成一段学习后剩余量正确；同一时间只允许一段进行中；
   导出 → 导入往返；空数据下所有服务可安全调用；9 类破坏性输入全部被拒绝且无残留数据
+- 界面冒烟：外壳与六条路由渲染、未知路由提示、时间轴刻度数量、空状态存在性
 - 文档：必需文件齐备、零依赖（源码出现外部导入即失败）、README 命令与实际一致
+
+### 阶段 1 修复的问题（开发过程中由测试发现）
+
+| 问题 | 影响 | 修复 |
+|---|---|---|
+| 星期计算偏移错误（`(ordinal + 3) % 7`） | 所有"按星期配置"的可学习时间与固定活动都会错位一天 | 改为 `(ordinal + 4) % 7`（1970-01-01 是周四），并加测试锁定 |
+| `splitOvernightSpan` 返回跨日累加偏移 | 跨午夜时段在"下一天"的分钟数会变成 1440+，按天渲染与统计全部错位 | 每段统一换算为**该段自己日期内**的分钟数（0–1440） |
+| `expandFixedActivities` 过滤条件用错日期 | 窗口首日取不到"前一晚延续来的凌晨时段"，可用容量被高估 | 改为按**片段自身日期**过滤，并补测试 |
+| `sessionsOverlap` 两个时段分别以对方日期为基准 | 跨午夜时段与次日时段的判断自相矛盾（23:30–00:30 与次日 00:00–01:00 被判为不重叠） | 统一到同一基准日坐标比较，并按整体平移（含时长）计算 |
+| `spanToMinutes` 不识别 `{startMinutes, endMinutes}` 形式 | 数值形式的时段解析直接抛异常 | 增加数值分支 |
+| 页面渲染上下文缺少 `services` 注入 | 六个页面全部无法渲染（外壳渲染失败） | `shell.js` 接收并下发 `services` / `now`，页面改成从上下文取 |
+| 未知路由被静默当作首页 | 用户访问错误地址时看不到任何提示，以为自己点错 | 路由返回 `unknownPath`，外壳显示"页面不存在"并提供回到首页按钮 |
+| `components.js` 相对路径多了一级（`../../domain/...`） | 单文件构建报"找不到模块"；浏览器里同样会 404 | 修正为 `../domain/...` |
+| 内联打包脚本变量作用域错误（`specifier` 未定义） | 单文件构建直接崩溃 | 修正；并改用 `dirname(fileURLToPath(...))` 计算项目根目录 |
+| `ui/dom.js` 的 `import('./dom.js')` 动态导入 | 单文件内联无法支持动态导入 | 改为静态导入 |
+| 依赖 JSDoc 里的 `import('...')` 类型写法 | 被内联脚本的动态导入检测误判 | 改为普通 `object` 注释，避免类型注解影响打包 |
+| 计划历史条目的变更说明错位 | 版本历史会显示"后一次操作"的说明 | 快照改用产生该计划的那次变更摘要（`meta.lastPlanMutation`） |
+| 任务校验不做真实日历校验 | `2025-02-30`、`25:99` 这类输入会被写入数据 | `validateTask` 增加 `isValidDateString` / `isValidTimeString` 检查 |
+| 服务层对非对象输入抛异常 | 界面误传 `null` 会导致页面报错 | `addTask` / `updateTask` 增加防御性类型检查，返回结构化错误 |
+| 测试 ID 工厂每次返回相同 ID | 同一测试文件内不同应用实例产生 ID 碰撞，出现假故障 | 递增种子，保证实例间 ID 唯一 |
 
 ### 已知问题与限制
 
@@ -146,7 +171,7 @@ $ node scripts/build-standalone.mjs
 
 1. 新增 `src/engine/`：`policy`、`priority`、`capacity`、`splitter`、`placer`、`constraints`、
    `diff`、`risk`、`scheduler`、`versionHash`。
-2. 实现十步排程流程与硬约束校验器 H1–H10，配套**负向测试**。
+2. 实现十步排程流程与硬约束校验器 H1–H10，配套**负向测试**（含"构造违反约束的计划，断言校验器报错"）。
 3. 实现差异计算与未安排原因码（含建议处理方式）。
 4. 为验收用例 1–10、17、18 补齐引擎级自动化测试。
-5. 运行全量回归（现有 200 个测试必须保持全绿），更新文档与 CHANGELOG。
+5. 运行全量回归（现有 210 个测试必须保持全绿），更新文档与 CHANGELOG。
