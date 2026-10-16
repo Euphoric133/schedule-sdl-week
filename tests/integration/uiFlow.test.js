@@ -60,6 +60,39 @@ test('任务：通过草稿变更新增任务时不写入数据，确认后才�
   assert.equal(env.services.planService.getHistory().length, 1, '旧计划进入版本历史');
 });
 
+test('回归：确认"新增任务"的预览后，生成的时段必须引用真实存在的任务', () => {
+  // 曾经的真实缺陷：会话快照在**重放 ops 之前**构造，用的是草稿里的临时任务 ID，
+  // 结果确认后写入了引用不存在任务的时段，下一次预览直接被"时段引用了不存在的任务"拦下。
+  const env = createTestApp();
+  const first = env.services.planService.requestPreview({
+    now: NOW,
+    ops: [{ kind: 'task.add', input: taskInput({ title: 'A', plannedMinutes: 120, deadlineDate: '2025-10-18' }) }],
+  });
+  assert.equal(first.ok, true);
+  assert.equal(env.services.planService.applyPreview().ok, true);
+
+  const taskIds = new Set(env.app.getState().tasks.map((task) => task.id));
+  const sessions = env.app.getState().sessions;
+  assert.ok(sessions.length > 0, '应创建学习时段');
+  for (const session of sessions) {
+    assert.ok(taskIds.has(session.taskId), `时段 ${session.id} 引用了不存在的任务 ${session.taskId}`);
+  }
+
+  // 再生成一次预览：整体校验必须通过（这正是缺陷暴露的地方）
+  const second = env.services.planService.requestPreview({
+    now: NOW,
+    ops: [{ kind: 'task.add', input: taskInput({ title: 'B', subject: '英语', plannedMinutes: 60, deadlineDate: '2025-10-21' }) }],
+  });
+  assert.equal(second.ok, true, second.issues?.map((i) => i.message).join('; '));
+  assert.equal(env.services.planService.applyPreview().ok, true);
+  assert.equal(env.app.getState().tasks.length, 2);
+
+  const finalTaskIds = new Set(env.app.getState().tasks.map((task) => task.id));
+  for (const session of env.app.getState().sessions) {
+    assert.ok(finalTaskIds.has(session.taskId), '第二次确认后时段仍必须引用真实任务');
+  }
+});
+
 test('任务：放弃预览时任务与计划都保持不变', () => {
   const env = bootstrapped();
   const before = JSON.stringify({ tasks: env.app.getState().tasks, plan: env.app.getState().officialPlan, sessions: env.app.getState().sessions });

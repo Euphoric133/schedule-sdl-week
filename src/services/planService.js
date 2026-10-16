@@ -375,12 +375,16 @@ export function createPlanService({ app, idFactory }) {
     const ops = input.ops ?? [];
     let state = input.draft ?? baseState;
     let windowStart = input.windowStart ?? now.date;
+    let draftCreatedTaskIds = [];
     if (ops.length > 0) {
+      const baseTaskIds = new Set((baseState.tasks ?? []).map((task) => task.id));
       const applied = applyDraftOps(baseState, ops, { idFactory, nowIso: nowIso() });
       if (!applied.ok) {
         return { ok: false, code: 'invalid_draft', status: 'invalid_input', issues: applied.issues ?? [], diagnostics: [] };
       }
       state = applied.state;
+      // 记录草稿阶段"新建任务"的 ID：确认应用时会用同一顺序的新 ID 覆盖它们
+      draftCreatedTaskIds = (state.tasks ?? []).filter((task) => !baseTaskIds.has(task.id)).map((task) => task.id);
       const shift = ops.find((op) => op.kind === 'window.shift');
       if (shift?.windowStart) windowStart = shift.windowStart;
     }
@@ -428,10 +432,17 @@ export function createPlanService({ app, idFactory }) {
       createdAt: nowIso(),
       changeSummary: summary,
       trigger: input.trigger ?? 'preview',
-      /** 应用时需要一并写入的数据变更（确认之前一直只是草稿） */
+      /**
+       * 应用时需要一并写入的数据变更（确认之前一直只是草稿）。
+       *
+       * 注意：这里**不预先构造** sessionPlan。
+       * 原因：草稿里新任务使用的是"临时实体"（在内存里创建、ID 由同一批操作生成），
+       * 与确认时真正写入的任务之间必须保持一致；因此会话快照必须在
+       * **重放 ops 之后**、基于最终状态构造（见 applyPreview）。
+       */
       ops,
-      /** 引擎产出的会话快照：应用时会据此创建/更新 StudySession */
-      sessionPlan: buildSessionPlan(candidate, state),
+      /** 草稿阶段新建任务的临时 ID（应用时按同一顺序映射为真实 ID） */
+      draftCreatedTaskIds,
     };
 
     const commitResult = app.commit((currentState) => ({ ...currentState, pendingPreview: preview }), { reason: 'preview-create' });
@@ -474,8 +485,6 @@ export function createPlanService({ app, idFactory }) {
     if (!validation.ok) return { ok: false, issues: validation.issues };
 
     const state = app.getState();
-    const protectedIssue = checkProtectedSessions(preview.sessionPlan, state.sessions ?? []);
-    if (protectedIssue) return { ok: false, issues: [protectedIssue] };
 
     // 重放草稿变更：这是"确认后写入"的关键一步。失败即整体放弃，绝不留半应用状态。
     const replayed = applyDraftOps(state, preview.ops ?? [], { idFactory, nowIso: nowIso() });
@@ -491,6 +500,17 @@ export function createPlanService({ app, idFactory }) {
     }
     const nextState = replayed.state;
 
+    // 草稿阶段新建的任务在"应用"时会再次创建（ID 与草稿不同）。
+    // 候选计划里的 taskId 指向草稿 ID，必须按同一顺序改写为真实 ID，
+    // 否则确认后会写出"引用不存在的任务"的时段（这是真实发生过的缺陷）。
+    const remappedCandidate = remapDraftTaskIds(preview.candidate, state, nextState, preview.draftCreatedTaskIds);
+
+    // 把候选计划的学习片段转换成 StudySession —— **必须基于重放后的状态**，
+    // 否则新增任务时产生的时段会引用草稿里的临时任务 ID，导致"时段引用了不存在的任务"。
+    const sessionPlan = buildSessionPlan(remappedCandidate, nextState);
+    const protectedIssue = checkProtectedSessions(sessionPlan, state.sessions ?? []);
+    if (protectedIssue) return { ok: false, issues: [protectedIssue] };
+
     const snapshot = current ? createPlanSnapshot({ plan: current, nowIso: nowIso(), changeSummary: lastMutationSummary(current), trigger: preview.trigger }) : null;
 
     const commitResult = app.commit(
@@ -498,8 +518,8 @@ export function createPlanService({ app, idFactory }) {
         const history = snapshot ? [snapshot, ...nextState.planHistory] : [...nextState.planHistory];
         return {
           ...nextState,
-          sessions: preview.sessionPlan,
-          officialPlan: { ...preview.candidate, version: preview.candidate.version },
+          sessions: sessionPlan,
+          officialPlan: { ...remappedCandidate, version: remappedCandidate.version },
           planHistory: history.slice(0, historyLimit),
           pendingPreview: null,
           meta: {
@@ -550,6 +570,36 @@ export function createPlanService({ app, idFactory }) {
       engineVersion: state.officialPlan?.engineVersion ?? 'engine@1.0.0',
       completedByTask: {},
     });
+  }
+
+  /**
+   * 把候选计划里引用的"草稿任务 ID"改写为"应用后真实任务 ID"。
+   *
+   * 场景：用户新增任务 → 预览（草稿里创建了一个临时任务实体）→ 确认应用。
+   * 应用时会重新执行一次同样的变更，因此会产生一个**新的**真实任务 ID。
+   * 候选计划里记录的 taskId 还是草稿 ID，必须按"新建任务的先后顺序"一一替换，
+   * 否则计划块与时段会指向一个不存在的任务（整体校验会直接拒绝加载）。
+   */
+  function remapDraftTaskIds(candidate, beforeState, afterState, draftCreatedTaskIds) {
+    const ids = draftCreatedTaskIds ?? [];
+    if (ids.length === 0 || !candidate) return candidate;
+
+    const beforeIds = new Set((beforeState.tasks ?? []).map((task) => task.id));
+    const realNewIds = (afterState.tasks ?? []).filter((task) => !beforeIds.has(task.id)).map((task) => task.id);
+
+    const mapping = new Map();
+    ids.forEach((draftId, index) => {
+      const realId = realNewIds[index];
+      if (draftId && realId) mapping.set(draftId, realId);
+    });
+    if (mapping.size === 0) return candidate;
+
+    const mapId = (id) => mapping.get(id) ?? id;
+    return {
+      ...candidate,
+      blocks: (candidate.blocks ?? []).map((block) => (block.taskId ? { ...block, taskId: mapId(block.taskId) } : block)),
+      unscheduled: (candidate.unscheduled ?? []).map((item) => ({ ...item, taskId: mapId(item.taskId) })),
+    };
   }
 
   /** 过期预览的错误结果（统一文案，便于界面直接展示） */
