@@ -25,7 +25,7 @@ const LEDGER_KEY = 'studyPlanner:v1:notified';
 /** 通知类型的中文文案模板 */
 export const NOTIFICATION_TYPE_LABELS_ZH = Object.freeze({
   [NOTIFICATION_TYPE.SESSION_SOON]: '下一项学习即将开始',
-  [NOTIFICATION_TYPE.PLAN_START]: '今天的计划开始时间',
+  [NOTIFICATION_TYPE.PLAN_START]: '今日学习简报',
   [NOTIFICATION_TYPE.FOCUS_END]: '专注计时结束',
   [NOTIFICATION_TYPE.DAILY_SUMMARY]: '今日计划概览',
 });
@@ -100,6 +100,18 @@ export function createNotificationService({ appearanceService, now, clock }) {
     if (!supported()) {
       return { ok: false, permission: 'unsupported', message: '当前浏览器不支持通知，无法启用。' };
     }
+    // 已经授权过就不要重复申请：部分浏览器会忽略第二次调用，
+    // 更糟的是在某些环境下 requestPermission 根本不存在（例如只实现了构造函数的垫片）。
+    if (globalThis.Notification.permission === 'granted') {
+      appearanceService.updatePreferences((prefs) => ({
+        ...prefs,
+        notifications: { ...prefs.notifications, permission: 'granted' },
+      }));
+      return { ok: true, permission: 'granted', message: '浏览器已经允许通知权限。', alreadyGranted: true };
+    }
+    if (typeof globalThis.Notification.requestPermission !== 'function') {
+      return { ok: false, permission: permission(), message: '这个浏览器没有提供通知授权接口，无法启用。' };
+    }
     if (globalThis.Notification.permission === 'denied') {
       return {
         ok: false,
@@ -130,7 +142,13 @@ export function createNotificationService({ appearanceService, now, clock }) {
     }
   }
 
-  /** 开启 / 关闭应用内提醒开关 */
+  /**
+   * 开启 / 关闭应用内提醒开关。
+   *
+   * 只负责改偏好与返回真实状态，**不在这里启动或停止调度**。
+   * 原因：调度由应用入口在启动时决定（`schedule()` / `stop()`），
+   * 如果这个函数偷偷起一个 30 秒的定时器，调用方（尤其是测试）会莫名其妙地被挂住。
+   */
   function setEnabled(enabled) {
     if (enabled && !supported()) {
       return { ok: false, message: '当前浏览器不支持通知，无法开启。' };
@@ -148,8 +166,7 @@ export function createNotificationService({ appearanceService, now, clock }) {
       ...prefs,
       notifications: { ...prefs.notifications, enabled: Boolean(enabled), permission: permission() },
     }));
-    if (enabled) schedule();
-    else stop();
+    if (!enabled) stop();
     return { ok: true, message: enabled ? '已开启学习提醒。' : '已关闭学习提醒。' };
   }
 
@@ -334,22 +351,26 @@ export function createNotificationService({ appearanceService, now, clock }) {
       }
     }
 
-    // 3) 今天的计划开始时间（每天只提醒一次）
+    // 3) 今日学习简报：每天一次，告诉用户"今天有什么安排"
+    //
+    // 刻意与"下一项学习即将开始"分开：
+    // 简报在当天第一次检查时发出（通常是你早上打开应用），内容是全天概览；
+    // 而"即将开始"是在每个时段开始前 N 分钟提醒。
+    // 如果两者都用"提前 N 分钟"触发，同一个时段就会连收两条几乎一样的提醒。
     if (prefs.types[NOTIFICATION_TYPE.PLAN_START]) {
-      const todaySessions = (context.sessions ?? []).filter((session) => session.date === current.date && session.state !== 'cancelled');
-      const first = todaySessions.sort((a, b) => a.startMinutes - b.startMinutes)[0];
-      if (first && first.startMinutes > current.minutes) {
-        const minutesUntil = first.startMinutes - current.minutes;
-        if (minutesUntil <= prefs.advanceMinutes) {
-          const result = deliver({
-            key: `plan_start:${current.date}`,
-            type: NOTIFICATION_TYPE.PLAN_START,
-            title: '今天的学习从 ' + formatClock(first.startMinutes) + ' 开始',
-            body: `今天共有 ${todaySessions.length} 个学习时段，合计 ${todaySessions.reduce((sum, s) => sum + s.plannedMinutes, 0)} 分钟。`,
-            tag: `plan-start-${current.date}`,
-          });
-          if (result.ok) fired += 1;
-        }
+      const todaySessions = (context.sessions ?? [])
+        .filter((session) => session.date === current.date && session.state !== 'cancelled')
+        .sort((a, b) => a.startMinutes - b.startMinutes);
+      if (todaySessions.length > 0) {
+        const totalMinutes = todaySessions.reduce((sum, session) => sum + (session.plannedMinutes ?? 0), 0);
+        const result = deliver({
+          key: `plan_start:${current.date}`,
+          type: NOTIFICATION_TYPE.PLAN_START,
+          title: `今天安排了 ${todaySessions.length} 个学习时段`,
+          body: `合计 ${totalMinutes} 分钟，从 ${formatClock(todaySessions[0].startMinutes)} 开始。`,
+          tag: `plan-start-${current.date}`,
+        });
+        if (result.ok) fired += 1;
       }
     }
 

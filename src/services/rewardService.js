@@ -159,7 +159,9 @@ export function createRewardService({ appearanceService, app, now, random }) {
       if (patch.label !== undefined) {
         const trimmed = String(patch.label).trim();
         if (!trimmed) return item;
-        updated.label = trimmed.slice(0, 30);
+        // 与 addItem 保持一致：超长直接不生效，而不是悄悄截断
+        if (trimmed.length > 30) return item;
+        updated.label = trimmed;
       }
       if (patch.emoji !== undefined) updated.emoji = normalizeEmoji(patch.emoji);
       if (patch.weight !== undefined) updated.weight = clampWeight(patch.weight);

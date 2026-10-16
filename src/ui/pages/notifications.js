@@ -16,7 +16,7 @@ import { NOTIFICATION_TYPE_LABELS_ZH } from '../../services/notificationService.
 
 const TYPE_DESCRIPTIONS = {
   [NOTIFICATION_TYPE.SESSION_SOON]: '下一项学习开始前提醒你，避免错过计划时段。',
-  [NOTIFICATION_TYPE.PLAN_START]: '每天第一次学习开始前提醒一次。',
+  [NOTIFICATION_TYPE.PLAN_START]: '当天第一次打开应用时，简报今天的时段数量与总时长（每天一条）。',
   [NOTIFICATION_TYPE.FOCUS_END]: '专注计时结束时提醒（离开工作台也能收到）。',
   [NOTIFICATION_TYPE.DAILY_SUMMARY]: '每天早上汇总今天的计划时长与时段数（每天一条）。',
 };

@@ -27,7 +27,7 @@ export const WALLPAPER_FIT = Object.freeze({
 
 export const NOTIFICATION_TYPE = Object.freeze({
   SESSION_SOON: 'session_soon', // 下一项学习即将开始
-  PLAN_START: 'plan_start', // 今天的计划开始时间
+  PLAN_START: 'plan_start', // 每天一次的学习简报（今天有哪些安排）
   FOCUS_END: 'focus_end', // 专注计时结束
   DAILY_SUMMARY: 'daily_summary', // 今日计划概览
 });
