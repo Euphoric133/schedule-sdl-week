@@ -145,8 +145,18 @@ export function run(input) {}
 | `domain/restPeriod.js` | domain | 休息时间实体 + 按午夜拆分的纯函数 | 一条完整安排 → 若干当日片段；时长守恒、无重叠 |
 | `services/restService.js` | services | 休息的查询与冲突检查 | 冲突只报告不修改，绝不静默覆盖别人的安排 |
 | `ui/board.js` | ui | 七天/每日/首页共用的看板渲染 | 排序与状态只有一处实现；网格基准 5 分钟 = 1 标准格 |
+| `domain/subject.js` | domain | 科目字典与名称归一化 | 任务仍存科目名；改名时任务与字典在同一事务里同步 |
+| `services/subjectService.js` | services | 科目读取与引用统计 | 只读；写操作走 `subject.*` 变更 |
+| `engine/capacity.js` → `resolveSearchStart` | engine | 规划起点解析 | 默认"严格的下一个整点"；过去的时间不会被当成未来 |
 | `services/statsService.js` | services | 全部统计与成就 | 只读真实记录；无数据时返回"未知"而不是 0 |
 | `ui/labels.js` | ui | 内部枚举 → 用户文案 | 界面**不得**直接渲染内部码 |
+
+**为什么"历史记录"与"有效占位"必须分开（`constraints.js` + `scheduler.js`）**：
+一条已完成的学习时段有两种身份：它是**历史事实**（统计要用），但它**不再是**日程占位。
+把两者混在一起就会出现"任务已经做完了，却永远占着那段时间"的怪现象。
+因此：
+- 容量层仍把它算作已占用的墙钟时间（避免排程器把新内容排到同一时刻）；
+- 冲突/校验层把它排除（不参与 H1/H2/H3，也不参与"保留时段 vs 固定活动"的冲突检测）。
 
 **为什么"看板"要单独成一层（`ui/board.js`）**：
 七天计划、每日视图、首页的"今天"都显示同一种卡片。如果各自实现排序与状态判断，
