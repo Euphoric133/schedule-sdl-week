@@ -1184,3 +1184,194 @@ legend {
     flex-wrap: wrap;
   }
 }
+
+/* ==========================================================================
+   每日视图：日期为列、任务为内容
+   ========================================================================== */
+
+.day-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(180px, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-4);
+  overflow-x: auto;
+  align-items: start;
+}
+
+/* 窄屏允许横向滚动，保证卡片不会被压扁或重叠 */
+@media (max-width: 900px) {
+  .day-board {
+    grid-auto-columns: minmax(160px, 1fr);
+    padding: var(--space-3);
+  }
+}
+
+.day-board__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+  border: 1px solid transparent;
+}
+
+.day-board__col.is-today {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.day-board__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 0 var(--space-1) var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+
+.day-board__date {
+  font-weight: 650;
+  font-size: var(--font-size-sm);
+}
+
+.day-board__num {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.day-board__badge {
+  font-size: var(--font-size-xs);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  padding: 0 6px;
+  margin-left: auto;
+}
+
+.day-board__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 40px;
+}
+
+.day-board__empty {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-faint);
+  padding: var(--space-2);
+  text-align: center;
+}
+
+/* —— 任务卡片 —— */
+.day-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-border-strong);
+  background: var(--color-surface);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.day-card--study {
+  border-left-color: var(--color-study);
+  cursor: pointer;
+  transition: box-shadow 120ms ease, transform 120ms ease;
+}
+
+.day-card--study:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.day-card--study:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.day-card--fixed {
+  border-left-color: var(--color-fixed);
+  background: var(--color-surface-alt);
+}
+
+.day-card__top {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.day-card__title {
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.day-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* —— 小标签 —— */
+.day-tag {
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.day-tag--study {
+  background: var(--color-study-soft);
+  color: var(--color-study);
+}
+
+.day-tag--fixed {
+  background: var(--color-fixed-soft);
+  color: var(--color-fixed);
+}
+
+.day-tag--completed {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.day-tag--in_progress {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.day-tag--flexible {
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+}
+
+.day-tag--locked {
+  background: var(--color-locked-soft);
+  color: var(--color-locked);
+}
+
+.day-tag--overdue {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.day-tag--cancelled {
+  background: var(--color-surface-alt);
+  color: var(--color-text-faint);
+}

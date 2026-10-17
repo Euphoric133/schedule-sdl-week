@@ -734,15 +734,14 @@ test('界面渲染：空数据时每个页面都显示空状态而不是崩溃�
   assert.match(settingsText, /清理历史记录/, '应提供清理历史入口');
   assert.match(settingsText, /受保护的记录/, '清理面板必须说明哪些记录受保护');
 
-  // 每日视图应显示当天容量与时间轴
+  // 每日视图：日期为列、任务为内容的概览（不再使用时间轴网格）
   dom.location.hash = '#/day';
   module.shell.render();
   const dayMain = dom.appHost.children[0].byClass('app-main')[0];
-  assert.ok(dayMain.byClass('timeline__hour').length === 18, '每日视图也应有 18 个整点刻度');
-  assert.ok(
-    dayMain.all().some((node) => /当日容量与安排/.test(node.textContent)),
-    '每日视图应展示当天容量',
-  );
+  assert.equal(dayMain.byClass('day-board').length, 1, '每日视图应有一个日期列容器');
+  assert.equal(dayMain.byClass('day-board__col').length, 7, '应展示 7 天（每列一天）');
+  assert.equal(dayMain.byClass('timeline__hour').length, 0, '每日视图不再显示时间刻度');
+  assert.match(dayMain.textContent, /日程概览/);
 
   delete globalThis.Node;
   delete globalThis.addEventListener;
