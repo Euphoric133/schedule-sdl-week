@@ -28,7 +28,7 @@ export function renderNotifications({ app, services, now }) {
     el('header.page-head', {}, [
       el('div', {}, [
         el('h1', { text: '通知提醒' }),
-        el('p.page-head__sub', { text: '用浏览器通知提醒下一项学习与专注结束；提醒由你完全控制，可以随时关闭。' }),
+        el('p.page-head__sub', { text: '用浏览器通知提醒下一项学习即将开始；提醒由你完全控制，可以随时关闭。' }),
       ]),
       el('div.page-head__actions', {}, [
         button('发送一条测试通知', {

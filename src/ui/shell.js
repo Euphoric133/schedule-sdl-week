@@ -61,13 +61,6 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
   const toastHost = el('div', { id: 'toast-host', 'aria-live': 'polite', style: { position: 'fixed', right: 'var(--space-4)', bottom: 'var(--space-4)', zIndex: '50', maxWidth: '360px' } });
 
   // 布局区域：brand / topbar / nav / main（toast 与全局横幅是浮层，不参与网格）
-  /**
-   * 固定专注功能栏：计时进行中时出现在每一页顶部。
-   *
-   * 为什么需要：番茄钟要求"开始一项任务后能直接进入专注模式，不必反复切换页面"。
-   * 有了这条常驻栏，用户在周视图、任务列表或设置页都能看到剩余时间，
-   * 并且可以就地暂停 / 结束 / 回到专注页。
-   */
   const shell = el('div.app', {}, [brand, topbar, nav, main]);
   installKeyboardShortcuts({ app, services, render: () => renderCurrent() });
   root.appendChild(shell);

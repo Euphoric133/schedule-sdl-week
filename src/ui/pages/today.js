@@ -2,7 +2,7 @@
  * 今日总览页。
  *
  * 职责：只读地展示"今天"的关键信息——今日已排学习量、今日待办、超期提示。
- * 具体的时段明细在七天计划页与专注工作台；这里不重复实现时间轴，避免两套口径。
+ * 具体的时段明细在七天计划页与每日视图；这里不重复实现时间轴，避免两套口径。
  */
 
 import { button, card, emptyState, metricRow, notice, pill, taskList } from '../components.js';

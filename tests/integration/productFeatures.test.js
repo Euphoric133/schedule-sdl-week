@@ -494,7 +494,6 @@ test('统计：连续学习天数只统计有真实完成记录的日子', () =>
       { state: 'completed', date: '2025-10-11' },
       { state: 'flexible', date: '2025-10-13' },
     ],
-    focusRecords: [],
   };
   const streak = computeStreak(state, '2025-10-16');
   assert.equal(streak.current, 3, '16/15/14 连续三天（13 号没有完成记录）');
@@ -503,7 +502,7 @@ test('统计：连续学习天数只统计有真实完成记录的日子', () =>
 });
 
 test('统计：今天还没开始时，连续天数从昨天算起（不会早上就断签）', () => {
-  const state = { sessions: [{ state: 'completed', date: '2025-10-15' }, { state: 'completed', date: '2025-10-14' }], focusRecords: [] };
+  const state = { sessions: [{ state: 'completed', date: '2025-10-15' }, { state: 'completed', date: '2025-10-14' }] };
   const streak = computeStreak(state, '2025-10-16');
   assert.equal(streak.current, 2, '今天还没学习不应该把连续记录清零');
 });

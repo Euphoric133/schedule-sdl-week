@@ -103,7 +103,7 @@ export function renderSettings({ app, services }) {
             ['每连续学习', `${settings.restRule.afterContinuousMinutes} 分钟后休息 ${settings.restRule.restMinutes} 分钟`],
             ['科目切换额外休息', `${settings.restRule.extraOnSubjectSwitch} 分钟`],
           ]),
-          definitionList('专注与切换', [
+          definitionList('学习偏好与科目切换', [
             ['连续学习基础上限', `${settings.baseContinuousMinutes} 分钟（按难度自适应）`],
             ['科目切换惩罚', `${settings.subjectSwitchPenaltyMinutes} 分钟`],
             ['偏好专注时段', (settings.preferredFocusWindows ?? []).map((w) => `${toHHmm(w.startMinutes)}–${toHHmm(w.endMinutes)}`).join('、') || '未设置'],

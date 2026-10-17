@@ -140,16 +140,15 @@ export function run(input) {}
 | `services/appearanceService.js` | services | 主题与壁纸的应用 | 主题只改 `<html>` 属性，**不触发整页重绘** |
 | `storage/wallpaperStore.js` | storage | 壁纸二进制存取（IndexedDB） | 只存一张；失败安全降级；绝不上传 |
 | `services/notificationService.js` | services | 权限、调度、去重 | 按**真实时间戳**比较；持久化去重；页面关闭后不承诺 |
-| `services/pomodoroTimer.js` | services | 计时状态的**纯函数**层 | 结束时刻用绝对时间戳；暂停冻结剩余秒数 |
-| `services/pomodoroService.js` | services | 阶段流转与记录写入 | 一轮番茄**不**标记任务完成；休息不写入学习记录 |
-| `services/rewardService.js` | services | 奖项、触发规则、抽奖 | 机会 = `floor(真实进度/阈值) − 已发放`（幂等，防重复发奖） |
+| ~~pomodoro / reward~~ | — | v1.1.0 已移除（番茄钟由独立页面承担；转盘功能不再需要） | — |
+| `domain/reconcile.js` | domain | 把"时段"对齐到"剩余工作量"的纯函数 | 只取消未完成时段；已完成的学习记录永不触碰 |
 | `services/statsService.js` | services | 全部统计与成就 | 只读真实记录；无数据时返回"未知"而不是 0 |
 | `ui/labels.js` | ui | 内部枚举 → 用户文案 | 界面**不得**直接渲染内部码 |
 
-**为什么把番茄钟拆成 `pomodoroTimer.js` + `pomodoroService.js`**：
-计时是全项目唯一对时间精度有硬要求的部分。把"给定时间戳 → 计算剩余时间"抽成纯函数后，
-标签页节流、电脑休眠、暂停恢复、刷新恢复这些场景都可以用构造的时间戳直接单元测试，
-而不需要真的等待时间流逝，也不需要启动应用。
+**为什么数据一致性修复单独成一层（`domain/reconcile.js`）**：
+"剩余工作量 ≥ 未完成时段合计"这个不变量被多个入口影响（完成、取消、删除、改工作量、改已完成时长）。
+把这些场景的对齐逻辑收敛到一个纯函数里，任何入口只要在**同一次提交**中调用它，
+就不会再出现"只改了任务、忘了改时段"的半更新数据；同时也让"加载旧数据时的安全修复"复用同一段逻辑。
 
 **草稿变更层（`src/domain/mutations.js`）**
 

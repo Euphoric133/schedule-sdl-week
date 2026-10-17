@@ -37,7 +37,6 @@ export const TRIGGER_LABELS_ZH = Object.freeze({
   'settings-page': '偏好设置',
   'settings-editor': '偏好设置',
   'session-detail': '时段详情',
-  'focus-workbench': '专注工作台',
   'window-shift': '计划窗口滚动',
   shortcut: '键盘快捷键',
   ui: '界面操作',
