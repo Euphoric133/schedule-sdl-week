@@ -346,6 +346,15 @@ export function run(input) {
     // 只考虑保留时段会让"向前压缩"把片段挪进上课时间，从而产生 H1 违规。
     occupiedSpans: [...reservedSpans, ...fixedSpans],
     studyWindows: state.settings?.studyWindows ?? {},
+    /**
+     * 局部优化必须使用**裁剪后的**每日可用窗口。
+     *
+     * capacityDays 里的 windows 已经扣掉了"规划起点之前"的时间；
+     * 如果这里退回用原始的按星期窗口，优化器就会把片段"向前压缩"到规划起点之前
+     * （例如现在 20:30、起点 21:00，却把学习排到 16:00）。
+     * 这是"不生成过去时段"这条规则在优化阶段被绕过的真实原因。
+     */
+    windowsByDate: new Map(capacityDays.map((day) => [day.date, day.windows])),
     taskById,
     passes: input.optimizationPasses ?? policy.optimizationPasses,
   });
@@ -851,7 +860,7 @@ function pickReasonCode({ task, missing, policy }) {
  * 迭代次数有上界（策略里的 optimizationPasses），因此结果是确定的、有界的。
  * **不宣称全局最优**：这里只是一个局部改进，UI 与文档的说法必须与此一致。
  */
-function optimizePlacements({ placements, policy, occupiedSpans, studyWindows, taskById, passes }) {
+function optimizePlacements({ placements, policy, occupiedSpans, studyWindows, windowsByDate = null, taskById, passes }) {
   let current = dedupePlacements(placements);
   const passesToRun = Math.max(0, Math.min(passes ?? policy.optimizationPasses, 5));
 
@@ -862,6 +871,7 @@ function optimizePlacements({ placements, policy, occupiedSpans, studyWindows, t
     const improved = tryCompact(current, {
       occupiedSpans: [...occupiedSpans, ...restSpans],
       studyWindows,
+      windowsByDate,
       taskById,
     });
     if (!improved.changed) break;
@@ -941,7 +951,7 @@ function dedupePlacements(placements) {
 }
 
 /** 把同一天的学习片段依次向前压缩：只要前方有空位且不违反依赖关系就前移 */
-function tryCompact(placements, { occupiedSpans, studyWindows, taskById }) {
+function tryCompact(placements, { occupiedSpans, studyWindows, windowsByDate = null, taskById }) {
   const studies = placements.filter((item) => item.kind === 'study');
   const others = placements.filter((item) => item.kind !== 'study');
   const byDate = new Map();
@@ -957,7 +967,8 @@ function tryCompact(placements, { occupiedSpans, studyWindows, taskById }) {
     const sorted = [...list].sort((a, b) => a.startMinutes - b.startMinutes);
     for (const item of sorted) {
       const length = item.endMinutes - item.startMinutes;
-      const windows = normalizeStudyWindows(date, studyWindows);
+      // 优先用"按日期裁剪后"的窗口（含规划起点限制），退回按星期配置
+      const windows = (windowsByDate && windowsByDate.get(date)) ?? normalizeStudyWindows(date, studyWindows);
       let placedAt = item.startMinutes;
       for (const window of windows) {
         let cursor = window.startMinutes;
