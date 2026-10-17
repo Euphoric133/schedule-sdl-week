@@ -359,11 +359,13 @@ export function validateAppState(state, { requirePlanWindow = false } = {}) {
     }
   }
 
-  // —— 可排程任务状态检查（提示级别） ——
-  const schedulable = tasks.filter((t) => SCHEDULABLE_TASK_STATUSES.includes(t.status));
-  if (schedulable.length === 0 && tasks.length > 0) {
-    issues.push(warning(C.REQUIRED, 'state.tasks', '当前没有可安排的任务（全部已完成或已取消）。', {}));
-  }
+  /**
+   * 这里刻意不再对"任务全部已完成/已取消"发出提示。
+   *
+   * 理由：这是用户正常作息的结果（今天的事做完了），不是数据问题。
+   * 以前它会在每次打开应用时弹出一条警告横幅，让人以为出了问题。
+   * 现在"没有可安排的任务"由首页与每日视图按需解释，不再作为数据警告。
+   */
 
   return result(issues);
 }
