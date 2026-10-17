@@ -16,6 +16,8 @@ export const ID_PREFIXES = Object.freeze({
   preview: 'pvw',
   block: 'blk',
   event: 'evt',
+  /** 休息时间（一分钟级别的独立安排，按日期拆分显示） */
+  rest: 'rst',
 });
 
 const BASE36 = 36;

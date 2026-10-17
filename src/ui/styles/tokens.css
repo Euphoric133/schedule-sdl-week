@@ -68,9 +68,8 @@
   /* —— 布局尺寸 —— */
   --sidebar-width: 208px;
   --topbar-height: 56px;
-  --timeline-hour-height: 56px; /* 时间轴每小时像素高度 */
-  --timeline-start-hour: 6; /* 时间轴从 06:00 开始显示 */
-  --timeline-end-hour: 24; /* 到 24:00 */
+  /* 七天计划看板的尺寸基准：5 分钟 = 一个标准格 */
+  --day-grid-step: 8px;
 }
 
 @media (prefers-reduced-motion: reduce) {

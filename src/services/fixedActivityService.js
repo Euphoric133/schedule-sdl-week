@@ -6,6 +6,7 @@
  */
 
 import { FIXED_ACTIVITY_TYPE, FIXED_ACTIVITY_TYPE_LABELS_ZH, occursOn } from '../domain/fixedActivity.js';
+import { addDays, splitOvernightSpan } from '../domain/time.js';
 import { weekday } from '../domain/time.js';
 import { VALIDATION_CODES as C, error } from '../domain/validation.js';
 
@@ -86,11 +87,42 @@ export function createFixedActivityService({ app }) {
     return [...byType.values()].sort((a, b) => b.count - a.count || (a.type < b.type ? -1 : 1));
   }
 
-  /** 某天的全部固定活动（按开始时间排序），供每日视图展示 */
+  /**
+   * 某天要显示的固定任务片段（按开始时间排序）。
+   *
+   * 跨午夜的固定任务（例如 22:00 → 次日 06:00）必须**按日期拆开**：
+   * 当天显示 22:00–24:00，次日显示 00:00–06:00。
+   * 以前这里直接返回原始活动（end < start），时间轴/看板会把它当成
+   * "22:00 到 06:00"这样跨天的区间，导致显示错位与"跨午夜处理不正确"。
+   */
   function forDate(date) {
-    return list()
-      .filter((activity) => occursOn(activity, date))
-      .sort((a, b) => a.startMinutes - b.startMinutes);
+    const fragments = [];
+    // 还要看"前一天"的发生：周四 22:00 → 周五 06:00 的尾部属于周五，
+    // 但重复规则只写在周四上。因此必须从 date 与 date-1 两个基数各展开一次，
+    // 再按**片段自身日期**过滤，才既不会漏掉跨夜尾部，也不会重复计入。
+    const baseDates = [addDays(date, -1), date];
+
+    for (const activity of list()) {
+      for (const baseDate of baseDates) {
+        if (!occursOn(activity, baseDate)) continue;
+        for (const part of splitOvernightSpan({
+          date: baseDate,
+          startMinutes: activity.startMinutes,
+          endMinutes: activity.endMinutes,
+        })) {
+          if (part.date !== date) continue;
+          fragments.push({
+            ...activity,
+            date,
+            startMinutes: part.startMinutes,
+            endMinutes: part.endMinutes,
+            /** 原始活动是否跨午夜（模型约定：跨夜时 endMinutes > 1440） */
+            spansMidnight: activity.endMinutes > 1440,
+          });
+        }
+      }
+    }
+    return fragments.sort((a, b) => a.startMinutes - b.startMinutes || (a.id < b.id ? -1 : 1));
   }
 
   /** 是否周末（展示用，不参与硬约束） */

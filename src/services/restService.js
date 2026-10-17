@@ -134,7 +134,7 @@ export function createRestService({ app }) {
 function spanOverlap(a, b) {
   if (!Number.isInteger(a.startMinutes) || !Number.isInteger(a.endMinutes)) return 0;
   if (!Number.isInteger(b.startMinutes) || !Number.isInteger(b.endMinutes)) return 0;
-  return overlapLength({ startMinutes: a.startMinutes, endMinutes: a.endMinutes }, { startMinutes: b.startMinutes, endMinutes: b.endMinutes });
+  return overlapLength(a.startMinutes, a.endMinutes, b.startMinutes, b.endMinutes);
 }
 
 /** 同一对象在多天重叠时只保留一条提示（附带天数） */

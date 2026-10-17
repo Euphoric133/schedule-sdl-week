@@ -371,115 +371,6 @@
   border: 1px solid var(--color-border-strong);
 }
 
-/* —— 时间轴（七天视图与每日视图共用同一套刻度样式） —— */
-.timeline {
-  display: grid;
-  grid-template-columns: 56px repeat(7, minmax(120px, 1fr));
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: auto;
-  background: var(--color-surface);
-  max-height: 70vh;
-}
-.timeline__corner,
-.timeline__day-head,
-.timeline__hour,
-.timeline__day {
-  border-right: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
-}
-.timeline__corner,
-.timeline__day-head {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: var(--color-surface);
-  padding: var(--space-2);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-}
-.timeline__day-head {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.timeline__day-head[aria-current='date'] {
-  color: var(--color-primary-hover);
-  background: var(--color-primary-soft);
-}
-.timeline__day-meta {
-  font-size: var(--font-size-xs);
-  font-weight: 400;
-  color: var(--color-text-muted);
-}
-.timeline__hour {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  background: var(--color-surface);
-  padding: var(--space-1) var(--space-2);
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  height: var(--timeline-hour-height);
-}
-.timeline__day {
-  position: relative;
-  height: calc(var(--timeline-hour-height) * (var(--timeline-end-hour) - var(--timeline-start-hour)));
-  background-image: repeating-linear-gradient(
-    to bottom,
-    var(--color-border) 0,
-    var(--color-border) 1px,
-    transparent 1px,
-    transparent var(--timeline-hour-height)
-  );
-}
-.timeline__block:focus-visible {
-  outline: 2px solid var(--color-text);
-  outline-offset: 1px;
-  z-index: 3;
-}
-
-.timeline__block {
-  position: absolute;
-  left: 2px;
-  right: 2px;
-  border-radius: var(--radius-sm);
-  padding: 2px var(--space-2);
-  font-size: var(--font-size-xs);
-  line-height: 1.25;
-  overflow: hidden;
-  border-left: 3px solid transparent;
-  cursor: pointer;
-  text-align: left;
-  background: var(--color-surface);
-}
-.timeline__block--study {
-  background: var(--color-study-soft);
-  border-left-color: var(--color-study);
-  color: #1d3f70;
-}
-.timeline__block--study.is-locked {
-  background: var(--color-locked-soft);
-  border-left-color: var(--color-locked);
-  color: #3d2d78;
-}
-.timeline__block--fixed {
-  background: var(--color-fixed-soft);
-  border-left-color: var(--color-fixed);
-  color: var(--color-text-muted);
-}
-.timeline__block--rest {
-  background: var(--color-rest-soft);
-  border-left-color: var(--color-rest);
-  color: #1f5b47;
-}
-.timeline__block__time {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
 /* —— 任务列表 —— */
 .task-list {
   list-style: none;
@@ -565,8 +456,8 @@ legend {
   color: var(--color-text-muted);
 }
 
-/* —— 可聚焦的滚动区域（时间轴）—— */
-.timeline:focus-visible {
+/* —— 可聚焦的横向滚动区域（七天看板）—— */
+.day-board:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }

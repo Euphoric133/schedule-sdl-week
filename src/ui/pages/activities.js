@@ -40,13 +40,14 @@ export function renderActivities({ app, services, route, now }) {
   nodes.push(
     el('header.page-head', {}, [
       el('div', {}, [
-        el('h1', { text: '固定活动' }),
+        el('h1', { text: '固定日程与休息' }),
         el('p.page-head__sub', {
           text: `${activities.length} 项固定安排 · 统计窗口 ${windowStart} → ${addDays(windowStart, 6)}`,
         }),
       ]),
       el('div.page-head__actions', {}, [
-        button('新建固定活动', { variant: 'primary', onClick: () => services.ui.openFixedActivityForm(null) }),
+        button('添加休息', { size: 'sm', onClick: () => services.ui.openRestForm(null) }),
+        button('新建固定任务', { variant: 'primary', onClick: () => services.ui.openFixedActivityForm(null) }),
       ]),
     ]),
   );
@@ -75,6 +76,58 @@ export function renderActivities({ app, services, route, now }) {
       }),
     ),
   ];
+  /* ---------- 休息时间 ---------- */
+  const rests = services.restService.list();
+  nodes.push(
+    card({
+      title: `休息时间（${rests.length}）`,
+      hint: '一条休息可以跨午夜；每日视图会按日期自动拆成两个区块显示',
+      actions: [button('添加休息', { size: 'sm', variant: 'primary', onClick: () => services.ui.openRestForm(null) })],
+      flush: rests.length > 0,
+      body:
+        rests.length === 0
+          ? el('div', { style: { padding: 'var(--space-4)' } }, [
+              el('div.card__hint', {
+                text: '还没有休息时间。休息与学习任务、固定任务都不同：它不参与排程，只标记"这段时间在休息"。',
+              }),
+            ])
+          : el(
+              'ul.task-list',
+              {},
+              rests.map((rest) => {
+                const dates = services.restService.datesOf(rest.id);
+                const fragments = dates.flatMap((date) => services.restService.forDate(date)).filter((f) => f.restId === rest.id);
+                return el('li.task-item', {}, [
+                  el('div.task-item__head', {}, [
+                    el('div', {}, [
+                      el('strong', { text: rest.title }),
+                      el('span', { text: `　${rest.startDate} ${toHHmm(rest.startMinutes)} → ${rest.endDate} ${toHHmm(rest.endMinutes === 1440 ? 0 : rest.endMinutes)}` }),
+                    ]),
+                    el('div.task-item__meta', {}, [
+                      pill(dates.length > 1 ? `跨 ${dates.length} 天` : '单日', dates.length > 1 ? 'rest' : 'neutral'),
+                      pill(formatDuration(restDuration(rest)), 'rest'),
+                    ]),
+                  ]),
+                  el('div.card__hint', {
+                    text:
+                      fragments.length > 1
+                        ? `显示为：${fragments.map((f) => `${f.date} ${toHHmm(f.startMinutes)}–${toHHmm(f.endMinutes)}`).join('；')}`
+                        : `显示为：${fragments.map((f) => `${f.date} ${toHHmm(f.startMinutes)}–${toHHmm(f.endMinutes)}`).join('')}`,
+                  }),
+                  el('div.task-item__actions', {}, [
+                    button('编辑', { size: 'sm', onClick: () => services.ui.openRestForm(rest.id) }),
+                    button('删除', {
+                      size: 'sm',
+                      variant: 'danger',
+                      onClick: () => services.ui.deleteRest(rest.id),
+                    }),
+                  ]),
+                ]);
+              }),
+            ),
+    }),
+  );
+
   nodes.push(
     card({
       title: '按类型筛选',
@@ -153,6 +206,19 @@ export function renderActivities({ app, services, route, now }) {
   }
 
   return nodes;
+}
+
+function toHHmm(minutes) {
+  const wrapped = ((Number(minutes) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(wrapped / 60)).padStart(2, '0')}:${String(wrapped % 60).padStart(2, '0')}`;
+}
+
+/** 休息总时长（用于展示，独立计算以免依赖具体日期拆分实现） */
+function restDuration(rest) {
+  const [sy, sm, sd] = String(rest.startDate).split('-').map(Number);
+  const [ey, em, ed] = String(rest.endDate).split('-').map(Number);
+  const days = Math.round((Date.UTC(ey, em - 1, ed) - Date.UTC(sy, sm - 1, sd)) / 86400000);
+  return days * 1440 + (rest.endMinutes - rest.startMinutes);
 }
 
 function activityRow(activity, { services, windowDates, windowStart }) {

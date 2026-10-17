@@ -11,7 +11,8 @@
  * 所有数字都来自真实记录（`statsService`），没有数据时显示引导而不是 0 值图表。
  */
 
-import { button, card, emptyState, notice, pill, progressBar, statTile, timeline } from '../components.js';
+import { button, card, emptyState, notice, pill, progressBar, statTile } from '../components.js';
+import { buildDayCards, renderBoard } from '../board.js';
 import { el, toast } from '../dom.js';
 import { SESSION_STATE } from '../../domain/session.js';
 import { TASK_STATUS } from '../../domain/task.js';
@@ -114,24 +115,26 @@ export function renderHome({ app, services, now }) {
 
   leftColumn.push(renderPlanCard({ app, services, plan, todaySessions, taskById, activeTasks, nowMinutes, today }));
 
-  /* ---------- 今日时间轴 ---------- */
-  if (todaySessions.length > 0) {
-    const blocksByDate = new Map();
-    blocksByDate.set(today, (plan?.blocks ?? []).filter((block) => block.date === today));
+  /* ---------- 今天的安排（与七天计划同一套卡片，不再使用时间轴） ---------- */
+  if (todaySessions.length > 0 || services.restService.list().length > 0) {
+    const todayCards = buildDayCards({
+      date: today,
+      state,
+      plan,
+      services,
+      today,
+      nowMinutes,
+    });
     leftColumn.push(
       card({
-        title: '今天的时间轴',
-        hint: '点击时段可以查看详情、锁定或移动',
+        title: '今天的安排',
+        hint: '时间是卡片自身的属性；点击卡片上的按钮可以完成或删除',
         actions: [button('每日视图', { size: 'sm', onClick: () => { globalThis.location.hash = `#/day?date=${today}`; } })],
-        body: timeline({
-          dates: [today],
-          blocksByDate,
+        flush: true,
+        body: renderBoard({
+          columns: [{ date: today, cards: todayCards }],
           today,
-          labelPrefix: '今天的时间轴',
-          onSelect: (block) => {
-            if (block.kind === 'study' && block.refId) services.ui.openSessionDetail(block.refId);
-            else toast(`${block.label}：${formatMinutes(block.startMinutes)}–${formatMinutes(block.endMinutes)}`, 'info');
-          },
+          services,
         }),
       }),
     );
