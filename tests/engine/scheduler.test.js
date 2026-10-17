@@ -112,17 +112,16 @@ test('场景 3：容量不足时给出部分可行状态与明确的缺口与原
   assert.ok(result.unscheduled.every((item) => item.reasonCode && item.reasonText && item.suggestions.length > 0));
 });
 
-test('场景 3b：超载时不会通过取消机动缓冲来掩盖问题（缓冲按容量计算，与任务量无关）', () => {
+test('场景 3b：缓冲时间功能已移除，超载仍然如实报告，而不是靠"取消缓冲"掩盖', () => {
   const env = engineContext();
   env.addTask({ title: '大任务', plannedMinutes: 900, deadlineDate: '2025-11-30' });
   const result = env.run();
 
   const bufferTotal = result.plan.days.reduce((sum, day) => sum + day.bufferMinutes, 0);
-  const capacity = result.capacityDays.reduce((sum, day) => sum + day.netCapacityMinutes, 0);
-  assert.equal(bufferTotal, result.capacityDays.reduce((sum, day) => sum + Math.floor(day.netCapacityMinutes * env.policy().bufferRatio), 0));
-  assert.ok(bufferTotal > 0, '缓冲仍应按 10% 预留，而不是被悄悄取消');
-  assert.ok(capacity > 0);
-  assert.ok(result.plan.metrics.overloadMinutes > 0, '超载分钟数应被如实报告');
+  assert.equal(bufferTotal, 0, '缓冲功能已移除，不应再预留或生成任何缓冲');
+  assert.equal(result.plan.blocks.filter((block) => block.kind === 'buffer').length, 0, '不应存在缓冲时段');
+  assert.ok(result.plan.metrics.overloadMinutes > 0, '超载分钟数仍应被如实报告');
+  assert.equal(env.policy().bufferRatio, 0, '缓冲比例恒为 0');
 });
 
 /* ------------------------------------------------------------------ *
@@ -276,44 +275,44 @@ test('场景 7b：锁定数量与位置在两次运行之间完全一致（确�
  * 场景 8：休息与缓冲不重复占用时间
  * ------------------------------------------------------------------ */
 
-test('场景 8：计划休息与机动缓冲互不重叠，且统计分开计算', () => {
+test('场景 8：计划休息仍然正常插入，且不与学习时段重叠（缓冲已移除）', () => {
   const env = engineContext();
   env.addTask({ plannedMinutes: 420, minChunkMinutes: 45, maxChunkMinutes: 60, deadlineDate: '2025-11-30' });
 
   const result = env.run();
   const rests = result.plan.blocks.filter((block) => block.kind === 'rest');
-  const buffers = result.plan.blocks.filter((block) => block.kind === 'buffer');
+  const studies = result.plan.blocks.filter((block) => block.kind === 'study');
 
-  assert.ok(rests.length > 0, '连续学习后应插入计划休息');
-  assert.ok(buffers.length > 0, '应按 10% 预留机动缓冲');
+  assert.ok(rests.length > 0, '连续学习后应插入计划休息（休息不是缓冲，必须保留）');
+  assert.equal(result.plan.blocks.filter((block) => block.kind === 'buffer').length, 0, '不应再有缓冲时段');
 
+  // 休息不能压在学习时段上（这是移除缓冲后仍然必须成立的硬约束）
   for (const rest of rests) {
-    for (const buffer of buffers) {
-      assert.equal(overlaps(rest, buffer), false, `${rest.date} 的休息与缓冲不应重叠`);
+    for (const study of studies) {
+      if (study.date !== rest.date) continue;
+      assert.equal(overlaps(rest, study), false, `${rest.date} 的休息不应与学习时段重叠`);
     }
   }
 
-  // 每日统计里 rest 与 buffer 分别累计，不与学习时长混淆
+  // 每日统计里 rest 单独累计，不与学习时长混淆
   for (const day of result.plan.days) {
     const dayBlocks = result.plan.blocks.filter((block) => block.date === day.date);
     const restMinutes = dayBlocks.filter((b) => b.kind === 'rest').reduce((sum, b) => sum + (b.endMinutes - b.startMinutes), 0);
-    const bufferMinutes = dayBlocks.filter((b) => b.kind === 'buffer').reduce((sum, b) => sum + (b.endMinutes - b.startMinutes), 0);
     assert.equal(day.restMinutes, restMinutes);
-    assert.equal(day.bufferMinutes, bufferMinutes);
+    assert.equal(day.bufferMinutes, 0, '每日缓冲统计应为 0');
   }
 });
 
-test('场景 8b：缓冲总量按"净容量 × 10%"预留，休息量单独统计', () => {
+test('场景 8b：没有缓冲后，净容量可以全部用于安排学习（schedulable = 净容量）', () => {
   const env = engineContext();
   env.addTask({ plannedMinutes: 300, deadlineDate: '2025-11-30' });
   const result = env.run();
 
-  const expectedBuffer = result.capacityDays.reduce((sum, day) => sum + Math.floor(day.netCapacityMinutes * 0.1), 0);
-  const actualBuffer = result.plan.days.reduce((sum, day) => sum + day.bufferMinutes, 0);
-  assert.equal(actualBuffer, expectedBuffer, '每日缓冲应为 floor(净容量 × 10%) 的合计');
-
-  const day1 = result.plan.days[0];
-  assert.ok(day1.restMinutes > 0 || result.plan.days.some((day) => day.restMinutes > 0), '应有计划休息');
+  for (const day of result.capacityDays) {
+    assert.equal(day.bufferMinutes, 0, '每日缓冲为 0');
+    assert.equal(day.schedulableMinutes, day.netCapacityMinutes, '可用容量等于净容量');
+  }
+  assert.ok(result.plan.days.some((day) => day.restMinutes > 0), '应有计划休息（休息与缓冲是两件事）');
 });
 
 /* ------------------------------------------------------------------ *
@@ -514,12 +513,12 @@ test('场景 18b：凌晨（04:00 之前）的窗口归属前一天业务日，�
   const result = env.run();
   assert.equal(result.ok, true);
   // 该场景的关键是"日期与窗口归属不错位"：00:00–01:00 的窗口必须被识别为 7 天都有 60 分钟容量。
-  // （每天 60 分钟、减 10% 缓冲后为 54 分钟，放不下最短 30 分钟的两段，因此这个 60 分钟任务
-  //   在本例中最终判为不可行——这是容量事实，不是日期错误。）
+  // 缓冲功能已移除，因此可用容量就是净容量 60 分钟（不再扣除 10%）。
   assert.equal(result.capacityDays.length, 7);
   for (const day of result.capacityDays) {
     assert.equal(day.netCapacityMinutes, 60, `${day.date} 凌晨窗口容量应为 60 分钟`);
-    assert.equal(day.schedulableMinutes, 54, '扣除 10% 缓冲后应为 54 分钟');
+    assert.equal(day.schedulableMinutes, 60, '缓冲已移除，可用容量等于净容量');
+    assert.equal(day.bufferMinutes, 0);
   }
   for (const block of studyBlocks(result.plan)) {
     assert.ok(block.startMinutes >= 0 && block.endMinutes <= 60, '凌晨窗口内的片段应落在 00:00–01:00');

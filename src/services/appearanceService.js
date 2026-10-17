@@ -10,7 +10,7 @@
  * 因此 `applyThemeOnly()` 可以在 `boot()` 之前调用，而它只依赖同步的 localStorage。
  */
 
-import { loadPreferences, savePreferences, THEME, WALLPAPER_FIT } from './preferences.js';
+import { loadPreferences, savePreferences, THEME } from './preferences.js';
 import {
   deleteWallpaper,
   isWallpaperStorageAvailable,
@@ -20,16 +20,9 @@ import {
   validateWallpaperFile,
 } from '../storage/wallpaperStore.js';
 
-export { THEME, WALLPAPER_FIT };
+export { THEME };
 
 /** 壁纸显示方式的中文说明（界面下拉用） */
-export const WALLPAPER_FIT_LABELS_ZH = Object.freeze({
-  [WALLPAPER_FIT.COVER]: '填充（铺满窗口，可能裁掉边缘）',
-  [WALLPAPER_FIT.CONTAIN]: '适应（完整显示，可能留空边）',
-  [WALLPAPER_FIT.CENTER]: '居中（原尺寸显示）',
-  [WALLPAPER_FIT.TILE]: '平铺（重复显示）',
-});
-
 export const THEME_LABELS_ZH = Object.freeze({
   [THEME.LIGHT]: '浅色',
   [THEME.DARK]: '深色',
@@ -93,18 +86,45 @@ export function createAppearanceService({ preferences: provided, onChange } = {}
 
   /* ---------------- 壁纸 ---------------- */
 
+  /**
+   * 取得（必要时创建）壁纸背景层。
+   *
+   * 这是壁纸"上传成功但看不到"的直接原因：样式里定义了 `#app-wallpaper`，
+   * 但页面里从来没有这个节点（index.html 没有，代码也没创建）。
+   * `applyWallpaperToDocument` 查不到节点就直接返回，于是图片被保存了却永远不显示。
+   *
+   * 现在改为：需要时在 <body> 上补建这一层。
+   * 放在 JS 里而不是 index.html，是为了让单文件版本（dist/standalone.html）同样可用。
+   */
+  function ensureWallpaperLayer() {
+    const doc = safeDocument();
+    if (!doc?.body) return null;
+
+    let layer = doc.getElementById?.('app-wallpaper') ?? null;
+    if (layer) return layer;
+
+    layer = doc.createElement('div');
+    layer.id = 'app-wallpaper';
+    // 明确标记为装饰元素：不参与无障碍树、不接收鼠标事件
+    layer.setAttribute('aria-hidden', 'true');
+    // 放在 body 的最前面，保证所有内容都叠在它上面
+    if (typeof doc.body.insertBefore === 'function' && doc.body.firstChild) {
+      doc.body.insertBefore(layer, doc.body.firstChild);
+    } else {
+      doc.body.appendChild(layer);
+    }
+    return layer;
+  }
+
   /** 把壁纸应用到背景层；没有壁纸时移除该层 */
   function applyWallpaperToDocument({ objectUrl } = {}) {
     const root = documentElement();
     if (!root) return;
 
-    const layer = safeDocument()?.getElementById?.('app-wallpaper') ?? null;
+    const layer = ensureWallpaperLayer();
     const wallpaper = preferences.appearance.wallpaper;
     const active = Boolean(wallpaper.enabled && objectUrl);
 
-    root.style.setProperty('--wallpaper-fit', wallpaper.fit === WALLPAPER_FIT.TILE ? 'auto' : wallpaper.fit);
-    root.style.setProperty('--wallpaper-blur', `${wallpaper.blur}px`);
-    root.style.setProperty('--wallpaper-scrim', String(wallpaper.scrim));
     root.setAttribute('data-wallpaper', active ? 'on' : 'off');
 
     if (!layer) return;
@@ -113,27 +133,33 @@ export function createAppearanceService({ preferences: provided, onChange } = {}
       return;
     }
     layer.style.backgroundImage = `url("${objectUrl}")`;
-    layer.style.backgroundRepeat = wallpaper.fit === WALLPAPER_FIT.TILE ? 'repeat' : 'no-repeat';
   }
 
-  /** 改变壁纸显示参数（显示方式 / 模糊 / 遮罩），不重新上传图片 */
-  function updateWallpaperSettings(patch = {}) {
+  /**
+   * 暂时启用 / 关闭壁纸（不清除图片）。
+   *
+   * 注意：这里**只保留开关**。"显示方式 / 模糊 / 遮罩"三个设置已按要求移除，
+   * 壁纸固定为"填充窗口 + 固定遮罩保证文字可读"，参数写死在样式里，
+   * 因此不再需要任何调整逻辑。
+   */
+  async function setWallpaperEnabled(enabled) {
     const current = preferences.appearance.wallpaper;
-    const next = { ...current };
+    preferences = {
+      ...preferences,
+      appearance: { ...preferences.appearance, wallpaper: { ...current, enabled: Boolean(enabled) } },
+    };
 
-    if (patch.fit !== undefined) {
-      if (!Object.values(WALLPAPER_FIT).includes(patch.fit)) return { ok: false, message: '未知的显示方式。' };
-      next.fit = patch.fit;
+    // 启用时如果内存里还没有图片 URL（例如刚刷新页面后先关了再打开），
+    // 必须先从 IndexedDB 读回来，否则会出现"开关是开的，但背景还是空的"。
+    if (enabled && !currentObjectUrl) {
+      const loaded = await loadWallpaper();
+      if (loaded.ok) currentObjectUrl = loaded.objectUrl;
     }
-    if (patch.blur !== undefined) next.blur = clampNumber(patch.blur, 0, 20);
-    if (patch.scrim !== undefined) next.scrim = clampNumber(patch.scrim, 0, 0.95);
-    if (patch.enabled !== undefined) next.enabled = Boolean(patch.enabled);
 
-    preferences = { ...preferences, appearance: { ...preferences.appearance, wallpaper: next } };
     applyWallpaperToDocument({ objectUrl: currentObjectUrl });
     const saved = savePreferences(preferences);
     notify();
-    return { ok: true, wallreg: next, persisted: saved.persisted, message: saved.message };
+    return { ok: true, enabled: Boolean(enabled), persisted: saved.persisted, message: saved.message };
   }
 
   /** 校验用户选择的文件（不写入） */
@@ -288,7 +314,7 @@ export function createAppearanceService({ preferences: provided, onChange } = {}
     applyWallpaperToDocument,
     restoreWallpaper,
     setWallpaperFromFile,
-    updateWallpaperSettings,
+    setWallpaperEnabled,
     clearWallpaper,
     validateFile,
     get storageAvailable() {
@@ -319,8 +345,3 @@ function documentElement() {
   return safeDocument()?.documentElement ?? null;
 }
 
-function clampNumber(value, min, max) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return min;
-  return Math.min(max, Math.max(min, number));
-}

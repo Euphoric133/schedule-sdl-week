@@ -18,13 +18,6 @@ export const THEME = Object.freeze({
   SYSTEM: 'system',
 });
 
-export const WALLPAPER_FIT = Object.freeze({
-  COVER: 'cover',
-  CONTAIN: 'contain',
-  CENTER: 'center',
-  TILE: 'repeat',
-});
-
 export const NOTIFICATION_TYPE = Object.freeze({
   SESSION_SOON: 'session_soon', // 下一项学习即将开始
   PLAN_START: 'plan_start', // 每天一次的学习简报（今天有哪些安排）
@@ -56,9 +49,6 @@ export function defaultPreferences() {
       theme: THEME.SYSTEM,
       wallpaper: {
         enabled: false,
-        fit: WALLPAPER_FIT.COVER,
-        blur: 0, // 0–20 px
-        scrim: 0.55, // 0–1
         fileName: null,
         savedAt: null,
       },

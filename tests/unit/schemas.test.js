@@ -30,7 +30,8 @@ test('defaultSettings：默认值本身必须通过自身校验（否则新用�
   const validation = validateSettings(settings);
   assert.equal(validation.ok, true, validation.errors.map((i) => `${i.code} ${i.path}`).join('; '));
   assert.deepEqual(settings.weights, DEFAULT_WEIGHTS);
-  assert.equal(settings.bufferRatio, 0.1);
+  // 缓冲时间功能已移除：默认设置里不再包含该字段
+  assert.equal('bufferRatio' in settings, false, '设置里不应再有缓冲比例');
   assert.equal(settings.planHistoryLimit, PLAN_HISTORY_LIMIT);
   assert.equal(settings.dayBoundaryHour, 4);
 });
@@ -51,10 +52,10 @@ test('validateSettings：缺少某一天的配置是错误（避免出现"某天
   assert.ok(validation.errors.some((i) => i.code === VALIDATION_CODES.SETTINGS_NO_WINDOW && i.path.endsWith('.3')));
 });
 
-test('validateSettings：缓冲比例、权重、休息规则、时长规则的边界', () => {
-  const bad = defaultSettings();
-  bad.bufferRatio = 0.9;
-  assert.equal(validateSettings(bad).ok, false);
+test('validateSettings：权重、休息规则、时长规则的边界（缓冲比例已移除）', () => {
+  // 缓冲功能已移除：旧设置里即使残留 bufferRatio 也不应导致校验失败（向后兼容）
+  const legacy = { ...defaultSettings(), bufferRatio: 0.9 };
+  assert.equal(validateSettings(legacy).ok, true, '残留的旧字段应被忽略，而不是拦住用户');
 
   const negativeWeight = defaultSettings();
   negativeWeight.weights.difficulty = -1;

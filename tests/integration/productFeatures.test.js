@@ -14,7 +14,6 @@ import {
   NOTIFICATION_TYPE,
   REWARD_TRIGGER,
   THEME,
-  WALLPAPER_FIT,
   defaultPreferences,
   loadPreferences,
   savePreferences,
@@ -25,6 +24,7 @@ import { createPomodoroService, END_REASON } from '../../src/services/pomodoroSe
 import { createRewardService, computeEntitlement, computeProgress } from '../../src/services/rewardService.js';
 import { createStatsService, computeStreak } from '../../src/services/statsService.js';
 import { buildBackup, serializeBackup } from '../../src/storage/backup.js';
+import { migrateState } from '../../src/storage/migrations.js';
 import { createTestApp, taskInput } from '../helpers/app.js';
 import { FIXED_NOW } from '../helpers/clock.js';
 
@@ -199,23 +199,53 @@ test('外观：未知主题被拒绝，不会写坏偏好', () => {
   assert.equal(service.getPreferences().appearance.theme, before);
 });
 
-test('外观：壁纸显示参数有范围保护（模糊与遮罩不会写到离谱的值）', () => {
+test('外观：壁纸只有"启用/关闭"开关，图片本身通过 IndexedDB 保存', () => {
   const { service } = makeAppearance();
-  service.updateWallpaperSettings({ blur: 999 });
-  assert.equal(service.getPreferences().appearance.wallpaper.blur, 20, '模糊上限 20px');
-  service.updateWallpaperSettings({ blur: -5 });
-  assert.equal(service.getPreferences().appearance.wallpaper.blur, 0, '模糊下限 0');
-  service.updateWallpaperSettings({ scrim: 5 });
-  assert.equal(service.getPreferences().appearance.wallpaper.scrim, 0.95, '遮罩上限 0.95（保留一点背景可见）');
-  service.updateWallpaperSettings({ scrim: -1 });
-  assert.equal(service.getPreferences().appearance.wallpaper.scrim, 0);
+  // 关闭时不会丢图片信息（只切换 enabled）
+  service.setWallpaperEnabled(false);
+  assert.equal(service.getPreferences().appearance.wallpaper.enabled, false);
+  service.setWallpaperEnabled(true);
+  assert.equal(service.getPreferences().appearance.wallpaper.enabled, true);
+
+  // 显示方式/模糊/遮罩等可调项已按要求移除
+  const wallpaper = service.getPreferences().appearance.wallpaper;
+  assert.equal('fit' in wallpaper, false, '显示方式设置应已移除');
+  assert.equal('blur' in wallpaper, false, '模糊设置应已移除');
+  assert.equal('scrim' in wallpaper, false, '遮罩设置应已移除');
 });
 
-test('外观：未知的显示方式被拒绝', () => {
-  const { service } = makeAppearance();
-  const result = service.updateWallpaperSettings({ fit: 'stretch' });
-  assert.equal(result.ok, false);
-  assert.equal(service.getPreferences().appearance.wallpaper.fit, WALLPAPER_FIT.COVER);
+test('外观：壁纸层节点会在需要时自动创建（这是"上传成功但看不到"的根因）', () => {
+  const created = [];
+  const fakeLayer = { id: 'app-wallpaper', style: {}, setAttribute() {} };
+  const fakeBody = {
+    firstChild: null,
+    appendChild(node) {
+      created.push(node);
+      return node;
+    },
+    insertBefore(node) {
+      created.push(node);
+      return node;
+    },
+  };
+  const fakeDocument = {
+    documentElement: { style: { setProperty() {} }, setAttribute() {}, style2: {} },
+    body: fakeBody,
+    getElementById: () => null,
+    createElement: () => fakeLayer,
+  };
+
+  const original = globalThis.document;
+  globalThis.document = fakeDocument;
+  try {
+    const { service } = makeAppearance();
+    service.applyAll();
+    assert.equal(created.length, 1, '没有壁纸层时必须补建一个，否则图片永远显示不出来');
+    assert.equal(created[0].id, 'app-wallpaper');
+  } finally {
+    if (original === undefined) delete globalThis.document;
+    else globalThis.document = original;
+  }
 });
 
 test('外观：没有 document 时（测试/无头环境）主题应用安全跳过，不抛异常', () => {
@@ -1102,4 +1132,118 @@ test('成就：连续三天只在真的连续时达成', () => {
   const streakThree = env.stats.achievements().find((item) => item.id === 'streak_three');
   assert.equal(streakThree.current, 2, '16 号与 15 号连续两天，11 号断开');
   assert.equal(streakThree.achieved, false);
+});
+
+/* ==================================================================== *
+ * 缓冲时间移除：旧计划里的缓冲时段必须被安全忽略
+ * ==================================================================== */
+
+test('兼容：加载含缓冲时段的旧计划时，缓冲块被移除且其它数据不受影响', async () => {
+  const { defaultSettings } = await import('../../src/domain/schemas.js');
+  const legacyState = {
+    schemaVersion: 1,
+    createdAt: '2025-10-01T00:00:00.000Z',
+    updatedAt: '2025-10-01T00:00:00.000Z',
+    timeZone: null,
+    settings: defaultSettings(),
+    tasks: [
+      {
+        id: 'tsk_keep',
+        title: '保留的任务',
+        subject: '数学',
+        plannedMinutes: 60,
+        deadlineDate: '2025-10-25',
+        deadlineTime: '23:00',
+        importance: 3,
+        difficulty: 3,
+        procrastination: 3,
+        splittable: true,
+        minChunkMinutes: 30,
+        maxChunkMinutes: 60,
+        dependsOn: [],
+        status: 'not_started',
+        note: '',
+        createdAt: '2025-10-01T00:00:00.000Z',
+        updatedAt: '2025-10-01T00:00:00.000Z',
+      },
+    ],
+    sessions: [
+      {
+        id: 'ses_keep',
+        taskId: 'tsk_keep',
+        date: '2025-10-16',
+        startMinutes: 960,
+        endMinutes: 1020,
+        plannedMinutes: 60,
+        actualMinutes: null,
+        state: 'flexible',
+        locked: false,
+        source: 'engine',
+        planVersion: 1,
+        createdAt: '2025-10-01T00:00:00.000Z',
+        updatedAt: '2025-10-01T00:00:00.000Z',
+        startedAt: null,
+        completedAt: null,
+        history: [],
+      },
+    ],
+    fixedActivities: [],
+    officialPlan: {
+      planId: 'pln_old',
+      version: 1,
+      windowStart: '2025-10-16',
+      windowEnd: '2025-10-22',
+      status: 'feasible',
+      generatedAt: '2025-10-01T00:00:00.000Z',
+      engineVersion: 'engine@1.0.0',
+      inputHash: 'old',
+      blocks: [
+        {
+          id: 'blk_study',
+          kind: 'study',
+          date: '2025-10-16',
+          startMinutes: 960,
+          endMinutes: 1020,
+          refId: 'ses_keep',
+          taskId: 'tsk_keep',
+          label: '保留的任务',
+          locked: false,
+        },
+        {
+          id: 'blk_buffer',
+          kind: 'buffer',
+          date: '2025-10-16',
+          startMinutes: 1020,
+          endMinutes: 1062,
+          refId: 'buf_old',
+          label: '机动缓冲',
+        },
+      ],
+      days: ['2025-10-16', '2025-10-17', '2025-10-18', '2025-10-19', '2025-10-20', '2025-10-21', '2025-10-22'].map((date) => ({
+        date,
+        studyMinutes: date === '2025-10-16' ? 60 : 0,
+        fixedMinutes: 0,
+        restMinutes: 0,
+        bufferMinutes: 42,
+        reservedMinutes: 0,
+        netCapacityMinutes: 420,
+        status: 'normal',
+      })),
+      metrics: { totalStudyMinutes: 60, bufferReservedMinutes: 42 },
+      unscheduled: [],
+    },
+    planHistory: [],
+    pendingPreview: null,
+    meta: {},
+  };
+
+  const result = migrateState(JSON.parse(JSON.stringify(legacyState)));
+  assert.equal(result.ok, true, result.issues?.map((i) => i.message).join('; '));
+
+  const blocks = result.state.officialPlan.blocks;
+  assert.equal(blocks.filter((block) => block.kind === 'buffer').length, 0, '旧缓冲时段应被移除');
+  assert.equal(blocks.filter((block) => block.kind === 'study').length, 1, '学习时段必须保留');
+  assert.equal(result.state.officialPlan.days[0].bufferMinutes, 0, '每日缓冲统计应归零');
+  assert.equal(result.state.tasks.length, 1, '任务数据不受影响');
+  assert.equal(result.state.sessions.length, 1, '学习时段不受影响');
 });

@@ -150,7 +150,8 @@ test('迁移：缺少版本号的数据按 v1 补齐容器并给出提示', () =
   assert.deepEqual(result.state.tasks, []);
   assert.deepEqual(result.state.sessions, []);
   assert.ok(result.issues.some((i) => i.code === VALIDATION_CODES.SCHEMA_VERSION_UNSUPPORTED));
-  assert.equal(result.state.settings.bufferRatio, 0.1, '缺失设置会用默认值补齐');
+  assert.equal(result.state.settings.dayBoundaryHour, 4, '缺失设置会用默认值补齐');
+  assert.equal('bufferRatio' in result.state.settings, false, '缓冲功能已移除，不再补这个字段');
 });
 
 test('迁移：版本高于程序支持版本时拒绝加载（保护数据不被旧程序写坏）', () => {

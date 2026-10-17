@@ -174,15 +174,14 @@
    自定义壁纸
    实现方式：壁纸放在一个固定的全屏背景层（#app-wallpaper）里，
    内容层叠在它上面。这样壁纸不参与文档流，也不影响任何组件的定位。
-   可读性由两层保证：壁纸自身的遮罩（--wallpaper-scrim）+ 内容卡片的半透明底色。
+   可读性由两层保证：壁纸自身的半透明遮罩 + 内容卡片的半透明底色。
    ========================================================================== */
 
-:root {
-  --wallpaper-scrim: 0.55; /* 遮罩不透明度：0 = 不遮，1 = 完全遮住 */
-  --wallpaper-blur: 0px;
-  --wallpaper-fit: cover;
-}
-
+/*
+   壁纸固定为「填充窗口 + 半透明遮罩」：
+   遮罩是保证任何照片下文字都清晰可读的最低要求，因此不开放调节，
+   用户只需要决定"用哪张图 / 要不要用"。
+*/
 #app-wallpaper {
   position: fixed;
   inset: 0;
@@ -190,10 +189,9 @@
   pointer-events: none;
   background-repeat: no-repeat;
   background-position: center;
-  background-size: var(--wallpaper-fit);
-  filter: blur(var(--wallpaper-blur));
-  /* 模糊会让边缘出现透明带，稍微放大一点把边缘推到视口之外 */
-  transform: scale(1.06);
+  background-size: cover;
+  /* 放到最底层，且不影响点击（装饰层） */
+  isolation: isolate;
 }
 
 #app-wallpaper::after {
@@ -201,7 +199,7 @@
   position: absolute;
   inset: 0;
   background: var(--color-bg);
-  opacity: var(--wallpaper-scrim);
+  opacity: 0.55;
 }
 
 /* 有壁纸时：容器与卡片改用半透明底色，让背景透出来但仍保证文字对比度 */

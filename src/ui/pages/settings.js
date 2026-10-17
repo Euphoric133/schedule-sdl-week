@@ -99,8 +99,7 @@ export function renderSettings({ app, services }) {
             ['不可拆分最短/最长时段', `${settings.nonSplittableMinMinutes} / ${settings.nonSplittableMaxMinutes} 分钟`],
             ['每日片段数上限', `${settings.maxSessionsPerDay} 段`],
           ]),
-          definitionList('休息与缓冲', [
-            ['机动缓冲比例', `${Math.round(settings.bufferRatio * 100)}%（逐日计算，不跨日挪用）`],
+          definitionList('休息规则', [
             ['每连续学习', `${settings.restRule.afterContinuousMinutes} 分钟后休息 ${settings.restRule.restMinutes} 分钟`],
             ['科目切换额外休息', `${settings.restRule.extraOnSubjectSwitch} 分钟`],
           ]),

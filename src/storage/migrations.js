@@ -38,6 +38,40 @@ const REPAIRABLE_CODES = new Set([
   C.ENTITY_DANGLING_REF,
 ]);
 
+/** 计划里是否已经没有任何缓冲内容（用于避免无谓地重写数据） */
+function hasLegacyBuffer(state) {
+  const plans = [state.officialPlan, state.pendingPreview?.candidate].filter(Boolean);
+  return plans.some(
+    (plan) =>
+      (plan.blocks ?? []).some((block) => block?.kind === 'buffer') ||
+      (plan.days ?? []).some((day) => (day?.bufferMinutes ?? 0) > 0) ||
+      (plan.metrics && plan.metrics.bufferReservedMinutes > 0),
+  );
+}
+
+/** 移除旧计划中的缓冲时段与缓冲统计（纯派生数据，丢弃不影响任务与学习记录） */
+function stripLegacyBuffer(state) {
+  if (!hasLegacyBuffer(state)) return { state };
+
+  const cleanPlan = (plan) => {
+    if (!plan) return plan;
+    const blocks = (plan.blocks ?? []).filter((block) => block?.kind !== 'buffer');
+    const days = (plan.days ?? []).map((day) => ({ ...day, bufferMinutes: 0 }));
+    const metrics = plan.metrics ? { ...plan.metrics, bufferReservedMinutes: 0 } : plan.metrics;
+    return { ...plan, blocks, days, metrics };
+  };
+
+  return {
+    state: {
+      ...state,
+      officialPlan: cleanPlan(state.officialPlan),
+      pendingPreview: state.pendingPreview
+        ? { ...state.pendingPreview, candidate: cleanPlan(state.pendingPreview.candidate) }
+        : state.pendingPreview,
+    },
+  };
+}
+
 /** 迁移过程中补全缺失的顶层容器（容错：旧数据可能缺少后来新增的数组字段） */
 function fillMissingContainers(state) {
   const next = { ...state };
@@ -149,6 +183,18 @@ export function migrateState(raw, { skipSemanticValidation = false, allowRepair 
       return { ok: false, issues: [...issues, issue], error: err };
     }
   }
+
+  /**
+   * 兼容旧计划里的缓冲时段。
+   *
+   * 缓冲时间功能已经移除，但用户浏览器里可能还存着**之前生成的**计划，
+   * 那些计划的 blocks 里会带 kind='buffer' 的块。
+   * 这里在读取时把它们从计划中移除（缓冲块是纯派生数据，不是用户录入的内容，
+   * 丢弃它不会丢失任何任务或学习记录），同时把每日缓冲统计归零，
+   * 保证界面不会再出现"缓冲"相关的区块，也不会因为旧的块类型而报错。
+   */
+  const stripped = stripLegacyBuffer(state);
+  state = stripped.state;
 
   const filled = fillMissingContainers(state);
   state = filled.state;

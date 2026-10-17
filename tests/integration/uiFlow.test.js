@@ -421,30 +421,35 @@ test('固定活动：非法重复规则被拒绝（每周重复但一天都没�
  * 设置与窗口滚动
  * ------------------------------------------------------------------ */
 
-test('设置：修改缓冲比例会改变每日缓冲与容量口径，确认后生效', () => {
+test('设置：缓冲时间功能已移除——不再预留缓冲，也不再生成缓冲时段', () => {
   const env = bootstrapped();
   const previewed = env.services.planService.requestPreview({
     now: NOW,
     ops: [{ kind: 'settings.update', settings: { bufferRatio: 0.2 } }],
   });
   assert.equal(previewed.ok, true, previewed.issues?.map((i) => i.message).join('; '));
-  assert.equal(env.app.getState().settings.bufferRatio, 0.1, '未确认前设置不变');
 
   const day = previewed.preview.candidate.days[0];
-  assert.equal(day.bufferMinutes, Math.floor(day.netCapacityMinutes * 0.2), '候选计划按新比例预留缓冲');
+  assert.equal(day.bufferMinutes, 0, '缓冲已移除，不应再预留');
+  assert.equal(
+    previewed.preview.candidate.blocks.filter((block) => block.kind === 'buffer').length,
+    0,
+    '不应再生成缓冲时段',
+  );
 
+  // 旧设置字段不再被写入（避免继续扩散废弃字段）
   assert.equal(env.services.planService.applyPreview().ok, true);
-  assert.equal(env.app.getState().settings.bufferRatio, 0.2);
+  assert.equal('bufferRatio' in env.app.getState().settings, false, '设置里不应再保存缓冲比例');
 });
 
-test('设置：非法设置被拒绝（缓冲比例超出范围）', () => {
+test('设置：非法设置仍会被拒绝（例如负权重）', () => {
   const env = bootstrapped();
   const previewed = env.services.planService.requestPreview({
     now: NOW,
-    ops: [{ kind: 'settings.update', settings: { bufferRatio: 5 } }],
+    ops: [{ kind: 'settings.update', settings: { weights: { deadlineUrgency: -1, difficulty: 1, importance: 1, procrastination: 1 } } }],
   });
   assert.equal(previewed.ok, false);
-  assert.ok(previewed.issues.some((issue) => issue.code === 'V031'));
+  assert.ok(previewed.issues.some((issue) => issue.severity === 'error'));
 });
 
 test('窗口滚动：把窗口前移一天，保留已完成历史并重排，且与正式计划可比较', () => {

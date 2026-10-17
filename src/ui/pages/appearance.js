@@ -9,7 +9,7 @@
 
 import { button, card, notice, pill } from '../components.js';
 import { el, toast } from '../dom.js';
-import { THEME, THEME_LABELS_ZH, WALLPAPER_FIT, WALLPAPER_FIT_LABELS_ZH } from '../../services/appearanceService.js';
+import { THEME, THEME_LABELS_ZH } from '../../services/appearanceService.js';
 import { WALLPAPER_LIMITS } from '../../storage/wallpaperStore.js';
 import { confirmDialog } from '../modal.js';
 
@@ -114,9 +114,19 @@ export function renderAppearance({ app, services }) {
         onClick: () => fileInput.click(),
       }),
       wallpaper.enabled
-        ? button('暂时关闭壁纸', { onClick: () => toggleWallpaper({ services, enabled: false }) })
+        ? button('暂时关闭壁纸', {
+            onClick: async () => {
+              await services.appearanceService.setWallpaperEnabled(false);
+              toast('已暂时关闭壁纸（图片仍然保留）。', 'success');
+            },
+          })
         : wallpaper.fileName
-          ? button('重新启用', { onClick: () => toggleWallpaper({ services, enabled: true }) })
+          ? button('重新启用', {
+              onClick: async () => {
+                await services.appearanceService.setWallpaperEnabled(true);
+                toast('已启用壁纸。', 'success');
+              },
+            })
           : null,
       wallpaper.fileName
         ? button('移除壁纸', {
@@ -151,66 +161,6 @@ export function renderAppearance({ app, services }) {
 
   nodes.push(card({ title: '自定义壁纸', hint: '图片仅在本机处理与保存', body }));
 
-  /* ---------- 显示方式与可读性 ---------- */
-  if (wallpaper.fileName) {
-    const fitSelect = el('select', { id: 'wallpaper-fit' });
-    for (const fit of Object.values(WALLPAPER_FIT)) {
-      fitSelect.appendChild(
-        el('option', { value: fit, selected: wallpaper.fit === fit, text: WALLPAPER_FIT_LABELS_ZH[fit] }),
-      );
-    }
-    fitSelect.addEventListener('change', () => {
-      const result = services.appearanceService.updateWallpaperSettings({ fit: fitSelect.value });
-      if (!result.ok) toast(result.message ?? '设置失败。', 'error');
-    });
-
-    const blurInput = el('input', { type: 'range', min: '0', max: '20', step: '1', value: String(wallpaper.blur), id: 'wallpaper-blur' });
-    const blurValue = el('span.card__hint', { text: `${wallpaper.blur} px` });
-    blurInput.addEventListener('input', () => {
-      blurValue.textContent = `${blurInput.value} px`;
-      services.appearanceService.updateWallpaperSettings({ blur: Number(blurInput.value) });
-    });
-
-    const scrimInput = el('input', { type: 'range', min: '0', max: '95', step: '5', value: String(Math.round(wallpaper.scrim * 100)), id: 'wallpaper-scrim' });
-    const scrimValue = el('span.card__hint', { text: `${Math.round(wallpaper.scrim * 100)}%` });
-    scrimInput.addEventListener('input', () => {
-      scrimValue.textContent = `${scrimInput.value}%`;
-      services.appearanceService.updateWallpaperSettings({ scrim: Number(scrimInput.value) / 100 });
-    });
-
-    nodes.push(
-      card({
-        title: '显示方式与文字可读性',
-        hint: '如果背景让文字看不清，可以提高遮罩或模糊',
-        body: el('div', {}, [
-          el('div.form-field', {}, [el('label', { for: 'wallpaper-fit', text: '显示方式' }), fitSelect]),
-          el('div.form-field', {}, [
-            el('label', { for: 'wallpaper-blur', text: '背景模糊' }),
-            el('div.slider-row', {}, [blurInput, blurValue]),
-          ]),
-          el('div.form-field', {}, [
-            el('label', { for: 'wallpaper-scrim', text: '遮罩浓度（数值越高，文字越清晰）' }),
-            el('div.slider-row', {}, [scrimInput, scrimValue]),
-          ]),
-          el('div.form-actions', { style: { justifyContent: 'flex-start' } }, [
-            button('恢复推荐（无模糊、55% 遮罩）', {
-              onClick: () => {
-                services.appearanceService.updateWallpaperSettings({ blur: 0, scrim: 0.55 });
-                toast('已恢复推荐的显示参数。', 'success');
-              },
-            }),
-          ]),
-          el('div.appearance-preview', {}, [
-            el('div.appearance-preview__card', {}, [
-              el('strong', { text: '预览：正文文字' }),
-              el('div', { text: '这是一段示例正文，用来检查壁纸下文字是否清晰可读。' }),
-            ]),
-          ]),
-        ]),
-      }),
-    );
-  }
-
   nodes.push(
     notice({
       level: 'info',
@@ -238,8 +188,3 @@ async function applyFile({ file, services }) {
   toast(result.message, 'success', 6000);
 }
 
-function toggleWallpaper({ services, enabled }) {
-  const result = services.appearanceService.updateWallpaperSettings({ enabled });
-  if (!result.ok) return toast(result.message ?? '操作失败。', 'error');
-  toast(enabled ? '已启用壁纸。' : '已暂时关闭壁纸（图片仍然保留）。', 'success');
-}

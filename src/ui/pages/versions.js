@@ -90,7 +90,6 @@ export function renderVersions({ app, services }) {
           el('div.metric', {}, [el('div.metric__label', { text: '状态' }), el('div.metric__value', { text: PLAN_STATUS_LABELS_ZH[plan.status] ?? plan.status })]),
           el('div.metric', {}, [el('div.metric__label', { text: '窗口' }), el('div.metric__value', { text: `${plan.windowStart} → ${plan.windowEnd}` })]),
           el('div.metric', {}, [el('div.metric__label', { text: '已排学习' }), el('div.metric__value', { text: formatDuration(plan.metrics?.totalStudyMinutes ?? 0) })]),
-          el('div.metric', {}, [el('div.metric__label', { text: '机动缓冲' }), el('div.metric__value', { text: formatDuration(plan.metrics?.bufferReservedMinutes ?? 0) })]),
           el('div.metric', {}, [el('div.metric__label', { text: '未安排' }), el('div.metric__value', { text: String(plan.unscheduled?.length ?? 0) })]),
         ]),
         el('div', { style: { marginTop: 'var(--space-3)' } }, [

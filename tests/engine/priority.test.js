@@ -75,7 +75,8 @@ test('normalizeWeights：和不为 1 时自动归一化，全为 0 时退回默�
 
 test('buildPolicy：非法设置被夹到安全范围，缺字段用默认值', () => {
   const policy = buildPolicy({ bufferRatio: 5, baseContinuousMinutes: -3, defaultMinChunkMinutes: 0 });
-  assert.equal(policy.bufferRatio, 0.5, '缓冲比例上限 0.5');
+  // 缓冲功能已移除：无论设置里填什么，缓冲比例都恒为 0
+  assert.equal(policy.bufferRatio, 0, '缓冲比例恒为 0（该功能已移除）');
   assert.equal(policy.baseContinuousMinutes, 90, '非法值退回默认');
   assert.equal(policy.defaultMinChunkMinutes, 30);
   assert.equal(policy.restAfterContinuousMinutes, 50);

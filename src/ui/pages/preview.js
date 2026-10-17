@@ -101,7 +101,7 @@ export function renderPreview({ app, services }) {
         hint: `候选计划与当前正式计划完全一致（保持不变的时段：${counts?.unchanged ?? 0} 个）`,
         body: el('div', {}, [
           el('p', {
-            text: '重新计算之后，所有学习时段、固定活动、休息与缓冲都与当前正式计划相同，因此没有需要你确认的改动。',
+            text: '重新计算之后，所有学习时段与固定活动都与当前正式计划相同，因此没有需要你确认的改动。',
           }),
           el('div.card__hint', {
             text: '如果你期待看到变化，通常是这几个原因：任务本身没有改动、可用时间没有改动、或者改动的部分已经被现有计划满足（例如把截止时间推迟，现有安排本来就更早）。',
@@ -284,7 +284,7 @@ export function renderPreview({ app, services }) {
     if (diff.dailyDelta?.length > 0) {
       nodes.push(
         card({
-          title: '每日学习量 / 休息 / 缓冲变化',
+          title: '每日学习量与休息变化',
           flush: true,
           body: el('div.table-wrap', {}, [
             el('table', {}, [
@@ -293,7 +293,6 @@ export function renderPreview({ app, services }) {
                   el('th', { text: '日期' }),
                   el('th', { text: '学习量' }),
                   el('th', { text: '休息' }),
-                  el('th', { text: '缓冲' }),
                   el('th', { text: '时段数' }),
                 ]),
               ]),

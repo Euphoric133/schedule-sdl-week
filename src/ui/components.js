@@ -83,7 +83,6 @@ export function legend(items = null) {
       { kind: 'study', label: '学习' },
       { kind: 'fixed', label: '固定活动' },
       { kind: 'rest', label: '计划休息' },
-      { kind: 'buffer', label: '机动缓冲' },
       { kind: 'locked', label: '已锁定' },
     ];
   return el(

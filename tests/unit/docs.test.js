@@ -142,10 +142,9 @@ test('样式：响应式与主题覆盖到所有关键结构（不只是背景�
     assert.ok(darkBlock.includes(token), `深色主题必须重定义 ${token}，否则会出现"只有背景变色"`);
   }
 
-  // 壁纸：必须提供可读性控制（遮罩与模糊）
-  assert.match(tokens, /--wallpaper-scrim/, '壁纸必须支持遮罩');
-  assert.match(tokens, /--wallpaper-blur/, '壁纸必须支持模糊');
+  // 壁纸：固定遮罩保证可读性（显示方式/模糊/遮罩的可调项已按需求移除）
   assert.match(tokens, /#app-wallpaper/, '壁纸必须是独立的背景层');
+  assert.match(tokens, /#app-wallpaper::after/, '壁纸必须有遮罩层，保证文字可读');
 
   // 响应式：窄屏必须重新布局，而不是让侧边栏挤掉内容
   assert.match(components, /@media \(max-width: 900px\)/, '必须有窄屏断点');

@@ -11,7 +11,7 @@
  *   1. 校验输入（invalid_input 与"排不下"严格分开）
  *   2. 建立固定活动、完成记录与用户锁定时段
  *   3. 计算每个任务的剩余工作量
- *   4. 生成可用时间区间（含逐日 10% 机动缓冲预留）
+ *   4. 生成可用时间区间
  *   5. 任务拆分（可拆分 / 不可拆分 / 尾差处理）
  *   6. 按硬约束 + 截止风险 + 优先级分数生成初始计划
  *   7. 局部优化（确定性、有界迭代，不宣称全局最优）
@@ -385,12 +385,8 @@ export function run(input) {
       meta: { plannedMinutes: placement.plannedMinutes },
     }));
 
-  const bufferBlocks = buildBufferBlocks({
-    days: capacityDays,
-    studyBlocks: [...studyBlocks, ...reservedBlocks],
-    restBlocks,
-    inputHash,
-  });
+  // 缓冲时间功能已移除：不再生成任何缓冲时段（也不会再因为缓冲改变任务时段）
+  const bufferBlocks = [];
 
   const blocks = [...studyBlocks, ...reservedBlocks, ...fixedBlocks, ...restBlocks, ...bufferBlocks].sort(compareBlocks);
 

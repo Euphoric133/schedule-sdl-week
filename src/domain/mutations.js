@@ -29,7 +29,7 @@ import {
 } from '../domain/fixedActivity.js';
 import { checkTaskDependencies } from '../domain/graph.js';
 import { reconcileTaskSessions } from './reconcile.js';
-import { validateSettings } from '../domain/schemas.js';
+import { defaultSettings, validateSettings } from '../domain/schemas.js';
 import { VALIDATION_CODES as C, error, mergeResults, result } from '../domain/validation.js';
 
 /**
@@ -619,7 +619,19 @@ function removeOp(state, op, ctx, collection, label) {
  * ------------------------------------------------------------------ */
 
 function settingsUpdateOp(state, op) {
-  const next = { ...(state.settings ?? {}), ...(op.settings ?? {}) };
+  /**
+   * 只接受"当前版本真实存在"的设置项。
+   *
+   * 为什么需要这层过滤：删掉的功能（例如机动缓冲）其字段可能还残留在旧数据或旧调用里。
+   * 如果直接合并进来，废弃字段会被一直写回存储，越滚越多。
+   * 这里以默认设置为键集合的白名单，未知字段一律丢弃（旧数据读取时仍然容忍，不会被拦下）。
+   */
+  const knownKeys = new Set(Object.keys(defaultSettings()));
+  const patch = {};
+  for (const [key, value] of Object.entries(op.settings ?? {})) {
+    if (knownKeys.has(key)) patch[key] = value;
+  }
+  const next = { ...(state.settings ?? {}), ...patch };
   const validation = validateSettings(next, 'settings');
   if (!validation.ok) return { ok: false, state, issues: validation.issues };
   return { ok: true, state: { ...state, settings: next }, issues: validation.warnings };

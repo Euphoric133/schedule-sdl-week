@@ -2,7 +2,7 @@
  * 七天计划页：七天总览时间轴 + 每日统计。
  *
  * 数据来源只有一个：正式计划（services.planService.getOfficialPlan()）。
- * 时间轴上的四类块（学习 / 固定活动 / 休息 / 缓冲）都直接来自计划数据，
+ * 时间轴上的三类块（学习 / 固定活动 / 休息）都直接来自计划数据，
  * 本页不做任何独立的排程计算，因此不可能与"今日总览"或"每日视图"产生冲突。
  */
 
@@ -78,7 +78,7 @@ export function renderWeek({ app, services, route, now }) {
         level: 'info',
         title: '还没有正式计划',
         message:
-          '下方时间轴按小时展示这一周。生成计划后，学习时段、固定活动、计划休息与机动缓冲都会填入时间轴，并给出可对比的调整预览。',
+          '下方时间轴按小时展示这一周。生成计划后，学习时段、固定活动与计划休息都会填入时间轴，并给出可对比的调整预览。',
       }),
     );
   } else if (offsetWeeks !== 0 && plan.windowStart !== windowStart) {
@@ -116,7 +116,7 @@ export function renderWeek({ app, services, route, now }) {
   nodes.push(
     card({
       title: '每日统计',
-      hint: '缓冲与休息分开统计；可用净容量 = 允许学习时间 − 固定活动 − 已锁定/已完成时段',
+      hint: '可用净容量 = 允许学习时间 − 固定活动 − 已锁定/已完成时段',
       flush: true,
       body: el('div.table-wrap', {}, [
         el('table', {}, [
@@ -125,7 +125,6 @@ export function renderWeek({ app, services, route, now }) {
               el('th', { text: '日期' }),
               el('th', { text: '已排学习' }),
               el('th', { text: '计划休息' }),
-              el('th', { text: '机动缓冲' }),
               el('th', { text: '固定活动' }),
               el('th', { text: '可用净容量' }),
               el('th', { text: '状态' }),
@@ -141,7 +140,6 @@ export function renderWeek({ app, services, route, now }) {
                 el('td', {}, [el('span', { text: formatDateWithWeekday(date) }), isToday ? pill('今天', 'study') : null]),
                 el('td', { text: formatDuration(day?.studyMinutes ?? 0) }),
                 el('td', { text: formatDuration(day?.restMinutes ?? 0) }),
-                el('td', { text: formatDuration(day?.bufferMinutes ?? 0) }),
                 el('td', { text: formatDuration(day?.fixedMinutes ?? 0) }),
                 el('td', { text: formatDuration(day?.netCapacityMinutes ?? 0) }),
                 el('td', {}, [
@@ -198,7 +196,7 @@ function gotoWeek(offset) {
   globalThis.location.hash = offset === 0 ? '#/week' : `#/week?offset=${offset}`;
 }
 
-/** 非学习块的轻量提示（固定活动 / 休息 / 缓冲没有可执行的操作） */
+/** 非学习块的轻量提示（固定活动 / 休息没有可执行的操作） */
 function showBlockDetail(block) {
   const host = document.getElementById('toast-host') ?? document.body;
   const node = el('div.notice.notice--info', { role: 'status' }, [

@@ -147,7 +147,7 @@ export function placeFragments({ days, fragmentsByTask, taskById, scoreByTask, p
       // 放置成功后重新计算候选集合：本任务的后继可能因此获得资格，其它任务的顺序也可能变化
       fragments = collectDayFragments(queues, taskById, scoreByTask, placements);
 
-      // —— 按"每连续学习 N 分钟"插入计划休息（实际占用时间轴，与机动缓冲是两回事）——
+      // —— 按"每连续学习 N 分钟"插入计划休息（实际占用时间轴，与缓冲无关）——
       if (continuousStudyMinutes >= policy.restAfterContinuousMinutes && policy.restMinutes > 0) {
         if (remainingSchedulable - policy.restMinutes >= 0) {
           const restSlot = findRestSlot(freeWindowsNow(), endMinutes, policy.restMinutes);

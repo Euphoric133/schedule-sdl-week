@@ -48,7 +48,7 @@ export const REASON_TEXT = Object.freeze({
 
 /** 每个原因码对应的可选处理方式（界面按钮用） */
 export const REASON_SUGGESTIONS = Object.freeze({
-  [UNSCHEDULED_REASON.INSUFFICIENT_CAPACITY]: ['extend_window', 'accept_partial', 'lower_buffer', 'move_deadline'],
+  [UNSCHEDULED_REASON.INSUFFICIENT_CAPACITY]: ['extend_window', 'accept_partial', 'move_deadline'],
   [UNSCHEDULED_REASON.TAIL_TOO_SMALL]: ['lower_min_chunk', 'merge_chunks', 'move_deadline'],
   [UNSCHEDULED_REASON.BLOCKED_BY_DEPENDENCY]: ['finish_dependency', 'remove_dependency'],
   [UNSCHEDULED_REASON.DEPENDENCY_UNREACHABLE]: ['remove_dependency', 'restore_dependency', 'cancel_task'],
@@ -66,7 +66,6 @@ export const DIAGNOSTIC_CODE = Object.freeze({
   WINDOW_OVERLAP: 'window_overlap', // 允许窗口之间重叠（已合并，仅提示）
   NO_CAPACITY: 'no_capacity', // 窗口内完全没有可用学习时间
   OVERLOAD: 'overload', // 总需求 > 总容量
-  BUFFER_UNAVAILABLE: 'buffer_unavailable', // 容量太小，10% 缓冲被向下取整为 0
   DAILY_CAP_REACHED: 'daily_cap_reached',
   UNDERSIZED_FINAL_CHUNK: 'undersized_final_chunk', // 尾部片段小于最短时段（已按设置允许）
   DEADLINE_AT_RISK: 'deadline_at_risk',
@@ -110,8 +109,14 @@ export function buildPolicy(settings = {}) {
     /** 优先级权重（已归一化，四项之和为 1） */
     weights,
 
-    /** 机动缓冲比例：逐日 `floor(netCapacity × ratio)` */
-    bufferRatio: clamp01_05(settings.bufferRatio ?? 0.1),
+    /** 缓冲比例：功能已移除，恒为 0 */
+    /**
+     * 缓冲时间功能已移除：这里固定为 0，即"不再为每天预留机动时间"。
+     *
+     * 保留这个字段（而不是删掉）是为了让引擎内部的容量公式保持一处实现，
+     * 避免大量调用点跟着改；语义上它现在恒为 0，任何设置都无法改变它。
+     */
+    bufferRatio: 0,
 
     /** 业务日边界小时 */
     dayBoundaryHour: Number.isInteger(settings.dayBoundaryHour) ? settings.dayBoundaryHour : 4,

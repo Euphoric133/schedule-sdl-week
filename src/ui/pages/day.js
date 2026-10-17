@@ -48,7 +48,7 @@ export function renderDay({ app, services, route, now }) {
       notice({
         level: 'info',
         title: '还没有正式计划',
-        message: '生成计划后，这里会显示当天的学习时段、固定活动、计划休息与机动缓冲。',
+        message: '生成计划后，这里会显示当天的学习任务与固定任务。',
         actions: [
           button('生成计划', {
             variant: 'primary',
@@ -85,7 +85,7 @@ export function renderDay({ app, services, route, now }) {
   nodes.push(
     card({
       title: '当日容量与安排',
-      hint: '数据来自当前正式计划；缓冲与计划休息分开统计，不重复计算',
+      hint: '数据来自当前正式计划',
       actions: [legend()],
       body: el('div', {}, [
         metricRow([
@@ -93,7 +93,6 @@ export function renderDay({ app, services, route, now }) {
           { label: '固定活动', value: formatDuration(dayStats?.fixedMinutes ?? 0) },
           { label: '已锁定', value: formatDuration(dayStats?.reservedMinutes ?? 0) },
           { label: '计划休息', value: formatDuration(dayStats?.restMinutes ?? 0) },
-          { label: '机动缓冲', value: formatDuration(dayStats?.bufferMinutes ?? 0) },
           { label: '净容量', value: formatDuration(dayStats?.netCapacityMinutes ?? 0) },
         ]),
         el('div', { style: { marginTop: 'var(--space-3)' } }, [

@@ -22,7 +22,6 @@ const FIELD_LABELS_ZH = Object.freeze({
   nonSplittableMaxMinutes: '不可拆分任务的最长时长',
   baseContinuousMinutes: '连续学习基础上限',
   subjectSwitchPenaltyMinutes: '科目切换惩罚',
-  bufferRatio: '机动缓冲比例',
   maxSessionsPerDay: '每日片段数上限',
   riskWindowDays: '风险评估窗口',
   planHistoryLimit: '保留版本数上限',
@@ -170,7 +169,7 @@ export function renderStudyWindowsEditor({ services, settings }) {
   return el('section.card', {}, [el('div.card__head', {}, [el('h2.card__title', { text: '可学习时间（按星期）' })]), host]);
 }
 
-/** 数值参数编辑区（时长限制、休息规则、缓冲比例、上限） */
+/** 数值参数编辑区（时长限制、休息规则、上限） */
 export function renderNumericEditor({ services, settings }) {
   const inputs = {};
   const errorHost = el('div');
@@ -200,13 +199,12 @@ export function renderNumericEditor({ services, settings }) {
       numberField('nonSplittableMaxMinutes', '不可拆分任务：最长（分钟）', { min: 5, max: 1440 }),
       numberField('baseContinuousMinutes', '连续学习基础上限（分钟）', { min: 15, max: 480, hint: '按难度自适应：简单任务缩短、困难任务延长' }),
       numberField('subjectSwitchPenaltyMinutes', '科目切换惩罚（分钟）', { min: 0, max: 240, hint: '用于"同科目连续优先"的软偏好，不是硬约束' }),
-      numberField('bufferRatio', '机动缓冲比例（0–0.5）', { min: 0, max: 0.5, step: 0.05, hint: '逐日按净容量的这个比例预留；当天用不完不会挪到别的日期' }),
       numberField('maxSessionsPerDay', '每日片段数上限', { min: 1, max: 96, step: 1 }),
       numberField('riskWindowDays', '风险评估窗口（天）', { min: 1, max: 365, step: 1 }),
       numberField('planHistoryLimit', '保留版本数上限', { min: 1, max: 200, step: 1 }),
     ]),
     el('fieldset', {}, [
-      el('legend', { text: '休息规则（与机动缓冲分开统计）' }),
+      el('legend', { text: '休息规则' }),
       el('div.grid-3', {}, [
         el('div.form-field', {}, [el('label', { for: 'set-rest-after', text: '每连续学习（分钟）' }), restAfter]),
         el('div.form-field', {}, [el('label', { for: 'set-rest-minutes', text: '休息时长（分钟）' }), restMinutes]),

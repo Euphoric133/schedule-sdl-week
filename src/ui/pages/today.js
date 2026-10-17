@@ -19,7 +19,6 @@ export function renderToday({ app, services, now }) {
 
   const dayStats = plan?.days?.find((d) => d.date === today) ?? null;
   const studyMinutes = dayStats?.studyMinutes ?? 0;
-  const bufferMinutes = dayStats?.bufferMinutes ?? 0;
   const restMinutes = dayStats?.restMinutes ?? 0;
   const fixedMinutes = dayStats?.fixedMinutes ?? 0;
 
@@ -72,13 +71,12 @@ export function renderToday({ app, services, now }) {
   nodes.push(
     card({
       title: '今日容量与安排',
-      hint: '数据来自当前正式计划；缓冲与计划休息分开统计，不重复计算',
+      hint: '数据来自当前正式计划',
       body: el('div', {}, [
         metricRow([
           { label: '预计学习', value: formatDuration(studyMinutes) },
           { label: '固定活动', value: formatDuration(fixedMinutes) },
           { label: '计划休息', value: formatDuration(restMinutes) },
-          { label: '机动缓冲', value: formatDuration(bufferMinutes) },
           { label: '可用净容量', value: formatDuration(dayStats?.netCapacityMinutes ?? 0) },
         ]),
       ]),

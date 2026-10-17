@@ -7,10 +7,9 @@
  *   fixedMinutes(d)    = 固定活动（课程/睡眠/用餐…）合并后的占用
  *   reservedMinutes(d) = 锁定 / 进行中 / 已完成时段的占用（硬保留，H10 / H9）
  *   netCapacity(d)     = windowMinutes − 上述占用（区间合并去重，重叠只扣一次）
- *   bufferMinutes(d)   = floor(netCapacity × bufferRatio)   ← 逐日 10%，不跨日挪用
+ *   bufferMinutes(d)   = floor(netCapacity × bufferRatio)   ← 缓冲功能已移除，恒为 0
  *   schedulable(d)     = netCapacity − buffer             ← 真正可以放任务的分钟数
  *
- * 缓冲是**额度**而不是实际插入的时间块：只放得下 30 分钟的任务时，剩余的缓冲席位自然保留为空。
  * 计划休息与之不同，是引擎实际插入到时间轴上的块。两者分属不同 kind，统计分开、区间不重叠（H8）。
  *
  * 本模块不读取系统时钟、不访问 DOM，全部输入显式传入。
@@ -108,10 +107,10 @@ export function subtractSpans(windows, blocked) {
  * @param {Record<number, Array>} params.studyWindows 按星期配置的允许窗口
  * @param {Array} params.fixedSpans 固定活动展开后的片段（按天）
  * @param {Array} params.reservedSpans 锁定 / 进行中 / 已完成时段（按天）
- * @param {number} params.bufferRatio 机动缓冲比例
+ * @param {number} params.bufferRatio 已废弃，恒为 0（缓冲功能已移除）
  * @returns {Array<object>} 按日期升序的容量明细，元素含 freeWindows 供放位使用
  */
-export function computeWindowCapacity({ windowStart, windowEnd, studyWindows, fixedSpans = [], reservedSpans = [], bufferRatio = 0.1 }) {
+export function computeWindowCapacity({ windowStart, windowEnd, studyWindows, fixedSpans = [], reservedSpans = [], bufferRatio = 0 }) {
   const days = [];
   for (let date = windowStart; date <= windowEnd; date = addDays(date, 1)) {
     days.push(computeDayCapacity({ date, studyWindows, fixedSpans, reservedSpans, bufferRatio }));
@@ -120,7 +119,7 @@ export function computeWindowCapacity({ windowStart, windowEnd, studyWindows, fi
 }
 
 /** 单日容量明细 */
-export function computeDayCapacity({ date, studyWindows, fixedSpans = [], reservedSpans = [], bufferRatio = 0.1 }) {
+export function computeDayCapacity({ date, studyWindows, fixedSpans = [], reservedSpans = [], bufferRatio = 0 }) {
   const windows = normalizeStudyWindows(date, studyWindows);
   const fixedMerged = mergeDaySpans(fixedSpans, date);
   const reservedMerged = mergeDaySpans(reservedSpans, date);

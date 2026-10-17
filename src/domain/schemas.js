@@ -59,7 +59,6 @@ export function defaultSettings() {
     nonSplittableMinMinutes: 15,
     nonSplittableMaxMinutes: 180,
     restRule: { afterContinuousMinutes: 50, restMinutes: 10, extraOnSubjectSwitch: 0 },
-    bufferRatio: 0.1,
     dayBoundaryHour: DEFAULT_DAY_BOUNDARY_HOUR,
     riskWindowDays: 30,
     weights: { ...DEFAULT_WEIGHTS },
@@ -157,14 +156,8 @@ export function validateSettings(settings, path = 'settings') {
     }
   }
 
-  // —— 缓冲比例 ——
-  if (typeof settings.bufferRatio !== 'number' || settings.bufferRatio < 0 || settings.bufferRatio > 0.5) {
-    issues.push(
-      error(C.SETTINGS_BUFFER_RATIO, `${path}.bufferRatio`, '机动缓冲比例必须在 0 – 0.5 之间（默认 0.10）。', {
-        actual: settings.bufferRatio,
-      }),
-    );
-  }
+  // 缓冲时间功能已移除：不再校验/读取 bufferRatio。
+  // 若旧设置里仍有这个字段，忽略即可（不需要迁移，也不会影响排程）。
 
   // —— 权重 ——
   const weights = settings.weights;
