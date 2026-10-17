@@ -172,46 +172,44 @@
 
 /* ==========================================================================
    自定义壁纸
-   实现方式：壁纸放在一个固定的全屏背景层（#app-wallpaper）里，
-   内容层叠在它上面。这样壁纸不参与文档流，也不影响任何组件的定位。
-   可读性由两层保证：壁纸自身的半透明遮罩 + 内容卡片的半透明底色。
-   ========================================================================== */
+   ==========================================================================
 
-/*
-   壁纸固定为「填充窗口 + 半透明遮罩」：
-   遮罩是保证任何照片下文字都清晰可读的最低要求，因此不开放调节，
-   用户只需要决定"用哪张图 / 要不要用"。
+   层级关系（这里曾经出过一个严重问题，改动前请先读完）：
+
+   `#app-wallpaper` 必须用**负的 z-index**（-1）。
+   定位元素若写成 z-index: 0，按 CSS 绘制顺序它会画在**普通流内容之上**——
+   于是整页会被壁纸和遮罩糊住：文字发蒙、部分区块看不见、点击也会被盖住。
+   负 z-index 才会落到"内容之下、页面背景之上"的正确位置，而且不需要给
+   任何业务元素加 z-index。
+
+   另外：
+   - 壁纸层不接收鼠标事件（pointer-events: none），不参与无障碍树；
+   - **不再对卡片使用 backdrop-filter / 半透明底色**。
+     那是"整个界面发蒙"的第二个原因：模糊作用在了承载文字的容器上。
+     壁纸只作为背景，前景一律保持不透明，保证任何照片下文字都清晰。
 */
+
 #app-wallpaper {
   position: fixed;
   inset: 0;
-  z-index: 0;
+  z-index: -1;
   pointer-events: none;
   background-repeat: no-repeat;
   background-position: center;
   background-size: cover;
-  /* 放到最底层，且不影响点击（装饰层） */
-  isolation: isolate;
 }
 
+/* 遮罩：把壁纸压暗/压淡，保证与前景的对比度。数值固定，不提供调节。 */
 #app-wallpaper::after {
   content: '';
   position: absolute;
   inset: 0;
   background: var(--color-bg);
-  opacity: 0.55;
+  opacity: 0.62;
 }
 
-/* 有壁纸时：容器与卡片改用半透明底色，让背景透出来但仍保证文字对比度 */
+/* 有壁纸时，页面容器透明，让壁纸透出来；卡片本身保持不透明以承载文字 */
 :root[data-wallpaper='on'] .app,
 :root[data-wallpaper='on'] .app-main {
   background: transparent;
-}
-
-:root[data-wallpaper='on'] .card,
-:root[data-wallpaper='on'] .app-nav,
-:root[data-wallpaper='on'] .app-topbar,
-:root[data-wallpaper='on'] .app-brand {
-  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
-  backdrop-filter: blur(10px);
 }

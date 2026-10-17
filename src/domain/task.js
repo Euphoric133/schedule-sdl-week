@@ -13,6 +13,7 @@
  */
 
 import {
+  TASK_NAME_MAX_LENGTH,
   VALIDATION_CODES as C,
   checkEnum,
   checkPositiveInt,
@@ -22,6 +23,7 @@ import {
   isPlainObject,
   isPositiveInt,
   result,
+  warning,
 } from './validation.js';
 import { isValidDateString, isValidTimeString } from './time.js';
 
@@ -44,7 +46,13 @@ export const RATING_MIN = 1;
 export const RATING_MAX = 5;
 
 /** 任务名称与科目长度上限 */
-export const TITLE_MAX_LENGTH = 120;
+/**
+ * 任务名称长度上限。
+ *
+ * 统一由 `validation.js` 的 TASK_NAME_MAX_LENGTH 决定，
+ * 这里保留一个别名供既有代码引用，避免出现两套数字。
+ */
+export const TITLE_MAX_LENGTH = TASK_NAME_MAX_LENGTH;
 export const SUBJECT_MAX_LENGTH = 40;
 
 /** 单任务预计用时的硬上限（一周 7×24 小时），防止误输入 999999 分钟 */
@@ -148,7 +156,7 @@ export function createTask(input, ctx) {
  * @param {string} path 数据路径前缀，如 'tasks[0]'
  * @returns {{ok: boolean, errors: object[], warnings: object[], issues: object[]}}
  */
-export function validateTask(task, path = 'task') {
+export function validateTask(task, path = 'task', { lenientName = false } = {}) {
   const issues = [];
 
   if (!isPlainObject(task)) {
@@ -158,8 +166,31 @@ export function validateTask(task, path = 'task') {
   const idIssue = checkRequiredString(task.id, `${path}.id`, '任务 ID', { maxLength: 64 });
   if (idIssue) issues.push(idIssue);
 
-  const titleIssue = checkRequiredString(task.title, `${path}.title`, '任务名称', { maxLength: TITLE_MAX_LENGTH });
-  if (titleIssue) issues.push(titleIssue);
+  /**
+   * 名称：空名称是错误；超长在"保存"时是错误，在"加载"时只给提示。
+   *
+   * 为什么要区分：历史版本没有长度限制，已有数据里可能存在更长的名称。
+   * 如果加载时直接判错，用户会打不开应用（这比名称过长严重得多）。
+   * 因此加载时降级为 warning，让用户自己编辑修正，且**不截断原始数据**。
+   */
+  const titleIssue = checkRequiredString(task.title, `${path}.title`, '任务名称', {
+    maxLength: TITLE_MAX_LENGTH,
+    countCodePoints: true,
+  });
+  if (titleIssue) {
+    if (lenientName && titleIssue.code === C.STRING_TOO_LONG) {
+      issues.push(
+        warning(
+          titleIssue.code,
+          `${path}.title`,
+          `「${String(task.title).slice(0, 20)}」的名称超过 ${TASK_NAME_MAX_LENGTH} 个字符，请编辑时精简（数据本身未被修改）。`,
+          titleIssue.details,
+        ),
+      );
+    } else {
+      issues.push(titleIssue);
+    }
+  }
 
   const subjectIssue = checkRequiredString(task.subject, `${path}.subject`, '所属科目', { maxLength: SUBJECT_MAX_LENGTH });
   if (subjectIssue) issues.push(subjectIssue);

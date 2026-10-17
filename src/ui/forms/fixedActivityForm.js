@@ -8,7 +8,7 @@
 import { append, clear, el, toast } from '../dom.js';
 import { button } from '../components.js';
 import { FIXED_ACTIVITY_TYPE, FIXED_ACTIVITY_TYPE_LABELS_ZH } from '../../domain/fixedActivity.js';
-import { formatIssue } from '../../domain/validation.js';
+import { formatIssue, TASK_NAME_MAX_LENGTH } from '../../domain/validation.js';
 import { isValidDateString, isValidTimeString, WEEKDAY_NAMES_ZH } from '../../domain/time.js';
 
 /**
@@ -52,8 +52,8 @@ export function openFixedActivityForm({ activity = null, services }) {
     },
   });
 
-  function textField(key, labelText, { type = 'text', hint, value } = {}) {
-    const input = el('input', { type, id: `af-${key}`, value: value ?? base[key] ?? '' });
+  function textField(key, labelText, { type = 'text', hint, value, maxlength } = {}) {
+    const input = el('input', { type, id: `af-${key}`, maxlength, value: value ?? base[key] ?? '' });
     inputs[key] = input;
     return el('div.form-field', {}, [
       el('label', { for: `af-${key}`, text: labelText }),
@@ -120,7 +120,10 @@ export function openFixedActivityForm({ activity = null, services }) {
     el('fieldset', {}, [
       el('legend', { text: '基本信息' }),
       el('div.form-grid', {}, [
-        textField('title', '名称（必填）', { hint: '例如：高等数学课、睡眠、午餐、社团例会' }),
+        textField('title', `名称（必填，最多 ${TASK_NAME_MAX_LENGTH} 个字符）`, {
+          maxlength: String(TASK_NAME_MAX_LENGTH),
+          hint: '例如：高数课、午睡、午餐、社团',
+        }),
         el('div.form-field', {}, [el('label', { for: 'af-type', text: '类型' }), typeSelect]),
       ]),
     ]),
@@ -202,7 +205,16 @@ export function openFixedActivityForm({ activity = null, services }) {
   function submit() {
     const values = collect();
     const localIssues = [];
-    if (!values.title) localIssues.push({ severity: 'error', code: 'V001', path: 'title', message: '请填写固定活动名称。' });
+    if (!values.title) {
+      localIssues.push({ severity: 'error', code: 'V001', path: 'title', message: '请填写固定任务名称。' });
+    } else if ([...values.title].length > TASK_NAME_MAX_LENGTH) {
+      localIssues.push({
+        severity: 'error',
+        code: 'V005',
+        path: 'title',
+        message: `固定任务名称最多 ${TASK_NAME_MAX_LENGTH} 个字符（当前 ${[...values.title].length} 个）。`,
+      });
+    }
     if (!isValidTimeString(values.start)) localIssues.push({ severity: 'error', code: 'V001', path: 'start', message: '开始时间格式应为 HH:mm。' });
     if (!isValidTimeString(values.end)) localIssues.push({ severity: 'error', code: 'V001', path: 'end', message: '结束时间格式应为 HH:mm。' });
     if (values.recurrence.kind === 'weekly' && values.recurrence.daysOfWeek.length === 0) {

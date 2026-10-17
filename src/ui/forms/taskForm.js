@@ -73,8 +73,17 @@ export function openTaskForm({ task = null, services }) {
     },
   });
 
-  function textField(key, labelText, { type = 'text', hint, min, max, step } = {}) {
-    const input = el('input', { type, min, max, step, value: base[key] ?? '', id: `tf-${key}` });
+  function textField(key, labelText, { type = 'text', hint, min, max, step, maxlength, placeholder } = {}) {
+    const input = el('input', {
+      type,
+      min,
+      max,
+      step,
+      maxlength,
+      placeholder,
+      value: base[key] ?? '',
+      id: `tf-${key}`,
+    });
     inputs[key] = input;
     return el('div.form-field', {}, [
       el('label', { for: `tf-${key}`, text: labelText }),
@@ -133,7 +142,10 @@ export function openTaskForm({ task = null, services }) {
     el('fieldset', {}, [
       el('legend', { text: '基本信息' }),
       el('div.form-grid', {}, [
-        textField('title', `任务名称（必填，最多 ${TITLE_MAX_LENGTH} 字）`),
+        textField('title', `任务名称（必填，最多 ${TITLE_MAX_LENGTH} 个字符）`, {
+          maxlength: String(TITLE_MAX_LENGTH),
+          hint: `中文、emoji 都按 1 个字符计算，最多 ${TITLE_MAX_LENGTH} 个`,
+        }),
         textField('subject', `所属科目（必填，最多 ${SUBJECT_MAX_LENGTH} 字）`, { hint: '例如：高等数学、英语、物理实验' }),
         textField('note', '备注（可选）'),
       ]),
@@ -245,6 +257,14 @@ export function openTaskForm({ task = null, services }) {
     }
     if (!isValidTimeString(values.deadlineTime)) {
       localIssues.push({ severity: 'error', code: 'V001', path: 'deadlineTime', message: '请填写合法的截止时间（例如 23:00）。' });
+    }
+    if ([...values.title].length > TITLE_MAX_LENGTH) {
+      localIssues.push({
+        severity: 'error',
+        code: 'V005',
+        path: 'title',
+        message: `任务名称最多 ${TITLE_MAX_LENGTH} 个字符（当前 ${[...values.title].length} 个），请精简一下。`,
+      });
     }
     if (values.priorCompletedMinutes > values.plannedMinutes) {
       localIssues.push({

@@ -13,6 +13,7 @@
  */
 
 import {
+  TASK_NAME_MAX_LENGTH,
   VALIDATION_CODES as C,
   checkEnum,
   checkNonNegativeInt,
@@ -21,6 +22,7 @@ import {
   isNonEmptyString,
   isPlainObject,
   result,
+  warning,
 } from './validation.js';
 import {
   addDays,
@@ -110,7 +112,7 @@ function resolveMinutes(value) {
  * 校验
  * ------------------------------------------------------------------ */
 
-export function validateFixedActivity(activity, path = 'fixedActivity') {
+export function validateFixedActivity(activity, path = 'fixedActivity', { lenientName = false } = {}) {
   const issues = [];
 
   if (!isPlainObject(activity)) {
@@ -120,8 +122,25 @@ export function validateFixedActivity(activity, path = 'fixedActivity') {
   const idIssue = checkRequiredString(activity.id, `${path}.id`, '固定活动 ID', { maxLength: 64 });
   if (idIssue) issues.push(idIssue);
 
-  const titleIssue = checkRequiredString(activity.title, `${path}.title`, '固定活动名称', { maxLength: 120 });
-  if (titleIssue) issues.push(titleIssue);
+  // 固定任务与学习任务共用同一套名称规则（含长度上限），避免两处标准不一致
+  const titleIssue = checkRequiredString(activity.title, `${path}.title`, '固定任务名称', {
+    maxLength: TASK_NAME_MAX_LENGTH,
+    countCodePoints: true,
+  });
+  if (titleIssue) {
+    if (lenientName && titleIssue.code === VALIDATION_CODES.STRING_TOO_LONG) {
+      issues.push(
+        warning(
+          titleIssue.code,
+          `${path}.title`,
+          `「${String(activity.title).slice(0, 20)}」的名称超过 ${TASK_NAME_MAX_LENGTH} 个字符，请编辑时精简（数据本身未被修改）。`,
+          titleIssue.details,
+        ),
+      );
+    } else {
+      issues.push(titleIssue);
+    }
+  }
 
   const typeIssue = checkEnum(activity.type, FIXED_ACTIVITY_TYPE_VALUES, `${path}.type`, '固定活动类型');
   if (typeIssue) issues.push(typeIssue);

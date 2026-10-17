@@ -17,6 +17,7 @@ import {
   checkPositiveInt,
   checkRequiredString,
   error,
+  checkName,
   formatIssue,
   formatIssueDebug,
   formatIssues,
@@ -79,8 +80,36 @@ test('checkRequiredString 的各类失败分支', () => {
   assert.equal(checkRequiredString('   ', 'p', '任务名称').code, VALIDATION_CODES.REQUIRED);
   assert.equal(checkRequiredString(123, 'p', '任务名称').code, VALIDATION_CODES.TYPE);
   const tooLong = checkRequiredString('a'.repeat(11), 'p', '任务名称', { maxLength: 10 });
-  assert.equal(tooLong.code, VALIDATION_CODES.RANGE);
+  // 名称类字段使用统一的"过长"错误码，便于界面统一提示
+  assert.equal(tooLong.code, VALIDATION_CODES.STRING_TOO_LONG);
   assert.equal(tooLong.details.actual, 11);
+});
+
+test('checkRequiredString：名称按 Unicode 码点计数（中文与 emoji 各算 1 个）', () => {
+  // 10 个中文刚好通过
+  assert.equal(checkRequiredString('一二三四五六七八九十', 'p', '任务名称', { maxLength: 10, countCodePoints: true }), null);
+  // 11 个中文超限
+  assert.equal(
+    checkRequiredString('一二三四五六七八九十一', 'p', '任务名称', { maxLength: 10, countCodePoints: true }).code,
+    VALIDATION_CODES.STRING_TOO_LONG,
+  );
+  // emoji 与中文混排也按"字符个数"算
+  assert.equal(checkRequiredString('🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉', 'p', '名称', { maxLength: 10, countCodePoints: true }), null);
+  assert.equal(
+    checkRequiredString('🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉', 'p', '名称', { maxLength: 10, countCodePoints: true }).code,
+    VALIDATION_CODES.STRING_TOO_LONG,
+  );
+  // 英文名称同样按字符数
+  assert.equal(checkRequiredString('abcdefghij', 'p', 'name', { maxLength: 10, countCodePoints: true }), null);
+});
+
+test('checkName：空名称与超长名称给出可读提示', () => {
+  assert.equal(checkName('复习', 'p', '任务名称').ok, true);
+  assert.match(checkName('', 'p', '任务名称').issue.message, /请填写/);
+  const long = checkName('一二三四五六七八九十一', 'p', '任务名称');
+  assert.equal(long.ok, false);
+  assert.equal(long.length, 11);
+  assert.match(long.issue.message, /最多 10 个字符/);
 });
 
 test('checkPositiveInt / checkNonNegativeInt 的范围与类型分支', () => {

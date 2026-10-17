@@ -303,8 +303,19 @@ export function validateAppState(state, { requirePlanWindow = false } = {}) {
   const fixedActivities = Array.isArray(state.fixedActivities) ? state.fixedActivities : [];
 
   // —— 实体结构 ——
-  for (const [idx, task] of tasks.entries()) issues.push(...validateTask(task, `tasks[${idx}]`).issues);
-  for (const [idx, activity] of fixedActivities.entries()) issues.push(...validateFixedActivity(activity, `fixedActivities[${idx}]`).issues);
+  /**
+   * 名称超长在**整体校验（加载/导入）**里只提示，不阻断。
+   *
+   * 保存时由 createTask / applyTaskPatch 等入口做强校验，
+   * 因此不会写进超长名称；但历史数据里已有的超长名称不能导致应用打不开，
+   * 也不能被静默截断——用户会看到提示并被引导去编辑修正。
+   */
+  for (const [idx, task] of tasks.entries()) {
+    issues.push(...validateTask(task, `tasks[${idx}]`, { lenientName: true }).issues);
+  }
+  for (const [idx, activity] of fixedActivities.entries()) {
+    issues.push(...validateFixedActivity(activity, `fixedActivities[${idx}]`, { lenientName: true }).issues);
+  }
 
   const taskIds = new Set(tasks.map((t) => t.id));
   for (const [idx, session] of sessions.entries()) {

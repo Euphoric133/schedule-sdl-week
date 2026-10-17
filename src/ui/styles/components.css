@@ -1065,22 +1065,6 @@ legend {
   accent-color: var(--color-primary);
 }
 
-/* —— 壁纸预览块 —— */
-.appearance-preview {
-  margin-top: var(--space-4);
-  padding: var(--space-4);
-  border-radius: var(--radius-lg);
-  border: 1px dashed var(--color-border-strong);
-  background: var(--color-surface-alt);
-}
-
-.appearance-preview__card {
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
-  backdrop-filter: blur(6px);
-  border: 1px solid var(--color-border);
-}
 
 /* ==========================================================================
    响应式：手机与窄屏

@@ -9,6 +9,45 @@
  * - code 使用稳定枚举（V0xx 输入 / H0xx 硬约束），便于测试断言与文档映射。
  */
 
+/**
+ * 所有"任务名称"类字段的统一长度上限。
+ *
+ * 为什么集中在这里：任务名、固定任务名、休息时间名都是"名称"，
+ * 界面的 maxlength、输入提示与保存前的业务校验必须用同一个数字，
+ * 否则会出现"界面显示能输 10 个字、保存却报错"或反过来的情况。
+ */
+export const TASK_NAME_MAX_LENGTH = 10;
+
+/**
+ * 校验一个"名称"类字段（按 Unicode 码点计数，中文与 emoji 都算 1 个字符）。
+ *
+ * 注意：这里只校验"是否合法"，不负责截断。
+ * 已有数据里可能存在超长名称（历史版本没有限制），
+ * 因此加载时只提示、不修改、不截断——由用户自己决定怎么改。
+ *
+ * @returns {{ok: boolean, length: number, issue?: object}}
+ */
+export function checkName(value, path, label) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (text === '') {
+    return { ok: false, length: 0, issue: error(VALIDATION_CODES.REQUIRED, path, `请填写${label}。`) };
+  }
+  const length = [...text].length;
+  if (length > TASK_NAME_MAX_LENGTH) {
+    return {
+      ok: false,
+      length,
+      issue: error(
+        VALIDATION_CODES.STRING_TOO_LONG,
+        path,
+        `${label}最多 ${TASK_NAME_MAX_LENGTH} 个字符（当前 ${length} 个），请精简一下。`,
+        { max: TASK_NAME_MAX_LENGTH, actual: length },
+      ),
+    };
+  }
+  return { ok: true, length };
+}
+
 /** 校验问题码。新增码必须同时更新 PROJECT_SPEC.md 的映射表。 */
 export const VALIDATION_CODES = Object.freeze({
   // —— 通用结构 ——
@@ -16,6 +55,8 @@ export const VALIDATION_CODES = Object.freeze({
   TYPE: 'V002',
   RANGE: 'V003',
   ENUM: 'V004',
+  /** 名称超出统一长度上限（任务 / 固定任务 / 休息时间共用） */
+  STRING_TOO_LONG: 'V005',
   // —— 任务 ——
   TASK_MIN_MAX_CHUNK: 'V010',
   TASK_ATOMIC_MISMATCH: 'V011',
@@ -130,7 +171,7 @@ export function isNonNegativeInt(value) {
   return Number.isInteger(value) && value >= 0;
 }
 
-export function checkRequiredString(value, path, label, { maxLength = 200 } = {}) {
+export function checkRequiredString(value, path, label, { maxLength = 200, countCodePoints = false } = {}) {
   if (value === undefined || value === null || value === '') {
     return error(VALIDATION_CODES.REQUIRED, path, `${label}不能为空。`);
   }
@@ -140,9 +181,12 @@ export function checkRequiredString(value, path, label, { maxLength = 200 } = {}
   if (value.trim().length === 0) {
     return error(VALIDATION_CODES.REQUIRED, path, `${label}不能只有空格。`);
   }
-  if (value.length > maxLength) {
-    return error(VALIDATION_CODES.RANGE, path, `${label}不能超过 ${maxLength} 个字符（当前 ${value.length}）。`, {
-      actual: value.length,
+  // 名称类字段按 Unicode 码点计数：中文、emoji 都算 1 个字符，
+  // 与界面上的 maxlength 提示保持一致（否则输入框能输 10 个、校验却按 20 个算）。
+  const length = countCodePoints ? [...value.trim()].length : value.length;
+  if (length > maxLength) {
+    return error(VALIDATION_CODES.STRING_TOO_LONG, path, `${label}不能超过 ${maxLength} 个字符（当前 ${length} 个）。`, {
+      actual: length,
       max: maxLength,
     });
   }
