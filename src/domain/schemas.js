@@ -83,16 +83,6 @@ export function createEmptyState({ nowIso, planId = null, windowStart, timeZone 
     officialPlan: null,
     planHistory: [],
     pendingPreview: null,
-    /**
-     * 番茄钟的完成记录（真实投入的事实）。
-     * 与 sessions 分开保存的原因：一个学习时段内可能完成多轮番茄，
-     * 每轮都要能单独追溯；统计"番茄轮数/中途结束"也只有这里能提供。
-     */
-    focusRecords: [],
-    /** 奖励转盘的抽奖历史 */
-    rewardHistory: [],
-    /** 每种触发规则已经发放过的次数（防止重复发奖） */
-    rewardLedger: {},
     meta: {
       lastBackupAt: null,
       migrationLog: [],

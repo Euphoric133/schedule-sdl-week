@@ -424,7 +424,6 @@ test('界面启动：加载 src/main.js 能渲染外壳，并逐条渲染六个�
     '#/preview',
     '#/versions',
     '#/settings',
-    '#/focus',
     '#/unknown-page',
   ];
   for (const hash of routes) {
@@ -554,87 +553,6 @@ test('界面渲染：有待确认候选计划时，预览页显示差异明细�
   fakeTimers.clear();
 });
 
-test('界面渲染：专注页在计时中显示倒计时、暂停与结束操作（番茄钟计时分支）', async () => {
-  const dom = installFakeDom();
-  const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);
-  const instance = boot({ root: dom.appHost });
-
-  instance.services.taskService.addTask({
-    title: '线性代数作业',
-    subject: '数学',
-    plannedMinutes: 90,
-    deadlineDate: '2025-10-20',
-    deadlineTime: '23:00',
-    importance: 4,
-    difficulty: 4,
-    procrastination: 3,
-    splittable: true,
-    minChunkMinutes: 30,
-    maxChunkMinutes: 60,
-    dependsOn: [],
-    note: '',
-  });
-  const preview = instance.services.planService.requestPreview({ now: instance.services.now(), changeSummary: '生成计划' });
-  assert.equal(preview.ok, true, preview.issues?.map((i) => i.message).join('; '));
-  assert.equal(instance.services.planService.applyPreview().ok, true);
-
-  const session = instance.app.getState().sessions.find((item) => item.state === 'flexible');
-  assert.ok(session, '应有一个待进行的时段');
-
-  // 未开始：显示起始按钮
-  dom.location.hash = '#/focus';
-  instance.shell.render();
-  const idleMain = dom.appHost.children[0].byClass('app-main')[0];
-  const idleTexts = idleMain.all().map((node) => node.textContent).join('\n');
-  assert.match(idleTexts, /准备开始/, '未开始时显示准备状态');
-  assert.ok(idleMain.all().some((node) => /开始专注/.test(node.textContent)), '应提供开始专注按钮');
-
-  // 开始一轮专注
-  const started = instance.services.pomodoroService.startFocus({
-    sessionId: session.id,
-    taskId: session.taskId,
-    taskTitle: '线性代数作业',
-  });
-  assert.equal(started.ok, true);
-  instance.shell.render();
-
-  const main = dom.appHost.children[0].byClass('app-main')[0];
-  const texts = main.all().map((node) => node.textContent).join('\n');
-  assert.match(texts, /专注/, '进行中应显示专注阶段');
-  assert.match(texts, /线性代数作业/, '应显示当前关联的任务');
-  assert.ok(main.all().some((node) => node.getAttribute('role') === 'timer'), '应有 role=timer 的倒计时');
-  assert.ok(main.all().some((node) => node.textContent === '暂停'), '应提供暂停按钮');
-  assert.ok(main.all().some((node) => node.textContent === '结束这一段…'), '应提供结束按钮');
-  assert.ok(main.all().some((node) => node.textContent === '放弃本次'), '应提供放弃按钮');
-
-  // 暂停后按文案变化
-  assert.equal(instance.services.pomodoroService.pause().ok, true);
-  instance.shell.render();
-  const pausedMain = dom.appHost.children[0].byClass('app-main')[0];
-  const pausedTexts = pausedMain.all().map((node) => node.textContent).join('\n');
-  assert.match(pausedTexts, /已暂停/, '暂停后应显示已暂停');
-  assert.ok(pausedMain.all().some((node) => node.textContent === '继续'), '暂停后应提供继续按钮');
-
-  // 离开专注页不应残留心跳
-  dom.location.hash = '#/tasks';
-  instance.shell.render();
-  assert.equal(dom.intervalCount(), 0, '离开专注页后不应残留定时器');
-
-  delete globalThis.Node;
-  delete globalThis.addEventListener;
-  delete globalThis.removeEventListener;
-  delete globalThis.document;
-  delete globalThis.window;
-  delete globalThis.location;
-  delete globalThis.localStorage;
-  delete globalThis.requestAnimationFrame;
-  delete globalThis.getComputedStyle;
-  delete globalThis.setInterval;
-  delete globalThis.clearInterval;
-  delete globalThis.setTimeout;
-  delete globalThis.clearTimeout;
-});
-
 test('可访问性：时间轴可聚焦、每个时段有完整无障碍名称、计时器有 aria-live', async () => {
   const dom = installFakeDom();
   const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);
@@ -684,21 +602,12 @@ test('可访问性：时间轴可聚焦、每个时段有完整无障碍名称�
     assert.ok(label.length > 8, '无障碍名称应包含任务与时长信息');
   }
 
-  // 计时器：番茄钟进行中时有 role=timer 与 aria-live
-  const session = instance.app.getState().sessions.find((item) => item.state === 'flexible');
-  assert.equal(instance.services.pomodoroService.startFocus({ sessionId: session.id, taskId: session.taskId }).ok, true);
-  dom.location.hash = '#/focus';
-  instance.shell.render();
-
-  const focusMain = dom.appHost.children[0].byClass('app-main')[0];
-  const timers = focusMain.all().filter((node) => node.getAttribute('role') === 'timer');
-  assert.equal(timers.length, 1, '进行中应有一个 role=timer 的倒计时');
-  assert.equal(timers[0].getAttribute('aria-live'), 'polite', '倒计时应通过 aria-live 播报变化');
-
-  // 离开工作台后不得留下心跳（否则会在后台整页重绘）
-  dom.location.hash = '#/tasks';
-  instance.shell.render();
-  assert.equal(dom.intervalCount(), 0, '离开计时页面后不应残留定时器');
+  // 番茄钟已移除：界面上不应再出现任何计时器组件
+  assert.equal(
+    dom.appHost.children[0].all().filter((node) => node.getAttribute('role') === 'timer').length,
+    0,
+    '番茄钟已移除，不应存在 role=timer 的倒计时',
+  );
 
   delete globalThis.Node;
   delete globalThis.addEventListener;
@@ -804,7 +713,7 @@ test('界面渲染：空数据时每个页面都显示空状态而不是崩溃�
   const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);
   const module = boot({ root: dom.appHost });
 
-  for (const hash of ['#/today', '#/tasks', '#/focus', '#/preview']) {
+  for (const hash of ['#/home', '#/tasks', '#/stats', '#/preview', '#/appearance']) {
     dom.location.hash = hash;
     module.shell.render();
     const main = dom.appHost.children[0].byClass('app-main')[0];

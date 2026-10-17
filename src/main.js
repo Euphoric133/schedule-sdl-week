@@ -15,8 +15,6 @@ import { createFocusService } from './services/focusService.js';
 import { createFixedActivityService } from './services/fixedActivityService.js';
 import { createAppearanceService } from './services/appearanceService.js';
 import { createNotificationService } from './services/notificationService.js';
-import { createPomodoroService } from './services/pomodoroService.js';
-import { createRewardService } from './services/rewardService.js';
 import { createStatsService } from './services/statsService.js';
 import { loadPreferences, savePreferences } from './services/preferences.js';
 import { createIdFactory } from './domain/ids.js';
@@ -29,12 +27,10 @@ import { renderWeek } from './ui/pages/week.js';
 import { renderTasks } from './ui/pages/tasks.js';
 import { renderPreview } from './ui/pages/preview.js';
 import { renderSettings } from './ui/pages/settings.js';
-import { renderFocus } from './ui/pages/focus.js';
 import { renderDay } from './ui/pages/day.js';
 import { renderHome } from './ui/pages/home.js';
 import { renderAppearance } from './ui/pages/appearance.js';
 import { renderNotifications } from './ui/pages/notifications.js';
-import { renderRewards } from './ui/pages/rewards.js';
 import { renderStats } from './ui/pages/stats.js';
 import { renderActivities } from './ui/pages/activities.js';
 import { renderVersions } from './ui/pages/versions.js';
@@ -177,43 +173,6 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
     },
   });
 
-  /* —— 专注（番茄钟）—— */
-  services.pomodoroService = createPomodoroService({
-    appearanceService: services.appearanceService,
-    app,
-    now: () => services.now(),
-    // 计时精度只依赖真实毫秒时间戳；测试注入固定时钟时它也会跟着固定
-    nowMs: () => readNow().getTime(),
-  });
-  // 完成的专注写入业务数据：这是"学习事实"，必须参与统计与剩余工作量推导。
-  // 用 sourceKey 做幂等保护，重复提交同一轮不会写两次。
-  services.pomodoroService.setRecordSink((record) => {
-    const applied = applyDraftOp(
-      app.getState(),
-      {
-        kind: 'focus.record',
-        focusedSeconds: record.focusedSeconds,
-        completed: record.completed,
-        date: record.date,
-        round: record.round,
-        sessionId: record.sessionId,
-        taskId: record.taskId,
-        taskTitle: record.taskTitle,
-        source: 'pomodoro',
-        sourceKey: `pomodoro:${record.sessionId ?? 'none'}:${record.phase}:${record.round}`,
-      },
-      { idFactory, nowIso },
-    );
-    if (applied.ok && !applied.duplicate) app.commit(() => applied.state, { reason: 'focus-record' });
-  });
-
-  /* —— 奖励转盘 —— */
-  services.rewardService = createRewardService({
-    appearanceService: services.appearanceService,
-    app,
-    now: () => services.now(),
-  });
-
   /* —— 通知提醒 —— */
   services.notificationService = createNotificationService({
     appearanceService: services.appearanceService,
@@ -243,8 +202,6 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
     settings: renderSettings,
     appearance: renderAppearance,
     notifications: renderNotifications,
-    focus: renderFocus,
-    rewards: renderRewards,
     stats: renderStats,
   };
 
@@ -279,7 +236,6 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
     sessions: app.getState().sessions ?? [],
     tasks: app.getState().tasks ?? [],
     plan: app.getState().officialPlan,
-    runningFocus: services.pomodoroService.getTimer(),
   }));
   services.notificationService.handleVisibility();
 

@@ -77,15 +77,14 @@ function fillMissingContainers(state) {
   const next = { ...state };
   let changed = false;
   // 数组容器：旧版本数据缺少这些字段时补上空数组（新增功能不会让老数据读不出来）
-  const containers = ['tasks', 'sessions', 'fixedActivities', 'planHistory', 'focusRecords', 'rewardHistory'];
+  // 番茄钟与奖励转盘功能已移除：不再为它们补空容器。
+  // 旧数据里如果还有这些字段，原样保留（不清空用户数据），只是应用不再读写它们。
+  const containers = ['tasks', 'sessions', 'fixedActivities', 'planHistory'];
   for (const key of containers) {
     if (!Array.isArray(next[key])) {
       next[key] = [];
       changed = true;
     }
-  }
-  if (next.rewardLedger === undefined || next.rewardLedger === null || typeof next.rewardLedger !== 'object') {
-    next.rewardLedger = {};
   }
   if (next.pendingPreview === undefined) {
     next.pendingPreview = null;

@@ -41,16 +41,12 @@ const REQUIRED_FILES = [
   'src/services/preferences.js',
   'src/services/appearanceService.js',
   'src/services/notificationService.js',
-  'src/services/pomodoroTimer.js',
-  'src/services/pomodoroService.js',
-  'src/services/rewardService.js',
   'src/services/statsService.js',
   'src/storage/wallpaperStore.js',
   'src/ui/labels.js',
   'src/ui/pages/home.js',
   'src/ui/pages/appearance.js',
   'src/ui/pages/notifications.js',
-  'src/ui/pages/rewards.js',
   'src/ui/pages/stats.js',
   'src/ui/shell.js',
   'src/ui/router.js',
@@ -158,5 +154,8 @@ test('样式：焦点可见性与屏幕阅读器工具类存在（可访问性�
   const components = await readFile(join(projectRoot, 'src', 'ui', 'styles', 'components.css'), 'utf8');
   assert.match(components, /:focus-visible/, '必须有可见的键盘焦点样式');
   assert.match(components, /\.sr-only/, '必须有屏幕阅读器专用工具类');
-  assert.match(components, /\.focus-bar/, '必须有固定专注功能栏的样式');
+  // 番茄钟与固定专注栏已移除：不应再残留它们的样式
+  assert.equal(/\.focus-bar/.test(components), false, '固定专注栏已移除');
+  assert.equal(/\.focus-timer/.test(components), false, '番茄钟计时环已移除');
+  assert.equal(/\.wheel__/.test(components), false, '奖励转盘已移除');
 });

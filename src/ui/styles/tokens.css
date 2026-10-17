@@ -26,8 +26,8 @@
   --color-fixed-soft: #edeff2;
   --color-rest: #3f9e7f; /* 计划休息 */
   --color-rest-soft: #dcefe8;
-  --color-buffer: #b8912f; /* 机动缓冲 */
-  --color-buffer-soft: #f6eed8;
+  --color-accent: #b8912f; /* 强调色（用于图表与统计磁贴） */
+  --color-accent-soft: #f6eed8;
   --color-locked: #6b4fd0; /* 已锁定 */
   --color-locked-soft: #e7e1fa;
 
@@ -110,8 +110,8 @@
   --color-fixed-soft: #262d38;
   --color-rest: #4fbf9a;
   --color-rest-soft: #172f28;
-  --color-buffer: #d6ae4e;
-  --color-buffer-soft: #302818;
+  --color-accent: #d6ae4e;
+  --color-accent-soft: #302818;
   --color-locked: #9c85ee;
   --color-locked-soft: #251f3d;
 
@@ -153,8 +153,8 @@
     --color-fixed-soft: #262d38;
     --color-rest: #4fbf9a;
     --color-rest-soft: #172f28;
-    --color-buffer: #d6ae4e;
-    --color-buffer-soft: #302818;
+    --color-accent: #d6ae4e;
+    --color-accent-soft: #302818;
     --color-locked: #9c85ee;
     --color-locked-soft: #251f3d;
 

@@ -194,87 +194,6 @@ test('端到端：放弃候选计划后正式计划与数据完全不变', async
  * 专注与奖励
  * ================================================================== */
 
-test('端到端：从首页开始专注 → 完成一轮 → 统计与奖励机会都更新', async () => {
-  const env = await launch();
-  try {
-    env.instance.services.taskService.addTask(TASK_INPUT);
-    env.instance.services.planService.requestPreview({ now: env.instance.services.now() });
-    env.instance.services.planService.applyPreview();
-
-    // 首页点"开始专注"
-    env.go('#/home');
-    env.click('开始专注');
-    assert.equal(env.dom.location.hash, '#/focus');
-    env.instance.shell.render();
-
-    // 计时真的开始了
-    let timer = env.instance.services.pomodoroService.getTimer();
-    assert.notEqual(timer.phase, 'idle', '应处于专注阶段');
-    assert.ok(env.findButton('暂停'), '应能暂停');
-
-    // 暂停 → 继续
-    env.click('暂停');
-    assert.equal(env.instance.services.pomodoroService.getTimer().paused, true);
-    env.instance.shell.render();
-    env.click('继续');
-    assert.equal(env.instance.services.pomodoroService.getTimer().paused, false);
-
-    // 模拟计时走完（用真实时间戳推进不可行，因此直接结束并选择"完成"）
-    env.instance.services.pomodoroService.getTimer();
-    const ended = env.instance.services.pomodoroService.endPhase({ reason: 'completed' });
-    assert.equal(ended.ok, true);
-
-    // 统计页应反映这次投入（哪怕只有几秒，也会记为提前结束而不是虚报完成）
-    env.go('#/stats');
-    const statsText = env.texts();
-    assert.match(statsText, /学习统计/);
-    assert.ok(!/页面渲染出错/.test(statsText));
-
-    // 奖励页可达，且资格状态来自真实进度
-    env.go('#/rewards');
-    assert.match(env.texts(), /奖励转盘/);
-    const eligibility = env.instance.services.rewardService.eligibility();
-    assert.ok(eligibility.totalRemaining >= 0);
-  } finally {
-    env.cleanup();
-  }
-});
-
-test('端到端：奖励转盘可以真正抽奖，结果与历史一致', async () => {
-  const env = await launch();
-  try {
-    // 造一份足以获得机会的真实记录：30 分钟完成的专注
-    env.instance.app.commit(
-      (state) => ({
-        ...state,
-        focusRecords: [{ id: 'f1', date: env.instance.services.now().date, focusedSeconds: 1800, completed: true }],
-      }),
-      { reason: 'test-seed' },
-    );
-
-    env.go('#/rewards');
-    assert.match(env.texts(), /可用抽奖机会/);
-    const before = env.instance.services.rewardService.history().length;
-
-    env.click('开始转动');
-    const history = env.instance.services.rewardService.history();
-    assert.equal(history.length, before + 1, '抽奖应写入一条历史记录');
-
-    // 机会被扣减（30 分钟 → 1 次）
-    assert.equal(env.instance.services.rewardService.eligibility().totalRemaining, 0);
-    // 再点一次应被拒绝且不产生新记录
-    env.instance.shell.render();
-    const after = env.instance.services.rewardService.history().length;
-    assert.equal(after, history.length, '没有机会时不会写入记录');
-  } finally {
-    env.cleanup();
-  }
-});
-
-/* ================================================================== *
- * 外观与通知
- * ================================================================== */
-
 test('端到端：外观页可以切换三种主题，设置被写入偏好', async () => {
   const env = await launch();
   try {
@@ -319,7 +238,8 @@ test('端到端：所有导航入口都能到达且页面渲染正常', async ()
   try {
     env.instance.services.taskService.addTask(TASK_INPUT);
     const navLinks = env.dom.appHost.children[0].byClass('app-nav__link');
-    assert.ok(navLinks.length >= 13, `侧边导航应有全部页面，实际 ${navLinks.length}`);
+    // 番茄钟与奖励转盘已移除，导航剩 11 项
+    assert.ok(navLinks.length >= 11, `侧边导航应有全部页面，实际 ${navLinks.length}`);
 
     for (const link of navLinks) {
       const hash = link.getAttribute('href');
@@ -343,7 +263,12 @@ test('端到端：关键按钮都绑定了真实行为（不存在只有外观�
     env.instance.services.planService.applyPreview();
 
     // 逐个页面检查：每个按钮要么有 onClick，要么是表单提交按钮
-    const routes = ['#/home', '#/week', '#/day', '#/tasks', '#/activities', '#/focus', '#/rewards', '#/stats', '#/preview', '#/versions', '#/appearance', '#/notifications', '#/settings'];
+    const routes = ['#/home', '#/week', '#/day', '#/tasks', '#/activities', '#/stats', '#/preview', '#/versions', '#/appearance', '#/notifications', '#/settings'];
+    // 已移除功能的旧链接必须给出"页面不存在"，而不是白屏或错误
+    for (const removed of ['#/focus', '#/rewards']) {
+      env.go(removed);
+      assert.match(env.texts(), /页面不存在/, `${removed} 应提示页面不存在（该功能已移除）`);
+    }
     const dead = [];
     for (const hash of routes) {
       env.go(hash);
@@ -366,51 +291,3 @@ test('端到端：关键按钮都绑定了真实行为（不存在只有外观�
  * 固定专注功能栏
  * ================================================================== */
 
-test('专注栏：计时开始后出现在每一页，可暂停/继续/放弃，结束后消失', async () => {
-  const env = await launch();
-  try {
-    const shellRoot = () => env.dom.appHost.children[0];
-    const focusBar = () => shellRoot().byClass('focus-bar')[0];
-    assert.ok(focusBar(), '外壳里应有固定的专注栏容器');
-    // 打桩 DOM 把 hidden 当作属性保存，因此这里按属性判断（真实浏览器里两者等价）
-    const isHidden = () => focusBar().getAttribute('hidden') !== null;
-
-    // 未计时时隐藏
-    assert.equal(isHidden(), true, '未开始计时时专注栏应隐藏');
-
-    // 开始一轮专注
-    const session = { id: 'ses_bar', taskId: null, taskTitle: '英语阅读' };
-    env.instance.services.pomodoroService.startFocus(session);
-    env.go('#/tasks');
-    assert.equal(isHidden(), false, '计时中应显示专注栏');
-
-    const barText = () => focusBar().textContent;
-    assert.match(barText(), /专注/, '应显示当前阶段');
-    assert.match(barText(), /英语阅读/, '应显示当前任务');
-    assert.match(barText(), /\d{2}:\d{2}/, '应显示倒计时');
-    assert.match(barText(), /暂停/, '应提供暂停');
-    assert.match(barText(), /放弃/, '应提供放弃');
-
-    // 在非专注页面也能暂停 → 说明不必来回切页
-    const pauseButton = focusBar().all().find((n) => n.tagName === 'BUTTON' && n.textContent.trim() === '暂停');
-    pauseButton.click();
-    assert.equal(env.instance.services.pomodoroService.getTimer().paused, true, '在任务页也能暂停计时');
-    assert.match(focusBar().textContent, /已暂停/);
-
-    // 继续
-    const resumeButton = focusBar().all().find((n) => n.tagName === 'BUTTON' && n.textContent.trim() === '继续');
-    assert.ok(resumeButton, '暂停后应显示继续');
-    resumeButton.click();
-    assert.equal(env.instance.services.pomodoroService.getTimer().paused, false);
-
-    // 放弃后专注栏消失，且不写入任何学习记录
-    const before = env.instance.app.getState().focusRecords.length;
-    const discardButton = focusBar().all().find((n) => n.tagName === 'BUTTON' && n.textContent.trim() === '放弃');
-    discardButton.click();
-    assert.equal(env.instance.services.pomodoroService.getTimer().phase, 'idle');
-    assert.equal(isHidden(), true, '计时结束后专注栏应隐藏');
-    assert.equal(env.instance.app.getState().focusRecords.length, before, '放弃不产生学习记录');
-  } finally {
-    env.cleanup();
-  }
-});

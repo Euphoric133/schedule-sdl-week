@@ -5,7 +5,7 @@
  * 1. 今天我该做什么？（今日任务清单 + 下一项）
  * 2. 我做到哪了？（真实统计，不是计划数字）
  * 3. 计划在哪里？/怎么生成？（**主要的规划入口就在这一页**）
- * 4. 现在能开始学吗？（一键进入专注）
+ * 4. 现在该做什么？（下一项 + 开始学习）
  * 5. 接下来几天怎样？（七天概览）
  *
  * 所有数字都来自真实记录（`statsService`），没有数据时显示引导而不是 0 值图表。
@@ -47,7 +47,7 @@ export function renderHome({ app, services, now }) {
       el('div.home-hero__text', {}, [
         el('p.home-hero__date', { text: `${formatDateWithWeekday(today)}　${greeting(nowMinutes)}` }),
         el('h1.home-hero__title', {
-          text: running ? '正在专注中' : nextSession ? `下一项：${taskById.get(nextSession.taskId)?.title ?? '学习任务'}` : activeTasks.length > 0 ? '今天还没有安排' : '先创建你的第一个任务',
+          text: running ? '正在进行这一段学习' : nextSession ? `下一项：${taskById.get(nextSession.taskId)?.title ?? '学习任务'}` : activeTasks.length > 0 ? '今天还没有安排' : '先创建你的第一个任务',
         }),
         el('p.home-hero__sub', { text: heroSubtitle({ running, nextSession, plan, preview, activeTasks, nowMinutes, taskById }) }),
       ]),
@@ -70,8 +70,10 @@ export function renderHome({ app, services, now }) {
   const plannedMinutes = todaySessions.reduce((sum, session) => sum + session.plannedMinutes, 0);
   const completedSessions = todaySessions.filter((session) => session.state === SESSION_STATE.COMPLETED);
   const doneMinutes = completedSessions.reduce((sum, session) => sum + (session.actualMinutes ?? session.plannedMinutes), 0);
-  const focusToday = services.pomodoroService.todayStats();
-  const rewardEligibility = services.rewardService.eligibility();
+  const weekStats = services.statsService.weekly();
+  const remainingToday = todaySessions
+    .filter((session) => session.state === SESSION_STATE.FLEXIBLE || session.state === SESSION_STATE.IN_PROGRESS)
+    .reduce((sum, session) => sum + session.plannedMinutes, 0);
 
   nodes.push(
     el('section.home-tiles', {}, [
@@ -83,25 +85,25 @@ export function renderHome({ app, services, now }) {
         kind: 'primary',
       }),
       statTile({
-        label: '番茄钟',
-        value: `${focusToday.completedRounds} 个`,
-        hint: focusToday.focusedMinutes > 0 ? `专注 ${formatDuration(focusToday.focusedMinutes)}${focusToday.earlyEndedRounds > 0 ? `　·　提前结束 ${focusToday.earlyEndedRounds} 次` : ''}` : '还没有专注记录',
+        label: '今天还剩',
+        value: formatDuration(remainingToday),
+        hint: remainingToday > 0 ? `还有 ${todaySessions.filter((s) => s.state === SESSION_STATE.FLEXIBLE).length} 个时段要完成` : '今天的时段都已完成',
         kind: 'rest',
-        onClick: () => { globalThis.location.hash = '#/focus'; },
+        onClick: () => { globalThis.location.hash = '#/day'; },
       }),
       statTile({
         label: '连续学习',
         value: streak.current > 0 ? `${streak.current} 天` : '—',
         hint: streak.activeDays > 0 ? `累计 ${streak.activeDays} 天有记录　·　最长 ${streak.longest} 天` : '完成第一段学习就开始记录',
-        kind: 'buffer',
+        kind: 'accent',
         onClick: () => { globalThis.location.hash = '#/stats'; },
       }),
       statTile({
-        label: '抽奖机会',
-        value: `${rewardEligibility.totalRemaining} 次`,
-        hint: rewardEligibility.totalRemaining > 0 ? '去转盘试试手气' : '完成专注即可累积机会',
+        label: '本周完成',
+        value: formatDuration(weekStats.thisWeek.actualMinutes),
+        hint: `共 ${weekStats.thisWeek.completedSessions} 段　·　上周 ${formatDuration(weekStats.lastWeek.actualMinutes)}`,
         kind: 'locked',
-        onClick: () => { globalThis.location.hash = '#/rewards'; },
+        onClick: () => { globalThis.location.hash = '#/stats'; },
       }),
     ]),
   );
@@ -153,24 +155,9 @@ export function renderHome({ app, services, now }) {
             label: '任务进度',
           }),
           el('div.form-actions', { style: { justifyContent: 'flex-start' } }, [
-            button(running ? '回到专注计时' : '开始专注', {
+            button('查看 / 记录完成情况', {
               variant: 'primary',
-              onClick: () => {
-                services.pomodoroService.attachTask({
-                  sessionId: focusTarget.id,
-                  taskId: focusTarget.taskId,
-                  taskTitle: task?.title ?? null,
-                });
-                if (!running) {
-                  const started = services.pomodoroService.startFocus({
-                    sessionId: focusTarget.id,
-                    taskId: focusTarget.taskId,
-                    taskTitle: task?.title ?? null,
-                  });
-                  if (started.ok) toast('已开始专注计时。', 'success');
-                }
-                globalThis.location.hash = '#/focus';
-              },
+              onClick: () => services.ui.openSessionDetail(focusTarget.id),
             }),
             button('查看任务', { onClick: () => { globalThis.location.hash = '#/tasks'; } }),
           ]),
@@ -306,16 +293,15 @@ function renderTodayList({ todaySessions, taskById, state, services }) {
           el('div.task-item__actions', {}, [
             button('详情', { size: 'sm', onClick: () => services.ui.openSessionDetail(session.id) }),
             !isDone && session.state !== SESSION_STATE.CANCELLED
-              ? button('开始专注', {
+              ? button('标记完成', {
                   size: 'sm',
                   variant: 'primary',
-                  onClick: () => {
-                    services.pomodoroService.startFocus({
-                      sessionId: session.id,
-                      taskId: session.taskId,
-                      taskTitle: task?.title ?? null,
-                    });
-                    globalThis.location.hash = '#/focus';
+                  onClick: async () => {
+                    const result = services.ui.previewWith(
+                      [{ kind: 'session.complete', sessionId: session.id, actualMinutes: session.plannedMinutes }],
+                      { changeSummary: '记录一段已完成的学习', trigger: 'home-page' },
+                    );
+                    if (!result.ok) toast(result.message, 'error', 8000);
                   },
                 })
               : null,
@@ -366,38 +352,10 @@ function heroActions({ services, plan, activeTasks, running, nextSession, previe
   if (preview) {
     actions.push(button('确认该计划', { variant: 'primary', onClick: () => { globalThis.location.hash = '#/preview'; } }));
   }
-  if (running) {
-    actions.push(button('回到专注', { variant: 'primary', onClick: () => { globalThis.location.hash = '#/focus'; } }));
-  } else if (activeTasks.length > 0) {
-    actions.push(
-      button('开始专注', {
-        variant: 'primary',
-        onClick: () => {
-          const state = services.app.getState();
-          const target = (state.sessions ?? []).find(
-            (session) => session.date === services.now().date && session.state === SESSION_STATE.FLEXIBLE,
-          );
-          const task = target ? (state.tasks ?? []).find((item) => item.id === target.taskId) : null;
-          services.pomodoroService.attachTask({
-            sessionId: target?.id ?? null,
-            taskId: target?.taskId ?? null,
-            taskTitle: task?.title ?? null,
-          });
-          services.pomodoroService.startFocus({
-            sessionId: target?.id ?? null,
-            taskId: target?.taskId ?? null,
-            taskTitle: task?.title ?? null,
-          });
-          globalThis.location.hash = '#/focus';
-        },
-      }),
-    );
-  }
-  actions.push(button('新建任务', { onClick: () => services.ui.openTaskForm(null) }));
   if (!plan || plan.version === 0) {
     actions.push(
       button('生成七天计划', {
-        variant: plan ? 'default' : 'primary',
+        variant: 'primary',
         onClick: () => {
           const result = services.ui.requestPreview({ changeSummary: '生成第一份计划', trigger: 'home-hero' });
           if (!result.ok) toast(result.message, 'error', 9000);
@@ -405,6 +363,7 @@ function heroActions({ services, plan, activeTasks, running, nextSession, previe
       }),
     );
   }
+  actions.push(button('新建任务', { onClick: () => services.ui.openTaskForm(null) }));
   void nextSession;
   return actions;
 }

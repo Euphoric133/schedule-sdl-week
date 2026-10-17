@@ -26,7 +26,6 @@ const LEDGER_KEY = 'studyPlanner:v1:notified';
 export const NOTIFICATION_TYPE_LABELS_ZH = Object.freeze({
   [NOTIFICATION_TYPE.SESSION_SOON]: '下一项学习即将开始',
   [NOTIFICATION_TYPE.PLAN_START]: '今日学习简报',
-  [NOTIFICATION_TYPE.FOCUS_END]: '专注计时结束',
   [NOTIFICATION_TYPE.DAILY_SUMMARY]: '今日计划概览',
 });
 
@@ -301,7 +300,7 @@ export function createNotificationService({ appearanceService, now, clock }) {
    * @param {object} context
    * @param {Array<object>} context.sessions 当前全部学习时段
    * @param {object|null} context.plan 正式计划
-   * @param {object|null} context.runningFocus 正在进行的专注（含 endsAt 时间戳）
+  
    */
   function check(context = {}) {
     lastCheck = new Date(clock?.() ?? Date.now()).toISOString();
@@ -312,22 +311,6 @@ export function createNotificationService({ appearanceService, now, clock }) {
     if (inQuietHours(current.minutes)) return { fired: 0, quiet: true };
 
     let fired = 0;
-
-    // 1) 专注计时结束：用绝对时间戳比较，页面被节流后也能补上
-    const focus = context.runningFocus;
-    if (focus?.endsAtMs && Number.isFinite(focus.endsAtMs)) {
-      const remainingMs = focus.endsAtMs - Date.now();
-      if (remainingMs <= 0) {
-        const result = deliver({
-          key: `focus_end:${focus.sessionId}:${focus.endsAtMs}`,
-          type: NOTIFICATION_TYPE.FOCUS_END,
-          title: '专注结束',
-          body: `${focus.taskTitle ?? '当前任务'}的专注时间到了。休息一下，或者继续下一轮。`,
-          tag: `focus-${focus.sessionId}`,
-        });
-        if (result.ok) fired += 1;
-      }
-    }
 
     // 2) 下一项学习即将开始
     if (prefs.types[NOTIFICATION_TYPE.SESSION_SOON]) {

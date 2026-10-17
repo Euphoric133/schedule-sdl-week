@@ -11,8 +11,6 @@ export const ROUTES = Object.freeze([
   { path: 'day', label: '每日视图', title: '每日视图', icon: '📆' },
   { path: 'tasks', label: '学习任务', title: '学习任务', icon: '✅' },
   { path: 'activities', label: '固定日程', title: '固定日程', icon: '📌' },
-  { path: 'focus', label: '专注番茄钟', title: '专注番茄钟', icon: '⏱' },
-  { path: 'rewards', label: '奖励转盘', title: '奖励转盘', icon: '🎡' },
   { path: 'stats', label: '学习统计', title: '学习统计', icon: '📊' },
   { path: 'preview', label: '调整预览', title: '调整预览', icon: '🔍' },
   { path: 'versions', label: '版本历史', title: '版本历史', icon: '🕘' },
