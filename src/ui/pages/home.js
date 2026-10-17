@@ -360,8 +360,7 @@ function heroActions({ services, plan, activeTasks, running, nextSession, previe
       button('生成七天计划', {
         variant: 'primary',
         onClick: () => {
-          const result = services.ui.requestPreview({ changeSummary: '生成第一份计划', trigger: 'home-hero' });
-          if (!result.ok) toast(result.message, 'error', 9000);
+          services.ui.openPlanForm({ changeSummary: '生成第一份计划', trigger: 'home-hero' });
         },
       }),
     );

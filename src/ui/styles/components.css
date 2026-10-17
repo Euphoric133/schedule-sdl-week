@@ -820,41 +820,103 @@ legend {
 .share-bars__fill--locked { background: var(--color-locked); }
 
 /* —— 柱状图 —— */
+.chart-figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.chart-figure__axis {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
 .chart {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  gap: var(--space-2);
+  gap: 6px;
   align-items: end;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .chart__col {
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  align-items: center;
   height: 100%;
-  gap: var(--space-1);
+  gap: 4px;
+  min-width: 0;
 }
 
-.chart__bar-wrap {
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  height: 100%;
+/* 计划时长：同一列背后的浅色轨道（与实际柱同一坐标，不并列） */
+.chart__track {
+  position: absolute;
+  bottom: 18px;
+  width: 68%;
+  border-radius: 4px 4px 0 0;
+  background: var(--color-surface-alt);
+  border: 1px dashed var(--color-border-strong);
+  box-sizing: border-box;
+  z-index: 0;
 }
 
 .chart__bar {
-  width: 60%;
+  position: relative;
+  z-index: 1;
+  width: 58%;
   min-height: 2px;
   border-radius: 4px 4px 0 0;
   background: var(--color-primary);
   transition: height 260ms ease;
 }
 
-.chart__bar--rest { background: var(--color-rest); }
-.chart__bar--accent { background: var(--color-accent); }
-.chart__bar--locked { background: var(--color-locked); }
-.chart__bar--danger { background: var(--color-danger); }
+/* 当天没有任何已完成学习：一条基线短划，与"没有数据"区分开 */
+.chart__zero {
+  width: 58%;
+  height: 2px;
+  margin-bottom: 0;
+  border-radius: 1px;
+  background: var(--color-border-strong);
+  z-index: 1;
+}
+
+.chart__label {
+  height: 16px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.chart-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chart-legend__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.chart-legend__swatch--bar { background: var(--color-primary); }
+.chart-legend__swatch--track { background: var(--color-surface-alt); border: 1px dashed var(--color-border-strong); }
+.chart-legend__swatch--zero { background: var(--color-border-strong); height: 2px; }
 
 .chart__label {
   text-align: center;

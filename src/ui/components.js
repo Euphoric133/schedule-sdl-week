@@ -265,23 +265,85 @@ export function shareBars(items, { total = null, emptyText = '还没有数据', 
   );
 }
 
-/** 简单的柱状图（用于逐日趋势）。数据为空时明确说明，而不是画一条平线。 */
-export function barChart({ data, max = null, height = 120, emptyText = '还没有可以统计的数据' } = {}) {
-  if (!data || data.length === 0) return el('div.card__hint', { text: emptyText });
-  const peak = max ?? Math.max(1, ...data.map((item) => item.value));
-  return el(
-    'div.chart',
-    { style: { height: `${height}px` } },
-    data.map((item) =>
-      el('div.chart__col', { title: `${item.label}：${item.display ?? item.value}` }, [
-        el('div.chart__bar-wrap', {}, [
-          el(`div.chart__bar.chart__bar--${item.kind ?? 'primary'}`, {
-            style: { height: `${Math.round((item.value / peak) * 100)}%` },
-            'aria-label': `${item.label} ${item.display ?? item.value}`,
-          }),
-        ]),
-        el('div.chart__label', { text: item.short ?? item.label }),
-      ]),
+/**
+ * 逐日柱状图。
+ *
+ * 这里修过一个视觉问题：以前每天画**两根并排的柱子**（计划 / 实际），
+ * 14 天就是 28 根，宽度只有一点、标签还只标一半，于是看起来"一高一低、参差不齐"，
+ * 既读不出趋势，也分不清每根柱子代表什么。
+ *
+ * 现在的规则（每一点都能解释清楚）：
+ * - **一天一根柱子**，柱子高度 = 当天**实际**学习时长（唯一的统计口径）；
+ * - 当天**计划**时长用同一列背后的浅色轨道表示（同一单位、同一坐标，不并列、不误导）；
+ * - 纵轴按真实数据的"整数刻度"缩放（15/30/60 分钟一档），并在左上角标出上限；
+ * - 0 分钟与"没有数据"区分：0 显示一条基线短划，无数据的那天没有任何柱子；
+ * - 每根柱子都有完整标签与 title，窄屏下只显示少量日期标签，避免文字重叠。
+ */
+
+/** 把最大值向上取整到一个"好看的刻度"，避免纵轴出现 47 分钟这种数字 */
+function niceCeil(value, step) {
+  if (!Number.isFinite(value) || value <= 0) return step;
+  return Math.ceil(value / step) * step;
+}
+
+function pickAxisStep(peakMinutes) {
+  if (peakMinutes <= 60) return 15;
+  if (peakMinutes <= 180) return 30;
+  if (peakMinutes <= 360) return 60;
+  return 120;
+}
+
+/**
+ * @param {object} options
+ * @param {Array<{date: string, label?: string, short?: string, actualMinutes: number, plannedMinutes: number, hasData?: boolean}>} options.days
+ * @param {number} [options.height] 绘图区高度（px）
+ */
+export function barChart({ days, height = 150, emptyText = '还没有可以统计的数据' } = {}) {
+  if (!Array.isArray(days) || days.length === 0) return el('div.card__hint', { text: emptyText });
+
+  const hasAny = days.some((day) => (day.actualMinutes ?? 0) > 0 || (day.plannedMinutes ?? 0) > 0);
+  if (!hasAny) return el('div.card__hint', { text: emptyText });
+
+  const peak = Math.max(...days.map((day) => Math.max(day.actualMinutes ?? 0, day.plannedMinutes ?? 0)));
+  const axisMax = niceCeil(peak, pickAxisStep(peak));
+  const heightPercent = (value) => {
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    return Math.max(2, Math.round((value / axisMax) * 100));
+  };
+
+  // 标签太密时（>10 天）只保留每隔一天的日期，避免文字重叠
+  const labelStride = days.length > 10 ? 2 : 1;
+
+  return el('div.chart-figure', {}, [
+    el('div.chart-figure__axis', { text: `纵轴：分钟（上限 ${axisMax}）` }),
+    el(
+      'div.chart',
+      { style: { height: `${height}px` } },
+      days.map((day, index) => {
+        const actual = Math.max(0, day.actualMinutes ?? 0);
+        const planned = Math.max(0, day.plannedMinutes ?? 0);
+        const showLabel = index % labelStride === 0 || index === days.length - 1;
+        const tip = `${day.date}：实际 ${formatDuration(actual)}${planned > 0 ? `　·　计划 ${formatDuration(planned)}` : ''}`;
+        return el(
+          'div.chart__col',
+          { title: tip, 'aria-label': tip },
+          [
+            // 计划时长：同一列背后的浅色轨道（同一坐标，不与实际并列）
+            planned > 0
+              ? el('div.chart__track', { style: { height: `${heightPercent(planned)}%` } })
+              : null,
+            actual > 0
+              ? el('div.chart__bar', { style: { height: `${heightPercent(actual)}%` } })
+              : el('div.chart__zero', { title: `${day.date}：没有已完成的学习` }),
+            el('div.chart__label', { text: showLabel ? (day.short ?? day.label ?? '') : '' }),
+          ].filter(Boolean),
+        );
+      }),
     ),
-  );
+    el('div.chart-legend', {}, [
+      el('span.chart-legend__item', {}, [el('span.chart-legend__swatch.chart-legend__swatch--bar'), el('span', { text: '实际学习时长' })]),
+      el('span.chart-legend__item', {}, [el('span.chart-legend__swatch.chart-legend__swatch--track'), el('span', { text: '当天计划时长' })]),
+      el('span.chart-legend__item', {}, [el('span.chart-legend__swatch.chart-legend__swatch--zero'), el('span', { text: '当天没有完成的学习' })]),
+    ]),
+  ]);
 }

@@ -31,6 +31,7 @@ import { checkTaskDependencies } from '../domain/graph.js';
 import { reconcileTaskSessions } from './reconcile.js';
 import { defaultSettings, validateSettings } from '../domain/schemas.js';
 import { createRestPeriod, validateRestPeriod } from './restPeriod.js';
+import { createSubject, isSameSubjectName, normalizeSubjectName, validateSubjectName } from './subject.js';
 import { VALIDATION_CODES as C, error, mergeResults, result } from '../domain/validation.js';
 
 /**
@@ -74,6 +75,12 @@ export function applyDraftOp(state, op, ctx) {
       return fixedActivityUpdateOp(state, op, ctx);
     case 'fixedActivity.remove':
       return removeOp(state, op, ctx, 'fixedActivities', '固定活动');
+    case 'subject.ensure':
+      return subjectEnsureOp(state, op, ctx);
+    case 'subject.rename':
+      return subjectRenameOp(state, op, ctx);
+    case 'subject.remove':
+      return subjectRemoveOp(state, op);
     case 'rest.add':
       return restAddOp(state, op, ctx);
     case 'rest.update':
@@ -172,7 +179,13 @@ export function describeDraftOps(ops) {
       case 'fixedActivity.remove':
         parts.push('删除固定活动');
         break;
-      case 'rest.add':
+      case 'subject.ensure':
+      return subjectEnsureOp(state, op, ctx);
+    case 'subject.rename':
+      return subjectRenameOp(state, op, ctx);
+    case 'subject.remove':
+      return subjectRemoveOp(state, op);
+    case 'rest.add':
         parts.push(`新增休息时间「${op.input?.title ?? ''}」`);
         break;
       case 'rest.update':
@@ -575,6 +588,118 @@ function removeOp(state, op, ctx, collection, label) {
   }
   void ctx;
   return { ok: true, state: { ...state, [collection]: items.filter((item) => item.id !== id) }, issues: [] };
+}
+
+/* ------------------------------------------------------------------ *
+ * 科目字典
+ * ------------------------------------------------------------------ */
+
+/**
+ * 确保某个科目存在（任务表单提交新科目时使用）。
+ * 已存在（归一化后同名）时直接复用，不重复创建。
+ */
+function subjectEnsureOp(state, op, ctx) {
+  const validation = validateSubjectName(op.name, 'subject');
+  if (!validation.ok) return { ok: false, state, issues: validation.issues };
+
+  const name = normalizeSubjectName(op.name);
+  const existing = (state.subjects ?? []).find((item) => isSameSubjectName(item.name, name));
+  if (existing) {
+    return { ok: true, state, issues: [], createdId: existing.id, existing: true, subjectName: existing.name };
+  }
+
+  const subject = createSubject(name, { idFactory: ctx.idFactory, nowIso: ctx.nowIso });
+  return {
+    ok: true,
+    state: { ...state, subjects: [...(state.subjects ?? []), subject] },
+    issues: [],
+    createdId: subject.id,
+    subjectName: subject.name,
+  };
+}
+
+/**
+ * 重命名科目：**同一次提交里**把所有引用它的任务一起改名。
+ *
+ * 这样"改了科目名，任务还显示旧名字"不可能发生——任务与字典永远同步。
+ */
+function subjectRenameOp(state, op, ctx) {
+  const subjects = state.subjects ?? [];
+  const target = subjects.find((item) => item.id === op.subjectId);
+  if (!target) return { ok: false, state, issues: [error(C.REQUIRED, 'subject', '科目不存在。', { subjectId: op.subjectId })] };
+
+  const validation = validateSubjectName(op.name, 'subject');
+  if (!validation.ok) return { ok: false, state, issues: validation.issues };
+  const name = normalizeSubjectName(op.name);
+
+  const duplicated = subjects.find((item) => item.id !== target.id && isSameSubjectName(item.name, name));
+  if (duplicated) {
+    return {
+      ok: false,
+      state,
+      issues: [
+        error(C.ENUM, 'subject.name', `已经有一个叫「${duplicated.name}」的科目了，请换一个名字。`, {
+          duplicatedId: duplicated.id,
+        }),
+      ],
+    };
+  }
+  if (isSameSubjectName(target.name, name)) return { ok: true, state, issues: [], changed: false };
+
+  return {
+    ok: true,
+    state: {
+      ...state,
+      subjects: subjects.map((item) => (item.id === target.id ? { ...item, name } : item)),
+      // 任务里的科目名同步更新，界面与统计立刻一致
+      tasks: (state.tasks ?? []).map((task) =>
+        isSameSubjectName(task.subject, target.name) ? { ...task, subject: name, updatedAt: ctx.nowIso } : task,
+      ),
+    },
+    issues: [],
+    renamedTasks: (state.tasks ?? []).filter((task) => isSameSubjectName(task.subject, target.name)).length,
+  };
+}
+
+/**
+ * 删除科目。
+ *
+ * 若仍有任务引用它：**拒绝**，除非调用方显式给出 `reassignTo`（另一个科目名）。
+ * 绝不静默删除，否则那些任务会变成"科目不存在"的孤儿引用。
+ */
+function subjectRemoveOp(state, op) {
+  const subjects = state.subjects ?? [];
+  const target = subjects.find((item) => item.id === op.subjectId);
+  if (!target) return { ok: false, state, issues: [error(C.REQUIRED, 'subject', '科目不存在。', { subjectId: op.subjectId })] };
+
+  const referencing = (state.tasks ?? []).filter((task) => isSameSubjectName(task.subject, target.name));
+  if (referencing.length > 0 && !op.reassignTo) {
+    return {
+      ok: false,
+      state,
+      issues: [
+        error(
+          C.ENUM,
+          'subject',
+          `「${target.name}」还有 ${referencing.length} 个任务在用，先把这些任务改成别的科目，或指定一个替换科目再删除。`,
+          { referencingCount: referencing.length, taskTitles: referencing.slice(0, 5).map((task) => task.title) },
+        ),
+      ],
+    };
+  }
+
+  let tasks = state.tasks ?? [];
+  if (referencing.length > 0) {
+    const reassignName = normalizeSubjectName(op.reassignTo);
+    tasks = tasks.map((task) => (isSameSubjectName(task.subject, target.name) ? { ...task, subject: reassignName } : task));
+  }
+
+  return {
+    ok: true,
+    state: { ...state, subjects: subjects.filter((item) => item.id !== target.id), tasks },
+    issues: [],
+    reassignedCount: referencing.length,
+  };
 }
 
 /* ------------------------------------------------------------------ *

@@ -13,6 +13,8 @@
  */
 
 import { CURRENT_SCHEMA_VERSION, defaultSettings, validateAppState } from '../domain/schemas.js';
+import { deriveSubjectsFromTasks } from '../domain/subject.js';
+import { createIdFactory } from '../domain/ids.js';
 import { describeRepairs, reconcileState } from '../domain/reconcile.js';
 import { VALIDATION_CODES as C, error, mergeResults, result } from '../domain/validation.js';
 
@@ -87,7 +89,7 @@ function fillMissingContainers(state) {
   // 数组容器：旧版本数据缺少这些字段时补上空数组（新增功能不会让老数据读不出来）
   // 番茄钟与奖励转盘功能已移除：不再为它们补空容器。
   // 旧数据里如果还有这些字段，原样保留（不清空用户数据），只是应用不再读写它们。
-  const containers = ['tasks', 'sessions', 'fixedActivities', 'planHistory', 'restPeriods'];
+  const containers = ['tasks', 'sessions', 'fixedActivities', 'planHistory', 'restPeriods', 'subjects'];
   for (const key of containers) {
     if (!Array.isArray(next[key])) {
       next[key] = [];
@@ -129,6 +131,20 @@ function fillMissingContainers(state) {
  * @param {boolean} [options.skipSemanticValidation] 仅供迁移单元测试使用
  * @returns {{ok: boolean, state?: object, issues: object[], error?: Error, migratedFrom?: number}}
  */
+/**
+ * 把旧数据里的"自由文本科目"平滑接入科目字典。
+ *
+ * 只做**新增**：不动任何任务、不合并用户的科目、不删除任何东西。
+ * 因此即使用户曾经打错字，数据也照原样保留，用户可以自己在科目管理里改名或删除。
+ */
+function ensureSubjects(state, ctx) {
+  const subjects = Array.isArray(state.subjects) ? state.subjects : [];
+  if (subjects.length > 0) return state;
+  const derived = deriveSubjectsFromTasks(state.tasks ?? [], ctx);
+  if (derived.length === 0) return state;
+  return { ...state, subjects: derived };
+}
+
 export function migrateState(raw, { skipSemanticValidation = false, allowRepair = true } = {}) {
   const issues = [];
 
@@ -205,6 +221,18 @@ export function migrateState(raw, { skipSemanticValidation = false, allowRepair 
 
   const filled = fillMissingContainers(state);
   state = filled.state;
+
+  // 旧数据只有"任务里的自由文本科目"：把它接入可管理的科目字典（只新增，不改任务）
+  const withSubjects = ensureSubjects(state, { idFactory: createIdFactory(), nowIso: new Date().toISOString() });
+  if (withSubjects !== state) {
+    state = withSubjects;
+    issues.push({
+      severity: 'info',
+      code: C.SCHEMA_SHAPE,
+      path: 'subjects',
+      message: '已把任务里用到的科目整理成统一的科目列表，之后可以在科目管理里改名或清理。',
+    });
+  }
   if (filled.changed) {
     issues.push({
       severity: 'warning',

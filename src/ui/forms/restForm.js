@@ -165,6 +165,20 @@ export function openRestForm({ rest = null, services }) {
   }
 
   async function submit() {
+    try {
+      await submitInner();
+    } catch (error) {
+      // 兜底：任何未预料的异常都必须变成用户看得见的错误，而不是"点了没反应"
+      showErrors([
+        {
+          severity: 'error',
+          message: `保存时出错：${error?.message ?? error}。数据没有被修改，可以重试或刷新页面。`,
+        },
+      ]);
+    }
+  }
+
+  async function submitInner() {
     const values = collect();
 
     // 本地先做格式校验，避免把明显错误的数据送到数据层

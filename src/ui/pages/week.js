@@ -60,11 +60,10 @@ export function renderWeek({ app, services, route, now }) {
           variant: 'primary',
           size: 'sm',
           onClick: () => {
-            const result = services.ui.requestPreview({
+            services.ui.openPlanForm({
               changeSummary: plan && plan.version > 0 ? '重新规划' : '生成第一份计划',
               trigger: 'week-page',
             });
-            if (!result.ok) toast(result.message, 'error', 9000);
           },
         }),
       ]),

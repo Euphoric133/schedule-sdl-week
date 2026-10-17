@@ -82,6 +82,8 @@ export function createEmptyState({ nowIso, planId = null, windowStart, timeZone 
     fixedActivities: [],
     /** 用户创建的休息安排（一条 = 一段完整时间，按日期拆分显示） */
     restPeriods: [],
+    /** 统一的科目字典（任务只保存科目名，这里是可管理的数据源） */
+    subjects: [],
     officialPlan: null,
     planHistory: [],
     pendingPreview: null,

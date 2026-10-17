@@ -37,7 +37,8 @@ export function renderDay({ app, services, route, now }) {
         button('今天', { size: 'sm', disabled: date === today, onClick: () => gotoDate(today) }),
         button('后一天 →', { size: 'sm', onClick: () => gotoDate(addDays(date, 1)) }),
         button('查看整周', { size: 'sm', onClick: () => { globalThis.location.hash = '#/week'; } }),
-        button('添加休息', { size: 'sm', onClick: () => services.ui.openRestForm(null) }),
+        // 休息的主入口：一个按钮，两种含义（一次性 / 每周重复）
+        button('设置休息', { size: 'sm', variant: 'primary', onClick: () => services.ui.openRestSettings() }),
       ]),
     ]),
   );
@@ -53,8 +54,7 @@ export function renderDay({ app, services, route, now }) {
             variant: 'primary',
             size: 'sm',
             onClick: () => {
-              const result = services.ui.requestPreview({ changeSummary: '生成第一份计划', trigger: 'day-page' });
-              if (!result.ok) toast(result.message, 'error', 9000);
+              services.ui.openPlanForm({ changeSummary: '生成第一份计划', trigger: 'day-page' });
             },
           }),
         ],

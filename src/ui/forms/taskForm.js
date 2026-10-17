@@ -92,6 +92,56 @@ export function openTaskForm({ task = null, services }) {
     ]);
   }
 
+  /**
+   * 科目字段：下拉选择（数据来自科目管理）+ "新增科目"。
+   *
+   * 这样科目选择栏不再是"每个任务各自记住的自由文本"，
+   * 而是一份统一列表——打错字不会永久污染选项，改一个名字所有任务一起更新。
+   */
+  function subjectField() {
+    const options = services.subjectService ? services.subjectService.optionsForForm() : [];
+    const known = options.some((option) => option.name === (base.subject ?? '').trim());
+    const select = el('select', { id: 'tf-subject' });
+    for (const option of options) {
+      select.appendChild(
+        el('option', {
+          value: option.name,
+          selected: option.name === (base.subject ?? '').trim(),
+          text: option.orphan ? `${option.name}（历史科目）` : option.name,
+        }),
+      );
+    }
+    // 旧数据里的科目如果既不在字典里、也没被识别为孤儿，仍然要能显示，不能丢
+    if (base.subject && !known) {
+      select.appendChild(el('option', { value: base.subject, selected: true, text: `${base.subject}（当前值）` }));
+    }
+    select.appendChild(el('option', { value: '__new__', text: '＋ 新增科目…' }));
+
+    const newInput = el('input', {
+      type: 'text',
+      id: 'tf-new-subject',
+      maxlength: String(SUBJECT_MAX_LENGTH),
+      placeholder: '新科目名称',
+      hidden: true,
+    });
+
+    select.addEventListener('change', () => {
+      newInput.hidden = select.value !== '__new__';
+      if (!newInput.hidden) newInput.focus();
+    });
+
+    inputs.subject = select;
+    inputs.newSubject = newInput;
+    return el('div.form-field', {}, [
+      el('label', { for: 'tf-subject', text: '所属科目（必填，从科目列表选择）' }),
+      select,
+      newInput,
+      el('div.form-field__hint', {
+        text: '需要新科目时选「＋ 新增科目…」；想改名或删除已有科目，请到「偏好设置 → 科目管理」。',
+      }),
+    ]);
+  }
+
   function ratingField(key, labelText) {
     const select = el('select', { id: `tf-${key}` });
     for (let value = 1; value <= 5; value += 1) {
@@ -146,7 +196,7 @@ export function openTaskForm({ task = null, services }) {
           maxlength: String(TITLE_MAX_LENGTH),
           hint: `中文、emoji 都按 1 个字符计算，最多 ${TITLE_MAX_LENGTH} 个`,
         }),
-        textField('subject', `所属科目（必填，最多 ${SUBJECT_MAX_LENGTH} 字）`, { hint: '例如：高等数学、英语、物理实验' }),
+        subjectField(),
         textField('note', '备注（可选）'),
       ]),
     ]),
@@ -212,7 +262,7 @@ export function openTaskForm({ task = null, services }) {
     const checkedDeps = Array.from(dependsHost.querySelectorAll('input[type=checkbox]:checked')).map((node) => node.value);
     return {
       title: inputs.title.value.trim(),
-      subject: inputs.subject.value.trim(),
+      subject: inputs.subject.value === '__new__' ? inputs.newSubject.value.trim() : String(inputs.subject.value).trim(),
       plannedMinutes: Number.parseInt(inputs.plannedMinutes.value, 10),
       priorCompletedMinutes: Number.parseInt(inputs.priorCompletedMinutes.value, 10) || 0,
       deadlineDate: inputs.deadlineDate.value,
@@ -288,7 +338,15 @@ export function openTaskForm({ task = null, services }) {
       ? { kind: 'task.update', taskId: task.id, patch: values }
       : { kind: 'task.add', input: values };
 
-    const result = services.ui.previewWith([op], {
+    /**
+     * 科目登记：如果用户选了"＋ 新增科目"，先在**同一次草稿链**里登记科目，
+     * 再写任务。这样科目列表与任务永远一致，也不会因为名字只差一个空格而重复。
+     */
+    const ops = [];
+    if (values.subject) ops.push({ kind: 'subject.ensure', name: values.subject });
+    ops.push(op);
+
+    const result = services.ui.previewWith(ops, {
       changeSummary: isEdit ? `修改任务「${values.title}」` : `新增任务「${values.title}」`,
       trigger: 'task-form',
     });

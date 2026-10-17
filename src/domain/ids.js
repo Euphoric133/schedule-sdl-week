@@ -18,6 +18,8 @@ export const ID_PREFIXES = Object.freeze({
   event: 'evt',
   /** 休息时间（一分钟级别的独立安排，按日期拆分显示） */
   rest: 'rst',
+  /** 科目（统一字典项） */
+  subject: 'sbj',
 });
 
 const BASE36 = 36;

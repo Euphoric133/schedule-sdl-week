@@ -89,13 +89,16 @@ export function renderStats({ app, services, now }) {
   nodes.push(
     card({
       title: '最近 14 天',
-      hint: '浅色柱为计划时长，深色柱为实际完成时长',
+      hint: '一天一根柱子：柱高为当天**实际**学习时长，浅色轨道为当天计划时长；两者同一纵轴',
       body: barChart({
-        data: last14.flatMap((day) => [
-          { label: day.date, short: `${Number(day.date.slice(8))}`, value: day.plannedMinutes, display: `计划 ${formatDuration(day.plannedMinutes)}`, kind: 'primary' },
-          { label: day.date, short: '', value: day.actualMinutes, display: `实际 ${formatDuration(day.actualMinutes)}`, kind: 'rest' },
-        ]),
-        height: 140,
+        days: last14.map((day) => ({
+          date: day.date,
+          label: day.date,
+          short: day.date.slice(8),
+          actualMinutes: day.actualMinutes,
+          plannedMinutes: day.plannedMinutes,
+        })),
+        height: 150,
       }),
     }),
   );

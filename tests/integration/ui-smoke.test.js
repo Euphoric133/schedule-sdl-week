@@ -203,8 +203,24 @@ class FakeElement {
     this.focused = true;
   }
 
+  /**
+   * 点击。除了派发 click，还要模拟**浏览器的表单提交行为**：
+   * 表单里的提交按钮（type=submit，或未显式指定 type）被点击时，
+   * 浏览器会触发 <form> 的 submit 事件——这正是"点添加没反应"这类
+   * 缺陷在真实浏览器里的触发路径，打桩 DOM 必须一致，
+   * 否则"按钮有没有接上提交"根本测不出来。
+   */
   click() {
     this.dispatch('click', {});
+    if (this.tagName !== 'BUTTON') return;
+    const type = this.getAttribute('type');
+    const isSubmit = type === null || type === undefined || String(type).toLowerCase() === 'submit';
+    const disabled = this.getAttribute('disabled');
+    if (!isSubmit || disabled === true || disabled === 'true') return;
+
+    let form = this.parentNode;
+    while (form && form.tagName !== 'FORM') form = form.parentNode;
+    if (form) form.dispatch('submit', {});
   }
 
   showModal() {
@@ -716,12 +732,20 @@ test('界面渲染：空数据时每个页面都显示空状态而不是崩溃�
     assert.ok(hasState, `${hash} 在空数据时应给出明确的空状态说明`);
   }
 
-  // 偏好设置页在阶段 3 提供图形化编辑区（可学习时间 / 排程参数 / 权重）
+  // 偏好设置页：仍有排程参数与权重编辑区；但"可学习时间（按星期）"已按要求整块删除
   dom.location.hash = '#/settings';
   module.shell.render();
   const settingsMain = dom.appHost.children[0].byClass('app-main')[0];
   const settingsText = settingsMain.all().map((node) => node.textContent).join('\n');
-  assert.match(settingsText, /可学习时间（按星期）/, '应提供可学习时间的图形化编辑');
+  assert.match(settingsText, /排程参数/, '排程参数编辑区必须保留');
+  assert.match(settingsText, /优先级权重/, '权重编辑区必须保留');
+  assert.equal(
+    /可学习时间（按星期）/.test(settingsText),
+    false,
+    '本轮要求删除"可学习时间（按星期）"区域，界面上不应再出现该标题',
+  );
+  // 底层数据（settings.studyWindows）仍在被排程器使用，不能因为删界面而丢数据
+  assert.ok(module.app.getState().settings.studyWindows, '可学习时间数据必须保留（排程仍然依赖它）');
   assert.match(settingsText, /排程参数/, '应提供排程参数的图形化编辑');
   assert.match(settingsText, /优先级权重/, '应提供权重编辑');
   assert.match(settingsText, /高级：设置 JSON 编辑/, 'JSON 编辑降级为高级入口');

@@ -362,6 +362,24 @@ export function createPlanService({ app, idFactory }) {
    * @param {string} [input.trigger] 触发来源
    * @returns {{ok: boolean, preview?: object, issues?: object[], code?: string, result?: object}}
    */
+  /**
+   * 把界面传来的开始时间规整成引擎要的形状。
+   *
+   * 接受：`{ date, minutes }` 或 `'HH:mm'` 字符串（界面用的是 time 输入框）。
+   * 不合法时返回 null，让引擎走默认规则——绝不把非法值塞进排程。
+   */
+  function normalizeStartAt(startAt) {
+    if (!startAt) return null;
+    if (typeof startAt === 'string') {
+      const match = /^(\d{2}):(\d{2})$/.exec(startAt.trim());
+      if (!match) return null;
+      const minutes = Number(match[1]) * 60 + Number(match[2]);
+      return minutes >= 0 && minutes <= 1440 ? { minutes } : null;
+    }
+    if (typeof startAt === 'object' && Number.isInteger(startAt.minutes)) return startAt;
+    return null;
+  }
+
   function requestPreview(input = {}) {
     // "现在"必须显式传入（引擎是纯函数）。未传时从状态容器的时钟推导，便于界面直接调用。
     const now = input.now ?? wallTimeFromDateObject(new Date(app.clock()));
@@ -429,6 +447,12 @@ export function createPlanService({ app, idFactory }) {
       existingPlan: current,
       baseVersion: baseVersion + 1,
       planId: idFactory.next('plan'),
+      /**
+       * 本次规划的搜索起点（可选）。
+       * 不传时引擎自己按"当前时刻之后的下一个整点"推导，
+       * 因此界面只需要在用户**显式填写**时才传值。
+       */
+      startAt: normalizeStartAt(input.startAt),
     });
 
     if (!engineResult.ok) {

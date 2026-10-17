@@ -118,9 +118,14 @@ test('端到端：生成计划 → 预览显示真实差异 → 确认应用后�
     assert.equal(created.ok, true);
     env.instance.app.refresh?.();
 
-    // 2) 首页点"生成七天计划"
+    // 2) 首页点"生成七天计划"→ 弹出开始时间选择 → 不填（用默认规则）直接生成
     env.go('#/home');
     env.click('生成七天计划');
+    const dialogSubmit = env.dom.document.body
+      .all()
+      .find((node) => node.tagName === 'BUTTON' && node.textContent.trim() === '生成计划');
+    assert.ok(dialogSubmit, '应弹出「生成计划」对话框（含可选开始时间）');
+    dialogSubmit.click();
 
     // 3) 跳到调整预览，并且看到真实的差异（不是一堆 0）
     assert.equal(env.dom.location.hash, '#/preview');

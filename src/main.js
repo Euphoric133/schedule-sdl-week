@@ -14,6 +14,7 @@ import { createPlanService } from './services/planService.js';
 import { createFocusService } from './services/focusService.js';
 import { createFixedActivityService } from './services/fixedActivityService.js';
 import { createRestService } from './services/restService.js';
+import { createSubjectService } from './services/subjectService.js';
 import { createAppearanceService } from './services/appearanceService.js';
 import { createNotificationService } from './services/notificationService.js';
 import { createStatsService } from './services/statsService.js';
@@ -40,6 +41,8 @@ import { renderVersions } from './ui/pages/versions.js';
 import { openTaskForm } from './ui/forms/taskForm.js';
 import { openFixedActivityForm } from './ui/forms/fixedActivityForm.js';
 import { openRestForm } from './ui/forms/restForm.js';
+import { openPlanStartForm } from './ui/forms/planStartForm.js';
+import { openRestSettingsForm } from './ui/forms/restSettingsForm.js';
 import { openSessionDetail } from './ui/forms/sessionDetail.js';
 
 const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -92,6 +95,51 @@ function createUiService({ services }) {
     openFixedActivityForm(activityId) {
       const activity = activityId ? services.fixedActivityService.get(activityId) : null;
       openFixedActivityForm({ activity, services });
+    },
+
+    /**
+     * 打开"生成计划"入口（可选开始时间）。
+     *
+     * 所有"生成 / 重新规划"按钮都走这里，保证开始时间规则只有一处实现。
+     */
+    openPlanForm({ changeSummary, trigger } = {}) {
+      openPlanStartForm({
+        services,
+        changeSummary: changeSummary ?? '生成计划',
+        trigger: trigger ?? 'plan-form',
+      });
+    },
+
+    /** 重新渲染当前页面（数据变更后让界面立刻反映结果） */
+    renderCurrent() {
+      if (shell) shell.renderCurrent();
+    },
+
+    /** 科目：新增 / 重命名 / 删除（都走同一条变更路径） */
+    saveSubject(op) {
+      const applied = applyDraftOp(services.app.getState(), op, {
+        idFactory: services.idFactory,
+        nowIso: services.clockIso(),
+      });
+      if (!applied.ok) {
+        const message = applied.issues?.[0]?.message ?? '科目操作失败。';
+        toast(message, 'error', 8000);
+        return { ok: false, issues: applied.issues ?? [], message };
+      }
+      const written = services.app.commit(() => applied.state, { reason: op.kind });
+      if (!written.ok) {
+        toast(written.error?.message ?? '保存失败，数据没有被修改。', 'error');
+        return { ok: false, message: '保存失败' };
+      }
+      return { ok: true, createdId: applied.createdId ?? null };
+    },
+
+    /**
+     * 打开「设置休息」（两种模式：仅今晚 / 每周固定睡觉时间）。
+     * 每日视图右上角的主入口。
+     */
+    openRestSettings() {
+      openRestSettingsForm({ services });
     },
 
     /** 打开休息时间表单（新建或编辑） */
@@ -162,9 +210,12 @@ function createUiService({ services }) {
      * 但它仍然是**同一次原子提交**，失败时数据保持原样。
      */
     saveRest(op) {
-      const applied = applyDraftOp(app.getState(), op, { idFactory, nowIso: nowIso() });
+      const applied = applyDraftOp(services.app.getState(), op, {
+        idFactory: services.idFactory,
+        nowIso: services.clockIso(),
+      });
       if (!applied.ok) return { ok: false, issues: applied.issues ?? [] };
-      const written = app.commit(() => applied.state, { reason: op.kind });
+      const written = services.app.commit(() => applied.state, { reason: op.kind });
       if (!written.ok) {
         return { ok: false, issues: [{ severity: 'error', message: written.error?.message ?? '保存失败，数据没有被修改。' }] };
       }
@@ -172,14 +223,14 @@ function createUiService({ services }) {
     },
 
     /** 删除一条休息安排（它的所有日期片段会一起消失） */
-    async deleteRest(restId) {
+    async deleteRest(restId, options = {}) {
       const rest = services.restService.get(restId);
       if (!rest) {
-        toast('这条休息时间已经不存在。', 'error');
+        if (!options.silent) toast('这条休息时间已经不存在。', 'error');
         return { ok: false };
       }
       const dates = services.restService.datesOf(restId);
-      const confirmed = await confirmDialog({
+      const confirmed = options.silent === true ? true : await confirmDialog({
         title: `删除休息时间「${rest.title}」？`,
         message: '这次休息在所有日期的显示都会一起移除。',
         bullets: dates.length > 1 ? [`涉及 ${dates.length} 天：${dates.join('、')}`] : ['只涉及 1 天'],
@@ -188,17 +239,20 @@ function createUiService({ services }) {
       });
       if (!confirmed) return { ok: false, cancelled: true };
 
-      const applied = applyDraftOp(app.getState(), { kind: 'rest.remove', restId }, { idFactory, nowIso: nowIso() });
+      const applied = applyDraftOp(services.app.getState(), { kind: 'rest.remove', restId }, {
+        idFactory: services.idFactory,
+        nowIso: services.clockIso(),
+      });
       if (!applied.ok) {
         toast(applied.issues?.[0]?.message ?? '删除失败。', 'error');
         return { ok: false, issues: applied.issues };
       }
-      const written = app.commit(() => applied.state, { reason: 'rest-remove' });
+      const written = services.app.commit(() => applied.state, { reason: 'rest-remove' });
       if (!written.ok) {
         toast(written.error?.message ?? '删除失败，数据没有被修改。', 'error');
         return { ok: false };
       }
-      toast('休息时间已删除。', 'success');
+      if (!options.silent) toast('休息时间已删除。', 'success');
       return { ok: true };
     },
 
@@ -271,6 +325,7 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
   services.taskService = createTaskService({ app, idFactory });
   services.fixedActivityService = createFixedActivityService({ app, idFactory });
   services.restService = createRestService({ app });
+  services.subjectService = createSubjectService({ app });
 
   /* —— 界面偏好与外观（主题、壁纸）—— */
   services.preferences = loadPreferences();
@@ -297,6 +352,8 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
   services.statsService = createStatsService({ app, now: () => services.now() });
   services.planService = createPlanService({ app, idFactory });
   services.focusService = createFocusService({ app, idFactory, now: services.now });
+  // 供 ui 服务写入审计字段（createdAt / updatedAt）使用；引擎与 domain 仍然只接受显式传入的时间
+  services.clockIso = nowIso;
   services.ui = createUiService({ services });
 
   const todayWall = services.now();

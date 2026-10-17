@@ -14,7 +14,8 @@ import { formatIssue } from '../../domain/validation.js';
 import { WEEKDAY_NAMES_ZH, formatDuration } from '../../domain/time.js';
 import { confirmDialog } from '../modal.js';
 import { backupReminder } from '../../storage/backup.js';
-import { renderNumericEditor, renderStudyWindowsEditor, renderWeightsEditor } from '../forms/settingsEditors.js';
+import { renderNumericEditor, renderWeightsEditor } from '../forms/settingsEditors.js';
+import { renderSubjectManager } from '../forms/subjectManager.js';
 
 export function renderSettings({ app, services }) {
   const state = app.getState();
@@ -35,7 +36,6 @@ export function renderSettings({ app, services }) {
   );
 
   // —— 图形化编辑区 ——
-  nodes.push(renderStudyWindowsEditor({ services, settings }));
   nodes.push(renderNumericEditor({ services, settings }));
   nodes.push(renderWeightsEditor({ services, settings }));
 
@@ -48,44 +48,17 @@ export function renderSettings({ app, services }) {
     }),
   );
 
-  // —— 可学习时间 ——
-  nodes.push(
-    card({
-      title: '可学习时间（按星期）',
-      hint: '支持跨午夜（如 22:00–02:00）。睡眠、上课等请通过"固定活动"表达，不在这里重复扣除',
-      flush: true,
-      body: el('div.table-wrap', {}, [
-        el('table', {}, [
-          el('thead', {}, [el('tr', {}, [el('th', { text: '星期' }), el('th', { text: '可学习区间' }), el('th', { text: '每日可学时长' })])]),
-          el(
-            'tbody',
-            {},
-            [1, 2, 3, 4, 5, 6, 7].map((day) => {
-              const windows = settings.studyWindows?.[day] ?? settings.studyWindows?.[String(day)] ?? [];
-              const total = windows.reduce((sum, w) => {
-                const start = w.startMinutes ?? toMinutes(w.start);
-                let end = w.endMinutes ?? toMinutes(w.end);
-                if (end <= start) end += 1440;
-                return sum + (end - start);
-              }, 0);
-              return el('tr', {}, [
-                el('td', { text: WEEKDAY_NAMES_ZH[day - 1] }),
-                el('td', {
-                  text:
-                    windows.length === 0
-                      ? '不可学习'
-                      : windows
-                          .map((w) => `${toHHmm(w.startMinutes ?? toMinutes(w.start))}–${toHHmm(w.endMinutes ?? toMinutes(w.end))}`)
-                          .join('、'),
-                }),
-                el('td', { text: total > 0 ? formatDuration(total) : '—' }),
-              ]);
-            }),
-          ),
-        ]),
-      ]),
-    }),
-  );
+  /**
+   * 这里原本有一个"可学习时间（按星期）"区域。
+   *
+   * 本轮按要求**整块删除**了它：界面上不再出现该标题、说明文字与表格。
+   * 但底层数据（settings.studyWindows）仍然保留并被排程器与容量计算使用——
+   * 删的只是这个只读总览区块，不是排程需要的数据。
+   * 需要调整可学习时间时，请直接用下方的 JSON 编辑区（会先生成预览再生效）。
+   */
+
+  // —— 科目管理（统一字典：新增 / 改名 / 删除） ——
+  nodes.push(renderSubjectManager({ services }));
 
   // —— 排程参数总览 ——
   nodes.push(
@@ -486,11 +459,6 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function toMinutes(value) {
-  if (typeof value === 'number') return value;
-  const m = /^(\d{2}):(\d{2})$/.exec(String(value ?? ''));
-  return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
-}
 
 function toHHmm(minutes) {
   const wrapped = ((minutes % 1440) + 1440) % 1440;
