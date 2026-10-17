@@ -528,3 +528,62 @@ test('排序：同一天内顺序稳定，学习 → 固定 → 休息', () => {
   assert.deepEqual(sorted, ['s0', 's1', 'f1', 'r1']);
   assert.deepEqual([...cards].sort(compareCards).map((c) => c.id), sorted, '排序必须稳定');
 });
+
+/* ================================================================== *
+ * 八、跨夜休息在界面上的文案（22:00–24:00 而不是 22:00–00:00）
+ * ================================================================== */
+
+test('休息：当天片段结束于午夜时显示为 24:00，次日片段从 00:00 开始', async () => {
+  const { readFile, writeFile } = await import('node:fs/promises');
+  const { join, resolve } = await import('node:path');
+
+  const root = resolve(import.meta.dirname, '..', '..');
+  const smoke = await readFile(join(root, 'tests', 'integration', 'ui-smoke.test.js'), 'utf8');
+  const code = smoke.slice(smoke.indexOf('class FakeClassList'), smoke.indexOf("test('界面启动")) + '\nexport { installFakeDom };';
+  await writeFile('/tmp/round2-rest-fakedom.mjs', code);
+  const { installFakeDom } = await import('/tmp/round2-rest-fakedom.mjs');
+
+  const dom = installFakeDom();
+  const { boot } = await import(pathToFileURL(join(root, 'src', 'main.js')).href);
+  const instance = boot({ root: dom.appHost, clock: () => new Date(2025, 9, 16, 12, 30) });
+
+  // 22:00 → 次日 08:00
+  const preview = instance.services.planService.requestPreview({
+    now: instance.services.now(),
+    ops: [
+      {
+        kind: 'rest.add',
+        input: { title: '睡觉', startDate: '2025-10-16', startMinutes: 22 * 60, endDate: '2025-10-17', endMinutes: 8 * 60 },
+      },
+    ],
+  });
+  assert.equal(preview.ok, true);
+  assert.equal(instance.services.planService.applyPreview().ok, true);
+
+  dom.location.hash = '#/week';
+  instance.shell.render();
+  const main = dom.appHost.children[0].byClass('app-main')[0];
+  const cards = main.byClass('day-card--rest');
+  const texts = cards.map((node) => node.textContent.replace(/\s+/g, ' '));
+
+  assert.equal(cards.length, 2, '跨夜休息应显示为两个日期区块');
+  assert.ok(texts.some((text) => text.includes('22:00–24:00')), `前半段应显示 22:00–24:00，实际 ${texts.join(' || ')}`);
+  assert.ok(texts.some((text) => text.includes('00:00–08:00')), `后半段应显示 00:00–08:00，实际 ${texts.join(' || ')}`);
+
+  // 固定任务与休息都不能被学习任务的完成逻辑影响
+  assert.equal(main.byClass('timeline__corner').length, 0);
+
+  delete globalThis.Node;
+  delete globalThis.addEventListener;
+  delete globalThis.removeEventListener;
+  delete globalThis.document;
+  delete globalThis.window;
+  delete globalThis.location;
+  delete globalThis.localStorage;
+  delete globalThis.requestAnimationFrame;
+  delete globalThis.getComputedStyle;
+  delete globalThis.setInterval;
+  delete globalThis.clearInterval;
+  delete globalThis.setTimeout;
+  delete globalThis.clearTimeout;
+});

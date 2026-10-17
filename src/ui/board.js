@@ -214,6 +214,16 @@ export function renderBoard({ columns, today, services, onOpenStudy, onCompleteS
   );
 }
 
+/**
+ * 时刻文案：1440 分钟（当天结束）显示为 24:00，而不是 00:00。
+ *
+ * 这直接影响"跨夜休息"的可读性：用户设置 22:00 → 次日 08:00 时，
+ * 今天的片段必须显示成 22:00–24:00，才不会被误读成"到 00:00 就结束了"。
+ */
+function clockLabel(minutes) {
+  return minutes === 1440 ? '24:00' : formatMinutes(minutes);
+}
+
 function renderColumn({ column, today, services, onOpenStudy, onCompleteStudy, onDeleteTask, onDeleteRest }) {
   const { date, cards } = column;
   const isToday = date === today;
@@ -242,9 +252,9 @@ function renderCard({ card, services, onOpenStudy, onCompleteStudy, onDeleteTask
 
   const timeText =
     Number.isInteger(card.startMinutes) && Number.isInteger(card.endMinutes)
-      ? `${formatMinutes(card.startMinutes)}–${formatMinutes(card.endMinutes)}`
+      ? `${clockLabel(card.startMinutes)}–${clockLabel(card.endMinutes)}`
       : Number.isInteger(card.startMinutes)
-        ? formatMinutes(card.startMinutes)
+        ? clockLabel(card.startMinutes)
         : '全天';
 
   const tags = [
