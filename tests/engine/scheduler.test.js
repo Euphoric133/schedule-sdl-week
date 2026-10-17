@@ -605,16 +605,20 @@ test('依赖成环时返回 invalid_input（引擎无法为环排序）', () => 
   assert.ok(result.diagnostics.some((item) => item.code === 'V014'), '应指出循环依赖');
 });
 
-test('空数据：一个任务都没有时明确拒绝，并给出可执行的引导（不谎报"完整可行"）', () => {
-  // 这条以前是"返回完整但为空的可行计划"，但那会让用户在看到"完整可行 + 全部 0"时
-  // 误以为系统已经生成了有意义的计划。现在必须明确拒绝并告诉用户下一步做什么。
+test('空数据：一个任务都没有时引擎照常产出空计划，并明确说明"没有可排内容"', () => {
+  // 为什么引擎不在这里拒绝：删除最后一个任务、完成所有任务都是合法操作，
+  // 它们同样要经过「候选计划 → 预览 → 确认」。真正的"先新建任务"引导在
+  // planService.requestPreview 里（只在用户主动生成计划且没有任务时触发）。
   const env = engineContext();
   const result = env.run();
 
-  assert.equal(result.ok, false);
-  assert.equal(result.status, PLAN_STATUS.INVALID_INPUT);
-  assert.ok(result.issues.length > 0, '必须给出可读的问题说明');
-  assert.match(result.issues[0].message, /没有|新建/, '说明必须包含"没有任务"与"去新建"的信息');
+  assert.equal(result.ok, true);
+  assert.equal(studyBlocks(result.plan).length, 0, '不应包含任何学习时段（也不得伪造）');
+  assert.equal(result.plan.days.length, 7);
+  assert.ok(
+    result.diagnostics.some((item) => /没有.*任务/.test(item.message)),
+    '必须如实说明这份计划里没有内容，而不是让用户面对一堆 0',
+  );
 });
 
 test('空数据：任务全部已完成或已取消（但任务表非空）时照常生成"没有学习安排"的计划', () => {

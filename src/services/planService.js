@@ -390,6 +390,30 @@ export function createPlanService({ app, idFactory }) {
       if (shift?.windowStart) windowStart = shift.windowStart;
     }
 
+    /**
+     * "先新建任务"的引导放在这里，而不是引擎里。
+     *
+     * 只有**用户主动生成计划**（没有携带任何数据变更）且一个任务都没有时才拦截；
+     * 删除任务这类携带变更的操作必须照常生成候选计划，
+     * 否则会出现"删不掉最后一个任务"的死角。
+     */
+    if (ops.length === 0 && (state.tasks ?? []).length === 0) {
+      return {
+        ok: false,
+        code: 'no_tasks',
+        status: 'invalid_input',
+        issues: [
+          error(
+            C.REQUIRED,
+            'tasks',
+            '还没有可以安排的学习任务。请先到「学习任务」页新建任务（填好预计用时与截止日期），再来生成计划。',
+            {},
+          ),
+        ],
+        diagnostics: [],
+      };
+    }
+
     const current = getOfficialPlan();
     const baseVersion = current?.version ?? 0;
     // 基准指纹取**当前状态**的指纹（而不是旧计划里存的指纹）：

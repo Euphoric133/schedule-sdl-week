@@ -28,6 +28,7 @@ import {
   validateFixedActivity,
 } from '../domain/fixedActivity.js';
 import { checkTaskDependencies } from '../domain/graph.js';
+import { reconcileTaskSessions } from './reconcile.js';
 import { validateSettings } from '../domain/schemas.js';
 import { VALIDATION_CODES as C, error, mergeResults, result } from '../domain/validation.js';
 
@@ -215,7 +216,20 @@ function updateTaskOp(state, op, ctx) {
   const dependencyIssues = checkTaskDependencies(state.tasks.map((item) => (item.id === next.id ? next : item)));
   if (dependencyIssues.length > 0) return { ok: false, state, issues: dependencyIssues };
 
-  return { ok: true, state: { ...state, tasks: state.tasks.map((item) => (item.id === next.id ? next : item)) }, issues: [] };
+  /**
+   * 编辑任务同样要同步时段。
+   *
+   * 典型场景：把"预计总用时"从 120 分钟改成 60 分钟（或把"已经完成"填成 30 分钟），
+   * 剩余工作量变小了，但已经排好的 120 分钟时段还在——
+   * 这就是用户看到的"未完成时段合计 120 分钟，但剩余工作量只有 60 分钟"。
+   */
+  const withTask = {
+    ...state,
+    tasks: state.tasks.map((item) => (item.id === next.id ? next : item)),
+  };
+  const reconciled = reconcileTaskSessions(withTask, next.id, { nowIso: ctx.nowIso });
+
+  return { ok: true, state: reconciled.state, issues: [], repairs: reconciled.repairs };
 }
 
 function taskStatusOp(state, op, ctx) {
@@ -225,20 +239,27 @@ function taskStatusOp(state, op, ctx) {
   const { task: next, issue } = transitionTaskStatus(task, op.to, { nowIso: ctx.nowIso });
   if (issue) return { ok: false, state, issues: [issue] };
 
-  // 取消/删除任务时，未完成的时段一并取消（已完成记录保留）
-  const shouldCancelSessions = op.to === TASK_STATUS.CANCELLED || op.to === TASK_STATUS.DELETED;
-  const sessions = shouldCancelSessions
-    ? (state.sessions ?? []).map((session) =>
-        session.taskId === op.taskId && session.state !== SESSION_STATE.COMPLETED && session.state !== SESSION_STATE.CANCELLED
-          ? { ...session, state: SESSION_STATE.CANCELLED, locked: false, updatedAt: ctx.nowIso }
-          : session,
-      )
-    : state.sessions;
+  /**
+   * 状态迁移必须**同时**处理关联的未完成时段。
+   *
+   * 这是本项目最严重缺陷的根因：以前只把任务状态改成 completed，
+   * 但没有取消它已经排好的时段，于是出现"已完成，却还有 120 分钟未完成时段"，
+   * 导致整体校验失败、任务删不掉、严重时下次打开应用数据读不出来。
+   *
+   * 现在的做法：先写入新状态，再由 reconcile 统一把时段对齐到新的剩余工作量
+   * （完成任务时剩余工作量为 0，因此它的未完成时段会被全部取消；已完成记录保留）。
+   */
+  const withTask = {
+    ...state,
+    tasks: state.tasks.map((item) => (item.id === next.id ? next : item)),
+  };
+  const reconciled = reconcileTaskSessions(withTask, next.id, { nowIso: ctx.nowIso });
 
   return {
     ok: true,
-    state: { ...state, tasks: state.tasks.map((item) => (item.id === next.id ? next : item)), sessions },
+    state: reconciled.state,
     issues: [],
+    repairs: reconciled.repairs,
   };
 }
 

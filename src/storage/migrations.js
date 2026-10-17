@@ -13,6 +13,7 @@
  */
 
 import { CURRENT_SCHEMA_VERSION, defaultSettings, validateAppState } from '../domain/schemas.js';
+import { describeRepairs, reconcileState } from '../domain/reconcile.js';
 import { VALIDATION_CODES as C, error, mergeResults, result } from '../domain/validation.js';
 
 /**
@@ -23,6 +24,19 @@ import { VALIDATION_CODES as C, error, mergeResults, result } from '../domain/va
 export const MIGRATIONS = Object.freeze({
   // 1: (state) => ({ ...state, schemaVersion: 2, ... })   ← 当结构升级到 v2 时在此添加
 });
+
+/**
+ * 可以安全自动修复的错误码。
+ *
+ * 故意只包含"任务与时段之间数量不一致"这一类——
+ * 它们的修复方式是确定的、不会丢失已完成的学习记录，
+ * 而结构损坏、字段缺失、类型错误等仍然必须如实报错，不能被"修复"掩盖。
+ */
+const REPAIRABLE_CODES = new Set([
+  C.TASK_DURATION_INCONSISTENT,
+  C.TASK_OVER_COMPLETED,
+  C.ENTITY_DANGLING_REF,
+]);
 
 /** 迁移过程中补全缺失的顶层容器（容错：旧数据可能缺少后来新增的数组字段） */
 function fillMissingContainers(state) {
@@ -74,7 +88,7 @@ function fillMissingContainers(state) {
  * @param {boolean} [options.skipSemanticValidation] 仅供迁移单元测试使用
  * @returns {{ok: boolean, state?: object, issues: object[], error?: Error, migratedFrom?: number}}
  */
-export function migrateState(raw, { skipSemanticValidation = false } = {}) {
+export function migrateState(raw, { skipSemanticValidation = false, allowRepair = true } = {}) {
   const issues = [];
 
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -150,6 +164,42 @@ export function migrateState(raw, { skipSemanticValidation = false } = {}) {
   if (!skipSemanticValidation) {
     const validation = validateAppState(state);
     if (!validation.ok) {
+      /**
+       * 语义校验失败时的**安全修复**路径。
+       *
+       * 背景：历史版本存在一个缺陷——把任务标记为完成后，没有同步取消它已排的时段，
+       * 于是数据里出现"任务已完成，但还有未完成时段"的状态。
+       * 这种数据以前会被判定为"无法读取"，界面显示为空白，
+       * 用户会以为"任务丢了"（实际上磁盘数据还在）。
+       *
+       * 现在的处理：
+       * 1. 只有当**全部**错误都属于"可自动修复的不一致"时才尝试修复；
+       *    其它任何错误（结构损坏、字段缺失等）仍然按原来的方式拒绝读取，
+       *    避免用修复掩盖真正的数据损坏。
+       * 2. 修复只取消**未完成**的时段、只调整任务的预计总用时；
+       *    已完成的学习记录一律保留。
+       * 3. 修复结果必须重新通过完整校验才会被采用。
+       * 4. 修复内容会作为 warning 返回，界面会明确告知用户改了什么。
+       *    同时也保留了原始数据：写入修复后的状态时，存储层会把旧数据轮转到备份槽。
+       */
+      // 是否允许自动修复由上层的场景决定：
+      // - 读取自己已有的数据：允许（否则用户会看到空白应用）
+      // - 导入外部文件：不允许（导入会整体替换数据，宁可拒绝并列出问题，让用户确认）
+      const repairable = allowRepair && validation.errors.every((issue) => REPAIRABLE_CODES.has(issue.code));
+      if (repairable) {
+        const repair = reconcileState(state, { nowIso: new Date().toISOString() });
+        const revalidation = validateAppState(repair.state);
+        if (repair.changed && revalidation.ok) {
+          issues.push({
+            severity: 'warning',
+            code: C.SCHEMA_SHAPE,
+            path: 'state',
+            message: describeRepairs(repair.repairs),
+            repairs: repair.repairs,
+          });
+          return { ok: true, state: repair.state, issues, migratedFrom: fromVersion, repaired: true, repairs: repair.repairs };
+        }
+      }
       return { ok: false, state, issues: mergeResults(result(issues), validation).issues, error: new Error('数据校验未通过') };
     }
     return { ok: true, state, issues: mergeResults(result(issues), validation).issues, migratedFrom: fromVersion };

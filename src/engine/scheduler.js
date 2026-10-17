@@ -215,29 +215,26 @@ export function run(input) {
    * 会看到"完整可行 + 全部 0"，误以为系统已经生成了有意义的计划。
    * 这里明确返回 invalid_input 并给出可执行的下一步建议。
    */
+  /**
+   * 一个任务都没有的情况：**不在这里拒绝**。
+   *
+   * 原因是"删除最后一个任务""完成所有任务"都是合法操作，它们同样需要走
+   * 「生成候选计划 → 预览 → 确认」这条路径。真正需要"先新建任务"提示的，
+   * 是"用户主动点生成计划但完全没有任务"这个场景，那属于界面层的入口判断
+   * （见 planService.requestPreview），而不是引擎的职责。
+   * 这里只记录一条诊断，让界面知道这份计划里没有任何可排内容。
+   */
   const allTasks = state.tasks ?? [];
   if (allTasks.length === 0) {
-    return invalidResult({
-      now,
-      windowStart,
-      windowEnd,
-      windowDays,
-      policy,
-      state,
-      baseVersion: input.baseVersion,
-      existingPlan: input.existingPlan,
-      taskById,
-      issues: [
-        {
-          severity: 'error',
-          code: VALIDATION_CODES.REQUIRED,
-          path: 'tasks',
-          message: '目前一个学习任务都没有，无法生成计划。请先在「任务」页新建至少一个任务，填好预计时长与截止日期。',
-        },
-      ],
+    diagnostics.push({
+      code: DIAGNOSTIC_CODE.NO_CAPACITY,
+      severity: 'info',
+      message: '当前没有任何学习任务，这份计划里不会包含学习时段。',
+      path: 'tasks',
     });
   }
-  // 说明：任务表非空但**没有可排任务**（例如全部已完成、已取消或已删除）是合法状态，
+
+  // 说明：任务表非空但**没有可排任务**  // 说明：任务表非空但**没有可排任务**（例如全部已完成、已取消或已删除）是合法状态，
   // 此时应当照常生成一份"没有学习安排"的计划，让用户可以预览影响（例如取消任务会释放哪些时段），
   // 而不是报错拒绝。
 

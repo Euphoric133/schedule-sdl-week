@@ -147,8 +147,10 @@ export function parseImport(text, options = {}) {
     return { ok: false, issues: [...issues, ...shapeIssues], error: new Error('导入数据的顶层结构不完整') };
   }
 
-  // 结构迁移 + 语义校验（任何失败都不返回可写入的数据）
-  const migrated = migrateState(candidate);
+  // 结构迁移 + 语义校验（任何失败都不返回可写入的数据）。
+  // 导入时**不做**自动修复：导入会整体替换现有数据，
+  // 如果文件本身不一致，应当如实拒绝并列出问题，而不是替用户"修好"再覆盖。
+  const migrated = migrateState(candidate, { allowRepair: false });
   if (!migrated.ok) {
     return {
       ok: false,
