@@ -13,7 +13,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildDayColumn, compareCards, deriveStatus, resolveDates } from '../../src/ui/pages/day.js';
+import { buildDayCards, compareCards, deriveStatus, gridStepsFor, GRID_QUANTUM_MINUTES, MIN_CARD_STEPS } from '../../src/ui/board.js';
 import { SESSION_STATE } from '../../src/domain/session.js';
 import { FIXED_ACTIVITY_TYPE } from '../../src/domain/fixedActivity.js';
 import { createTestApp, taskInput } from '../helpers/app.js';
@@ -37,27 +37,48 @@ function planned() {
  * 日期列
  * ================================================================== */
 
-test('日期列：默认展示当前计划范围内的 7 天，不擅自扩大', () => {
-  const env = planned();
-  const plan = env.services.planService.getOfficialPlan();
-  const dates = resolveDates({ plan, today: NOW.date });
+test('日期列：页面渲染出 7 个连续日期列，且没有时间列/时间刻度', async () => {
+  const rendered = await renderWeekPage();
+  try {
+    const { main } = rendered;
+    const columns = main.byClass('day-board__col');
+    assert.equal(columns.length, 7, '应有 7 个日期列');
 
-  assert.equal(dates.length, 7);
-  assert.equal(dates[0], plan.windowStart);
-  assert.equal(dates[6], plan.windowEnd);
-  // 日期连续
-  for (let i = 1; i < dates.length; i += 1) {
-    const prev = new Date(`${dates[i - 1]}T00:00:00Z`).getTime();
-    const current = new Date(`${dates[i]}T00:00:00Z`).getTime();
-    assert.equal(current - prev, 86400000, `日期应连续：${dates[i - 1]} → ${dates[i]}`);
+    // 不存在最左侧"时间"表头、也不存在小时刻度
+    assert.equal(main.byClass('timeline__corner').length, 0, '不应有"时间"表头');
+    assert.equal(main.byClass('timeline__hour').length, 0, '不应有小时刻度行');
+    // 说明：不能直接用 includes('时间')，因为"休息时间"本身就包含"时间"
+    const headers = main.all().filter((node) => node.textContent.trim() === '时间');
+    assert.equal(headers.length, 0, '页面上不应残留"时间"列标题');
+
+    // 每一列都有表头，日期连续
+    const nums = main.byClass('day-board__num').map((node) => node.textContent);
+    assert.equal(nums.length, 7);
+    for (let i = 1; i < nums.length; i += 1) {
+      assert.ok(nums[i] > nums[i - 1], `日期列应按时间递增：${nums[i - 1]} → ${nums[i]}`);
+    }
+  } finally {
+    rendered.cleanup();
   }
 });
 
-test('日期列：还没有计划时以今天为起点展示 7 天', () => {
-  const dates = resolveDates({ plan: null, today: '2025-10-16' });
-  assert.equal(dates.length, 7);
-  assert.equal(dates[0], '2025-10-16');
-  assert.equal(dates[6], '2025-10-22');
+test('网格：5 分钟为一个标准格，卡片高度按时长取整数格', () => {
+  assert.equal(GRID_QUANTUM_MINUTES, 5, '基准时长必须是 5 分钟');
+  assert.equal(gridStepsFor(5), MIN_CARD_STEPS, '5 分钟 = 最小可点击格数');
+  assert.equal(gridStepsFor(10), MIN_CARD_STEPS);
+  assert.equal(gridStepsFor(15), MIN_CARD_STEPS);
+  assert.equal(gridStepsFor(30), 6, '30 分钟 = 6 格');
+  assert.equal(gridStepsFor(45), 9);
+  assert.equal(gridStepsFor(60), 12, '60 分钟正好是 30 分钟的两倍');
+  assert.equal(gridStepsFor(90), 18);
+  assert.equal(gridStepsFor(120), 24);
+
+  // 非 5 分钟倍数向上取整，不丢失时长
+  assert.equal(gridStepsFor(7), MIN_CARD_STEPS);
+  assert.equal(gridStepsFor(32), 7, '32 分钟向上取整为 7 格（35 分钟的量）');
+  // 倍数关系严格成立
+  assert.equal(gridStepsFor(60) / gridStepsFor(30), 2);
+  assert.equal(gridStepsFor(120) / gridStepsFor(60), 2);
 });
 
 /* ================================================================== *
@@ -96,7 +117,7 @@ test('内容：学习任务与固定任务都出现在对应日期里，并有�
   const sessionDate = (nextState.sessions ?? []).find((s) => s.state === SESSION_STATE.FLEXIBLE)?.date;
   assert.ok(sessionDate, '应有学习时段');
 
-  const studyColumn = buildDayColumn({
+  const studyColumn = buildDayCards({
     date: sessionDate,
     state: nextState,
     plan,
@@ -104,11 +125,11 @@ test('内容：学习任务与固定任务都出现在对应日期里，并有�
     today: NOW.date,
     nowMinutes: NOW.minutes,
   });
-  assert.ok(studyColumn.cards.some((card) => card.kind === 'study'), '应显示学习任务');
+  assert.ok(studyColumn.some((card) => card.kind === 'study'), '应显示学习任务');
 
   // 找一个周四（2025-10-16 是周四）
   const thursday = '2025-10-16';
-  const fixedColumn = buildDayColumn({
+  const fixedColumn = buildDayCards({
     date: thursday,
     state: nextState,
     plan,
@@ -116,7 +137,7 @@ test('内容：学习任务与固定任务都出现在对应日期里，并有�
     today: NOW.date,
     nowMinutes: NOW.minutes,
   });
-  const fixedCard = fixedColumn.cards.find((card) => card.kind === 'fixed');
+  const fixedCard = fixedColumn.find((card) => card.kind === 'fixed');
   assert.ok(fixedCard, '周四应显示固定课程');
   assert.equal(fixedCard.title, '高等数学课');
   assert.equal(fixedCard.startMinutes, 8 * 60);
@@ -127,7 +148,7 @@ test('内容：没有具体时间的任务不会被隐藏', () => {
   const env = createTestApp();
   const state = env.app.getState();
   const plan = { version: 1, windowStart: NOW.date, windowEnd: NOW.date, blocks: [], days: [] };
-  const column = buildDayColumn({
+  const emptyCards = buildDayCards({
     date: NOW.date,
     state,
     plan,
@@ -135,8 +156,8 @@ test('内容：没有具体时间的任务不会被隐藏', () => {
     today: NOW.date,
     nowMinutes: NOW.minutes,
   });
-  // 没有 block 时列是空的，但不应报错；下面构造一个"只有开始时间"的块
-  assert.deepEqual(column.cards, []);
+  // 没有 block 时列是空的，但不应报错；下面构造一个"没有具体时间"的块
+  assert.deepEqual(emptyCards, []);
 
   const withBlock = {
     ...plan,
@@ -153,7 +174,7 @@ test('内容：没有具体时间的任务不会被隐藏', () => {
       },
     ],
   };
-  const column2 = buildDayColumn({
+  const column2 = buildDayCards({
     date: NOW.date,
     state,
     plan: withBlock,
@@ -161,8 +182,8 @@ test('内容：没有具体时间的任务不会被隐藏', () => {
     today: NOW.date,
     nowMinutes: NOW.minutes,
   });
-  assert.equal(column2.cards.length, 1, '没有具体时间的任务也必须显示，不能被隐藏');
-  assert.equal(column2.cards[0].startMinutes, null);
+  assert.equal(column2.length, 1, '没有具体时间的任务也必须显示，不能被隐藏');
+  assert.equal(column2[0].startMinutes, null);
 });
 
 test('状态：已完成 / 进行中 / 已过期 / 已锁定 不会混淆', () => {
@@ -231,7 +252,7 @@ test('排序：真实数据下同一天的多次渲染顺序完全一致', () =>
   const date = plan.windowStart;
 
   const runs = Array.from({ length: 5 }, () =>
-    buildDayColumn({ date, state, plan, services: env.services, today: NOW.date, nowMinutes: NOW.minutes }).cards.map(
+    buildDayCards({ date, state, plan, services: env.services, today: NOW.date, nowMinutes: NOW.minutes }).map(
       (card) => card.id,
     ),
   );
@@ -248,7 +269,7 @@ test('隔离：每日视图不再包含缓冲时间、番茄钟或转盘相关�
   const env = planned();
   const state = env.app.getState();
   const plan = env.services.planService.getOfficialPlan();
-  const column = buildDayColumn({
+  const columnCards = buildDayCards({
     date: plan.windowStart,
     state,
     plan,
@@ -257,14 +278,14 @@ test('隔离：每日视图不再包含缓冲时间、番茄钟或转盘相关�
     nowMinutes: NOW.minutes,
   });
 
-  for (const card of column.cards) {
+  for (const card of columnCards) {
     assert.notEqual(card.kind, 'buffer', '不应再有缓冲卡片');
     assert.notEqual(card.kind, 'rest', '休息不是任务，不应出现在任务列里');
     assert.ok(['study', 'fixed'].includes(card.kind), `只允许学习/固定两类，实际 ${card.kind}`);
   }
 });
 
-test('渲染：每日视图在真实页面里渲染出 7 个日期列，且不再有时间刻度', async () => {
+test('渲染：每日视图聚焦单日，同样没有任何时间刻度', async () => {
   const { readFile, writeFile } = await import('node:fs/promises');
   const { pathToFileURL } = await import('node:url');
   const { join, resolve } = await import('node:path');
@@ -290,16 +311,14 @@ test('渲染：每日视图在真实页面里渲染出 7 个日期列，且不�
   instance.shell.render();
 
   const main = dom.appHost.children[0].byClass('app-main')[0];
-  assert.equal(main.byClass('day-board__col').length, 7, '应有 7 个日期列');
-  assert.equal(main.byClass('timeline__hour').length, 0, '不应再有整点刻度');
-  assert.ok(main.byClass('day-card').length > 0, '应渲染出任务卡片');
+  assert.equal(main.byClass('day-board__col').length, 1, '每日视图聚焦一天，只有 1 个日期列');
+  assert.equal(main.byClass('timeline__hour').length, 0, '不应有整点刻度');
+  assert.equal(main.byClass('timeline__corner').length, 0, '不应有"时间"表头');
 
-  // 日期列标题包含星期与日期
   const heads = main.byClass('day-board__num').map((node) => node.textContent);
-  assert.equal(heads.length, 7);
-  for (const head of heads) assert.match(head, /^\d{2}-\d{2}$/, `列标题应显示日期，实际 ${head}`);
+  assert.equal(heads.length, 1);
+  assert.match(heads[0], /^\d{2}-\d{2}$/, `列标题应显示日期，实际 ${heads[0]}`);
 
-  // 卡片不重叠的前提：每张卡片都是独立的块级元素，且只在所属列内
   const columns = main.byClass('day-board__col');
   const totalCards = columns.reduce((sum, column) => sum + column.byClass('day-card').length, 0);
   assert.equal(totalCards, main.byClass('day-card').length, '卡片不应重复出现在多个列里');
@@ -318,3 +337,51 @@ test('渲染：每日视图在真实页面里渲染出 7 个日期列，且不�
   delete globalThis.setTimeout;
   delete globalThis.clearTimeout;
 });
+
+/* ------------------------------------------------------------------ *
+ * 辅助：渲染真实的七天计划页
+ * ------------------------------------------------------------------ */
+
+async function renderWeekPage() {
+  const { readFile, writeFile } = await import('node:fs/promises');
+  const { pathToFileURL } = await import('node:url');
+  const { join, resolve } = await import('node:path');
+
+  const projectRoot = resolve(import.meta.dirname, '..', '..');
+  const src = await readFile(join(projectRoot, 'tests', 'integration', 'ui-smoke.test.js'), 'utf8');
+  const code = src.slice(src.indexOf('class FakeClassList'), src.indexOf("test('界面启动")) + '\nexport { installFakeDom };';
+  await writeFile('/tmp/dayboard-week-fakedom.mjs', code);
+  const { installFakeDom } = await import('/tmp/dayboard-week-fakedom.mjs');
+
+  const dom = installFakeDom();
+  const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);
+  const instance = boot({ root: dom.appHost, clock: () => new Date(2025, 9, 16, 12, 30) });
+
+  instance.services.taskService.addTask(
+    taskInput({ title: '数学作业', subject: '数学', plannedMinutes: 90, deadlineDate: '2025-10-20' }),
+  );
+  const preview = instance.services.planService.requestPreview({ now: instance.services.now() });
+  assert.equal(preview.ok, true);
+  assert.equal(instance.services.planService.applyPreview().ok, true);
+
+  dom.location.hash = '#/week';
+  instance.shell.render();
+
+  const cleanup = () => {
+    delete globalThis.Node;
+    delete globalThis.addEventListener;
+    delete globalThis.removeEventListener;
+    delete globalThis.document;
+    delete globalThis.window;
+    delete globalThis.location;
+    delete globalThis.localStorage;
+    delete globalThis.requestAnimationFrame;
+    delete globalThis.getComputedStyle;
+    delete globalThis.setInterval;
+    delete globalThis.clearInterval;
+    delete globalThis.setTimeout;
+    delete globalThis.clearTimeout;
+  };
+
+  return { dom, instance, main: dom.appHost.children[0].byClass('app-main')[0], cleanup };
+}

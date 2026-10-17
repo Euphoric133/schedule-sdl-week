@@ -10,6 +10,7 @@ import { createTaskService } from '../../src/services/taskService.js';
 import { createPlanService } from '../../src/services/planService.js';
 import { createFocusService } from '../../src/services/focusService.js';
 import { createFixedActivityService } from '../../src/services/fixedActivityService.js';
+import { createRestService } from '../../src/services/restService.js';
 import { createMemoryAdapter } from '../../src/storage/memoryAdapter.js';
 import { FIXED_NOW, fixedClock, testIdFactory } from './clock.js';
 
@@ -39,6 +40,7 @@ export function createTestApp(options = {}) {
   };
   services.taskService = createTaskService({ app, idFactory });
   services.fixedActivityService = createFixedActivityService({ app, idFactory });
+  services.restService = createRestService({ app });
   services.planService = createPlanService({ app, idFactory });
   services.focusService = createFocusService({ app, idFactory, now: services.now });
 

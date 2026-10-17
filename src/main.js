@@ -13,12 +13,15 @@ import { createTaskService } from './services/taskService.js';
 import { createPlanService } from './services/planService.js';
 import { createFocusService } from './services/focusService.js';
 import { createFixedActivityService } from './services/fixedActivityService.js';
+import { createRestService } from './services/restService.js';
 import { createAppearanceService } from './services/appearanceService.js';
 import { createNotificationService } from './services/notificationService.js';
 import { createStatsService } from './services/statsService.js';
 import { loadPreferences, savePreferences } from './services/preferences.js';
 import { createIdFactory } from './domain/ids.js';
 import { applyDraftOp } from './domain/mutations.js';
+import { confirmDialog } from './ui/modal.js';
+import { toast } from './ui/dom.js';
 import { addDays, wallTimeFromDateObject } from './domain/time.js';
 import { createShell } from './ui/shell.js';
 import { startRouter } from './ui/router.js';
@@ -36,6 +39,7 @@ import { renderActivities } from './ui/pages/activities.js';
 import { renderVersions } from './ui/pages/versions.js';
 import { openTaskForm } from './ui/forms/taskForm.js';
 import { openFixedActivityForm } from './ui/forms/fixedActivityForm.js';
+import { openRestForm } from './ui/forms/restForm.js';
 import { openSessionDetail } from './ui/forms/sessionDetail.js';
 
 const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -88,6 +92,114 @@ function createUiService({ services }) {
     openFixedActivityForm(activityId) {
       const activity = activityId ? services.fixedActivityService.get(activityId) : null;
       openFixedActivityForm({ activity, services });
+    },
+
+    /** 打开休息时间表单（新建或编辑） */
+    openRestForm(restId) {
+      const rest = restId ? services.restService.get(restId) : null;
+      openRestForm({ rest, services });
+    },
+
+    /**
+     * 把一段学习标记为已完成（走"候选计划 → 预览 → 确认"的既有流程，
+     * 这样任务状态与计划时段的一致性由同一条路径保证）。
+     */
+    completeSession(card) {
+      return this.previewWith(
+        [{ kind: 'session.complete', sessionId: card.sessionId, actualMinutes: card.minutes }],
+        { changeSummary: '记录一段已完成的学习', trigger: 'plan-board' },
+      );
+    },
+
+    /**
+     * 删除一个学习任务。
+     *
+     * 为什么这里是"直接删除"而不是走预览：
+     * 删除任务本身是用户明确的意图，且 `task.delete` 变更已经在同一次提交里
+     * 通过 reconcile 取消了它的未完成时段——因此不会留下孤立时段，
+     * 也不会因为"剩余工作量与时段数量不一致"被校验拦住（用户报告的正是这个死结）。
+     * 删除完成后提示用户可重新规划，把"是否重排"留给用户决定。
+     */
+    async deleteTask(taskId) {
+      const impact = services.taskService.evaluateTaskImpact(taskId);
+      if (!impact.ok) {
+        toast(impact.issues?.[0]?.message ?? '找不到这个任务。', 'error', 8000);
+        return { ok: false, issues: impact.issues };
+      }
+      const info = impact.impact;
+      const confirmed = await confirmDialog({
+        title: `删除任务「${info.title}」？`,
+        message: '任务会从列表和七天计划中移除，它未完成的学习时段也会一并取消。',
+        bullets: [
+          info.completedSessions > 0
+            ? `已完成 ${info.completedSessions} 段学习记录会保留（成为历史，不影响统计口径）`
+            : '没有已完成的学习记录',
+          info.activeSessions > 0 ? `将取消 ${info.activeSessions} 个未完成的时段` : '没有未完成的时段',
+          info.dependents.length > 0
+            ? `有 ${info.dependents.length} 个任务依赖它：${info.dependents.map((item) => item.title).join('、')}`
+            : '没有其它任务依赖它',
+        ],
+        confirmLabel: '删除',
+        confirmVariant: 'danger',
+      });
+      if (!confirmed) return { ok: false, cancelled: true };
+
+      const result = services.taskService.deleteTask(taskId, { hard: info.canHardDelete });
+      if (!result.ok) {
+        toast(result.error?.message ?? result.issues?.[0]?.message ?? '删除失败，数据没有被修改。', 'error', 9000);
+        return result;
+      }
+      toast('任务已删除。需要重新安排其它任务时，可以点「重新规划」。', 'success', 6000);
+      return result;
+    },
+
+    /**
+     * 保存一条休息安排（新增或修改）。
+     *
+     * 为什么不像学习任务那样走"候选计划预览"：
+     * 休息不参与排程（不会被移动、也不会改变学习任务的位置），
+     * 因此没有必要让用户为它确认一整份计划差异。
+     * 但它仍然是**同一次原子提交**，失败时数据保持原样。
+     */
+    saveRest(op) {
+      const applied = applyDraftOp(app.getState(), op, { idFactory, nowIso: nowIso() });
+      if (!applied.ok) return { ok: false, issues: applied.issues ?? [] };
+      const written = app.commit(() => applied.state, { reason: op.kind });
+      if (!written.ok) {
+        return { ok: false, issues: [{ severity: 'error', message: written.error?.message ?? '保存失败，数据没有被修改。' }] };
+      }
+      return { ok: true, createdId: applied.createdId ?? null };
+    },
+
+    /** 删除一条休息安排（它的所有日期片段会一起消失） */
+    async deleteRest(restId) {
+      const rest = services.restService.get(restId);
+      if (!rest) {
+        toast('这条休息时间已经不存在。', 'error');
+        return { ok: false };
+      }
+      const dates = services.restService.datesOf(restId);
+      const confirmed = await confirmDialog({
+        title: `删除休息时间「${rest.title}」？`,
+        message: '这次休息在所有日期的显示都会一起移除。',
+        bullets: dates.length > 1 ? [`涉及 ${dates.length} 天：${dates.join('、')}`] : ['只涉及 1 天'],
+        confirmLabel: '删除',
+        confirmVariant: 'danger',
+      });
+      if (!confirmed) return { ok: false, cancelled: true };
+
+      const applied = applyDraftOp(app.getState(), { kind: 'rest.remove', restId }, { idFactory, nowIso: nowIso() });
+      if (!applied.ok) {
+        toast(applied.issues?.[0]?.message ?? '删除失败。', 'error');
+        return { ok: false, issues: applied.issues };
+      }
+      const written = app.commit(() => applied.state, { reason: 'rest-remove' });
+      if (!written.ok) {
+        toast(written.error?.message ?? '删除失败，数据没有被修改。', 'error');
+        return { ok: false };
+      }
+      toast('休息时间已删除。', 'success');
+      return { ok: true };
     },
 
     /** 打开时段详情抽屉 */
@@ -158,6 +270,7 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
 
   services.taskService = createTaskService({ app, idFactory });
   services.fixedActivityService = createFixedActivityService({ app, idFactory });
+  services.restService = createRestService({ app });
 
   /* —— 界面偏好与外观（主题、壁纸）—— */
   services.preferences = loadPreferences();

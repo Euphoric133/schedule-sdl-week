@@ -80,9 +80,9 @@ export function legend(items = null) {
   const entries =
     items ??
     [
-      { kind: 'study', label: '学习' },
-      { kind: 'fixed', label: '固定活动' },
-      { kind: 'rest', label: '计划休息' },
+      { kind: 'study', label: '学习任务' },
+      { kind: 'fixed', label: '固定任务' },
+      { kind: 'rest', label: '休息时间' },
       { kind: 'locked', label: '已锁定' },
     ];
   return el(

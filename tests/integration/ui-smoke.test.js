@@ -457,7 +457,7 @@ test('界面启动：加载 src/main.js 能渲染外壳，并逐条渲染六个�
   fakeTimers.clear();
 });
 
-test('界面渲染：七天计划页生成 7 个日期表头与 18 个整点刻度', async () => {
+test('界面渲染：七天计划是 7 个日期列，没有时间列也没有时间刻度', async () => {
   const dom = installFakeDom();
   // 直接调用 boot()：不依赖模块缓存，让每个测试互相独立
   const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);
@@ -468,13 +468,20 @@ test('界面渲染：七天计划页生成 7 个日期表头与 18 个整点刻�
   module.shell.render();
 
   const main = dom.appHost.children[0].byClass('app-main')[0];
-  const dayHeads = main.byClass('timeline__day-head');
-  const hours = main.byClass('timeline__hour');
 
-  assert.equal(dayHeads.length, 7, '时间轴应有 7 个日期表头（今天 + 之后 6 天）');
-  assert.equal(hours.length, 18, '06:00–24:00 应有 18 个整点刻度');
-  assert.equal(hours[0].textContent, '06:00', '第一个刻度应为 06:00');
-  assert.equal(hours[hours.length - 1].textContent, '23:00', '最后一个刻度应为 23:00');
+  // 7 个日期列
+  assert.equal(main.byClass('day-board__col').length, 7, '应有 7 个日期列（今天 + 之后 6 天）');
+
+  // 彻底没有时间列与时间刻度：不是隐藏，而是这些结构根本不存在
+  assert.equal(main.byClass('timeline').length, 0, '不应再渲染时间轴容器');
+  assert.equal(main.byClass('timeline__corner').length, 0, '不应有最左侧"时间"表头');
+  assert.equal(main.byClass('timeline__hour').length, 0, '不应有整点刻度');
+  assert.equal(main.byClass('timeline__day').length, 0, '不应有按小时划分的网格单元');
+
+  // 每一列都有"周几 + 日期"表头
+  const dates = main.byClass('day-board__num').map((node) => node.textContent);
+  assert.equal(dates.length, 7);
+  for (const date of dates) assert.match(date, /^\d{2}-\d{2}$/, `列标题应为日期，实际 ${date}`);
 
   delete globalThis.Node;
   delete globalThis.addEventListener;
@@ -553,13 +560,13 @@ test('界面渲染：有待确认候选计划时，预览页显示差异明细�
   fakeTimers.clear();
 });
 
-test('可访问性：时间轴可聚焦、每个时段有完整无障碍名称、计时器有 aria-live', async () => {
+test('可访问性：计划卡片可聚焦、带完整名称，且没有时间轴结构', async () => {
   const dom = installFakeDom();
   const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);
-  const instance = boot({ root: dom.appHost });
+  const instance = boot({ root: dom.appHost, clock: () => new Date(2025, 9, 16, 12, 30) });
 
   instance.services.taskService.addTask({
-    title: '线性代数作业',
+    title: '线性代数',
     subject: '数学',
     plannedMinutes: 90,
     deadlineDate: '2025-10-20',
@@ -581,33 +588,22 @@ test('可访问性：时间轴可聚焦、每个时段有完整无障碍名称�
   instance.shell.render();
 
   const main = dom.appHost.children[0].byClass('app-main')[0];
-  const timelineNodes = main.byClass('timeline');
-  assert.equal(timelineNodes.length, 1, '周视图应只有一个时间轴容器');
 
-  // 时间轴容器可聚焦，并带描述性标签
-  assert.equal(timelineNodes[0].getAttribute('tabindex'), '0', '时间轴应可聚焦，便于键盘滚动');
-  const timelineLabel = timelineNodes[0].getAttribute('aria-label') ?? '';
-  assert.match(timelineLabel, /7 天/, '无障碍标签应说明天数');
-  assert.match(timelineLabel, /整点刻度/, '无障碍标签应说明刻度');
+  // 看板存在，时间轴结构彻底消失
+  assert.equal(main.byClass('day-board').length, 1, '应有看板容器');
+  assert.equal(main.byClass('timeline').length, 0, '不应再有时间轴容器');
 
-  // 每个学习时段块都是带完整名称的按钮（时间 + 时长 + 锁定状态）。
-  // 说明：块的类名带类型修饰（timeline__block--study / --fixed / --rest / --buffer），
-  // 因此这里按"学习时段"这一具体类型断言。
-  const blocks = main.byClass('timeline__block--study');
-  assert.ok(blocks.length > 0, '应渲染出学习时段块');
-  for (const block of blocks) {
-    assert.equal(block.tagName, 'BUTTON');
-    const label = block.getAttribute('aria-label') ?? '';
-    assert.match(label, /\d{2}:\d{2}–\d{2}:\d{2}/, `时段的无障碍名称应包含时间范围，实际：${label}`);
-    assert.ok(label.length > 8, '无障碍名称应包含任务与时长信息');
+  // 学习卡片带完整信息（名称 + 时间），并可通过 title 获得完整提示
+  const studyCards = main.byClass('day-card--study');
+  assert.ok(studyCards.length > 0, '应有学习卡片');
+  for (const card of studyCards) {
+    assert.ok(card.getAttribute('title'), '卡片应通过 title 提供完整信息');
+    assert.match(card.textContent, /\d{2}:\d{2}–\d{2}:\d{2}/, '卡片内应显示时间范围');
+    assert.ok(card.all().some((node) => node.tagName === 'BUTTON'), '卡片内应有可操作按钮');
   }
 
-  // 番茄钟已移除：界面上不应再出现任何计时器组件
-  assert.equal(
-    dom.appHost.children[0].all().filter((node) => node.getAttribute('role') === 'timer').length,
-    0,
-    '番茄钟已移除，不应存在 role=timer 的倒计时',
-  );
+  // 小时刻度不再存在（时间只在卡片内部显示）
+  assert.equal(main.all().filter((node) => /^(0[6-9]|1[0-9]|2[0-3]):00$/.test(node.textContent.trim())).length, 0, '不应有整点刻度文字');
 
   delete globalThis.Node;
   delete globalThis.addEventListener;
@@ -622,7 +618,6 @@ test('可访问性：时间轴可聚焦、每个时段有完整无障碍名称�
   delete globalThis.clearInterval;
   delete globalThis.setTimeout;
   delete globalThis.clearTimeout;
-  fakeTimers.clear();
 });
 
 test('键盘操作：数字键跳转页面、g 触发规划、? 显示帮助；在输入框里不拦截按键', async () => {
@@ -739,9 +734,10 @@ test('界面渲染：空数据时每个页面都显示空状态而不是崩溃�
   module.shell.render();
   const dayMain = dom.appHost.children[0].byClass('app-main')[0];
   assert.equal(dayMain.byClass('day-board').length, 1, '每日视图应有一个日期列容器');
-  assert.equal(dayMain.byClass('day-board__col').length, 7, '应展示 7 天（每列一天）');
+  assert.equal(dayMain.byClass('day-board__col').length, 1, '每日视图聚焦一天，应展示 1 个日期列');
   assert.equal(dayMain.byClass('timeline__hour').length, 0, '每日视图不再显示时间刻度');
-  assert.match(dayMain.textContent, /日程概览/);
+  assert.match(dayMain.textContent, /当天的安排/, '每日视图应有一个安排区');
+  assert.match(dayMain.textContent, /这一天没有安排/, '空的一天应显示明确的空列提示');
 
   delete globalThis.Node;
   delete globalThis.addEventListener;

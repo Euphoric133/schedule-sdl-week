@@ -30,6 +30,7 @@ import {
 import { checkTaskDependencies } from '../domain/graph.js';
 import { reconcileTaskSessions } from './reconcile.js';
 import { defaultSettings, validateSettings } from '../domain/schemas.js';
+import { createRestPeriod, validateRestPeriod } from './restPeriod.js';
 import { VALIDATION_CODES as C, error, mergeResults, result } from '../domain/validation.js';
 
 /**
@@ -73,6 +74,12 @@ export function applyDraftOp(state, op, ctx) {
       return fixedActivityUpdateOp(state, op, ctx);
     case 'fixedActivity.remove':
       return removeOp(state, op, ctx, 'fixedActivities', '固定活动');
+    case 'rest.add':
+      return restAddOp(state, op, ctx);
+    case 'rest.update':
+      return restUpdateOp(state, op, ctx);
+    case 'rest.remove':
+      return restRemoveOp(state, op);
     case 'settings.update':
       return settingsUpdateOp(state, op);
     case 'window.shift':
@@ -164,6 +171,15 @@ export function describeDraftOps(ops) {
         break;
       case 'fixedActivity.remove':
         parts.push('删除固定活动');
+        break;
+      case 'rest.add':
+        parts.push(`新增休息时间「${op.input?.title ?? ''}」`);
+        break;
+      case 'rest.update':
+        parts.push('修改休息时间');
+        break;
+      case 'rest.remove':
+        parts.push('删除休息时间');
         break;
       case 'settings.update':
         parts.push('修改偏好设置');
@@ -559,6 +575,62 @@ function removeOp(state, op, ctx, collection, label) {
   }
   void ctx;
   return { ok: true, state: { ...state, [collection]: items.filter((item) => item.id !== id) }, issues: [] };
+}
+
+/* ------------------------------------------------------------------ *
+ * 休息时间
+ * ------------------------------------------------------------------ */
+
+function restAddOp(state, op, ctx) {
+  const input = op.input;
+  if (input === null || typeof input !== 'object') {
+    return { ok: false, state, issues: [error(C.TYPE, 'rest', '休息时间数据必须是一个对象。')] };
+  }
+  const rest = createRestPeriod(input, { idFactory: ctx.idFactory, nowIso: ctx.nowIso });
+  const validation = validateRestPeriod(rest, 'rest');
+  if (!validation.ok) return { ok: false, state, issues: validation.issues };
+
+  return {
+    ok: true,
+    state: { ...state, restPeriods: [...(state.restPeriods ?? []), rest] },
+    issues: [],
+    createdId: rest.id,
+  };
+}
+
+function restUpdateOp(state, op, ctx) {
+  const existing = (state.restPeriods ?? []).find((item) => item.id === op.restId);
+  if (!existing) return { ok: false, state, issues: [error(C.REQUIRED, 'rest', '休息时间不存在。', { restId: op.restId })] };
+
+  const next = {
+    ...existing,
+    title: op.patch?.title !== undefined ? String(op.patch.title).trim() : existing.title,
+    startDate: op.patch?.startDate ?? existing.startDate,
+    startMinutes: op.patch?.startMinutes ?? existing.startMinutes,
+    endDate: op.patch?.endDate ?? existing.endDate,
+    endMinutes: op.patch?.endMinutes ?? existing.endMinutes,
+    note: op.patch?.note !== undefined ? op.patch.note : existing.note,
+    updatedAt: ctx.nowIso,
+  };
+  const validation = validateRestPeriod(next, 'rest');
+  if (!validation.ok) return { ok: false, state, issues: validation.issues };
+
+  return {
+    ok: true,
+    state: { ...state, restPeriods: state.restPeriods.map((item) => (item.id === next.id ? next : item)) },
+    issues: [],
+  };
+}
+
+function restRemoveOp(state, op) {
+  const exists = (state.restPeriods ?? []).some((item) => item.id === op.restId);
+  if (!exists) return { ok: false, state, issues: [error(C.REQUIRED, 'rest', '休息时间不存在。', { restId: op.restId })] };
+  return {
+    ok: true,
+    state: { ...state, restPeriods: state.restPeriods.filter((item) => item.id !== op.restId) },
+    issues: [],
+    removedCount: 1,
+  };
 }
 
 /* ------------------------------------------------------------------ *

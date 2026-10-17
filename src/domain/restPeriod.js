@@ -13,7 +13,7 @@
  * 底层永远只有一条记录，因此修改/删除时所有片段会一起变，不会出现"半条休息"。
  */
 
-import { isValidDateString, isValidTimeString, parseDateString, parseTimeString } from './time.js';
+import { dateToOrdinal, diffDays, isValidDateString, isValidTimeString, ordinalToDate, parseTimeString } from './time.js';
 import { VALIDATION_CODES as C, error, result } from './validation.js';
 import { TASK_NAME_MAX_LENGTH } from './validation.js';
 
@@ -127,8 +127,8 @@ export function splitRestAcrossDates(rest) {
   if (!Number.isInteger(rest.startMinutes) || !Number.isInteger(rest.endMinutes)) return [];
 
   const fragments = [];
-  const startOrdinal = parseDateString(rest.startDate);
-  const endOrdinal = parseDateString(rest.endDate);
+  const startOrdinal = dateToOrdinal(rest.startDate);
+  const endOrdinal = dateToOrdinal(rest.endDate);
   if (endOrdinal < startOrdinal) return [];
 
   let ordinal = startOrdinal;
@@ -165,6 +165,22 @@ export function splitRestAcrossDates(rest) {
   }));
 }
 
+/**
+ * 表单初始化用的空白草稿。
+ * 默认给一个 30 分钟的短休息（今天的当前时段由调用方覆盖）。
+ */
+export function createDraftRest(overrides = {}) {
+  return {
+    title: '',
+    startDate: '',
+    startMinutes: 12 * 60,
+    endDate: '',
+    endMinutes: 12 * 60 + 30,
+    note: '',
+    ...overrides,
+  };
+}
+
 /** 完整安排的时长（分钟），用于与片段合计做守恒校验 */
 export function restDurationMinutes(rest) {
   if (!rest || !isValidDateString(rest.startDate) || !isValidDateString(rest.endDate)) return 0;
@@ -179,15 +195,9 @@ export function restOccursOn(rest, date) {
 }
 
 /* ------------------------------------------------------------------ *
- * 内部工具（与 time.js 的序数算法保持一致，避免重复引入实现差异）
+ * 内部工具：天数差统一复用 time.js，避免两份实现漂移
  * ------------------------------------------------------------------ */
 
 function diffDaysLocal(from, to) {
-  return parseDateString(to) - parseDateString(from);
-}
-
-function ordinalToDate(ordinal) {
-  const date = new Date(Date.UTC(1970, 0, 1));
-  date.setUTCDate(date.getUTCDate() + ordinal);
-  return date.toISOString().slice(0, 10);
+  return diffDays(from, to);
 }

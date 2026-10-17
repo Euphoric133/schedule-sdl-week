@@ -80,6 +80,8 @@ export function createEmptyState({ nowIso, planId = null, windowStart, timeZone 
     tasks: [],
     sessions: [],
     fixedActivities: [],
+    /** 用户创建的休息安排（一条 = 一段完整时间，按日期拆分显示） */
+    restPeriods: [],
     officialPlan: null,
     planHistory: [],
     pendingPreview: null,
