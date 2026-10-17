@@ -25,6 +25,7 @@ import {
   isNonEmptyString,
   isPlainObject,
   result,
+  warning,
 } from './validation.js';
 import { businessDateFor, isValidDateString, isValidTimeString, parseTimeString } from './time.js';
 
@@ -175,9 +176,26 @@ export function validateSession(session, path = 'session', options = {}) {
   const taskIssue = checkRequiredString(session.taskId, `${path}.taskId`, '所属任务 ID', { maxLength: 64 });
   if (taskIssue) issues.push(taskIssue);
   if (typeof options.taskExists === 'function' && isNonEmptyString(session.taskId, 64) && !options.taskExists(session.taskId)) {
-    issues.push(
-      error(C.ENTITY_DANGLING_REF, `${path}.taskId`, `时段引用了不存在的任务（${session.taskId}）。`, { taskId: session.taskId }),
-    );
+    /**
+     * 悬空引用要区分"还在占用时间的时段"和"已经完成的学习历史"。
+     *
+     * - 未完成的时段：它是**当前有效占位**，指向不存在的任务是真正的错误
+     *   （会把那段时间永久锁住），必须报错并由 reconcile 取消。
+     * - 已完成/已取消的时段：它只是一条历史记录，任务被彻底删除后链接自然会失效。
+     *   这不应阻止数据读取，也不该被当成损坏数据——否则用户会打不开应用。
+     */
+    const isHistory = session.state === SESSION_STATE.COMPLETED || session.state === SESSION_STATE.CANCELLED;
+    if (isHistory) {
+      issues.push(
+        warning(C.ENTITY_DANGLING_REF, `${path}.taskId`, `这条历史学习记录的任务已被删除（${session.taskId}），时长仍计入统计。`, {
+          taskId: session.taskId,
+        }),
+      );
+    } else {
+      issues.push(
+        error(C.ENTITY_DANGLING_REF, `${path}.taskId`, `时段引用了不存在的任务（${session.taskId}）。`, { taskId: session.taskId }),
+      );
+    }
   }
 
   if (!isValidDateString(session.date)) {

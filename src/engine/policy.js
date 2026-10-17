@@ -71,7 +71,12 @@ export const DIAGNOSTIC_CODE = Object.freeze({
   DEADLINE_AT_RISK: 'deadline_at_risk',
   DEADLINE_LATE: 'deadline_late',
   DEPENDENCY_CYCLE: 'dependency_cycle',
-  RESERVED_BLOCK_OVERLAP: 'reserved_block_overlap', // 锁定/已完成时段与固定活动重叠（数据冲突）
+  RESERVED_BLOCK_OVERLAP: 'reserved_block_overlap', // 锁定时段与固定活动重叠（数据冲突）
+  /** 规划开始时间相关（默认取下一个整点 / 用户指定 / 指定的时间已经过去） */
+  START_TIME_DEFAULT: 'start_time_default',
+  START_TIME_USER: 'start_time_user',
+  START_TIME_IN_PAST: 'start_time_in_past',
+  START_TIME_INVALID: 'start_time_invalid',
 });
 
 /** 截止风险等级 */

@@ -22,7 +22,7 @@
 
 import { buildPolicy, DIAGNOSTIC_CODE, RISK_LEVEL, UNSCHEDULED_REASON } from './policy.js';
 import { computeInputHash, computePolicyHash, deriveBlockId, deriveSessionId } from './versionHash.js';
-import { computeWindowCapacity, longestFreeSlot, normalizeStudyWindows } from './capacity.js';
+import { computeWindowCapacity, longestFreeSlot, normalizeStudyWindows, resolveSearchStart } from './capacity.js';
 import { scoreTask, sortBySchedulePriority, ratingToScore } from './priority.js';
 import { splitTask, SPLIT_STATUS, fragmentsConserveWorkload } from './splitter.js';
 import { placeFragments } from './placer.js';
@@ -50,6 +50,7 @@ import { VALIDATION_CODES, error, warning as makeWarning } from '../domain/valid
  * @param {object|null} [input.existingPlan] 当前正式计划（用于计算差异；不参与求解）
  * @param {number} [input.baseVersion] 候选计划的版本号（默认 existingPlan.version + 1）
  * @param {number} [input.optimizationPasses] 局部优化迭代上界（默认取策略值）
+ * @param {{date: string, minutes: number}|null} [input.startAt] 用户指定的规划开始时间；不传则自动取"当前时刻之后的下一个整点"
  * @returns {object} SchedulerResult
  */
 export function run(input) {
@@ -129,14 +130,28 @@ export function run(input) {
     (session) => !inWindow(session) && hardReserved(session) && session.state !== SESSION_STATE.CANCELLED,
   );
 
-  const reservedSpans = mergeSpans(
-    reservedSessions
-      .filter((session) => session.state !== SESSION_STATE.COMPLETED || session.date >= windowStart)
-      .map((session) => ({ date: session.date, startMinutes: session.startMinutes, endMinutes: session.endMinutes })),
+  /**
+   * 两层区分（这是本轮最关键的一条规则）：
+   *
+   * 1. **容量层**：已完成时段仍然占住它的墙钟时间。
+   *    它是真实发生的学习，排程器不能把新的学习内容排到同一时刻（否则计划里
+   *    会出现两个时间完全重叠的块）。所以它继续参与 capacity 的扣减。
+   *
+   * 2. **冲突层**：已完成时段**不再**被当成"有效占位"去拦用户。
+   *    用户想在那个时段安排固定课程、休息或新任务时必须放行——
+   *    那段时间已经过去了，任务也做完了，继续拦住就是在永久锁死时间。
+   *    因此"保留时段 × 固定活动"的数据冲突检查只看锁定/进行中的时段。
+   */
+  const occupancySessions = reservedSessions.filter(
+    (session) => session.locked === true || session.state === SESSION_STATE.IN_PROGRESS,
   );
 
-  // 保留时段之间、或与固定活动之间的重叠属于数据冲突：如实报告，但不擅自移动用户锁定/已完成的内容
-  const conflictDiagnostics = detectReservedConflicts(reservedSessions, fixedSpans);
+  const reservedSpans = mergeSpans(
+    reservedSessions.map((session) => ({ date: session.date, startMinutes: session.startMinutes, endMinutes: session.endMinutes })),
+  );
+
+  // 只检查真正占用中的时段与固定活动是否冲突；历史记录不参与
+  const conflictDiagnostics = detectReservedConflicts(occupancySessions, fixedSpans);
   diagnostics.push(...conflictDiagnostics);
 
   /* ---------- 第 3 步：剩余工作量 ---------- */
@@ -145,7 +160,7 @@ export function run(input) {
   // 已被保留的时段（锁定 / 进行中）会**原样进入候选计划**，它们已经占据了任务的一部分工作量。
   // 因此需要从"剩余工作量"里减去这部分，否则会把同一份工作排两遍（总量超出任务预计用时）。
   const carriedOverByTask = new Map();
-  for (const session of reservedSessions) {
+  for (const session of occupancySessions) {
     if (session.state === SESSION_STATE.COMPLETED) continue; // 已完成的已经由 remainingMinutesForTask 扣除
     const minutes = session.endMinutes - session.startMinutes;
     carriedOverByTask.set(session.taskId, (carriedOverByTask.get(session.taskId) ?? 0) + minutes);
@@ -159,7 +174,18 @@ export function run(input) {
     completedByTask[task.id] = (task.plannedMinutes ?? 0) - remaining;
   }
 
-  /* ---------- 第 4 步：可用容量（含逐日缓冲） ---------- */
+  /* ---------- 第 4 步：可用容量 ---------- */
+  /**
+   * 规划搜索起点。
+   *
+   * 规则（本轮明确要求）：
+   * - 用户指定了开始时间 → 从该时间开始找可用时段；如果它已经过去，则**明确告知**并改用默认值，
+   *   绝不悄悄把过去的时间当成未来；
+   * - 未指定 → 默认取"当前时刻之后的下一个整点"（严格之后：20:00 也取 21:00）。
+   */
+  const searchStart = resolveSearchStart({ now, requested: input.startAt ?? null });
+  diagnostics.push(...searchStart.diagnostics);
+
   const capacityDays = computeWindowCapacity({
     windowStart,
     windowEnd,
@@ -167,6 +193,8 @@ export function run(input) {
     fixedSpans,
     reservedSpans,
     bufferRatio: policy.bufferRatio,
+    searchStart: searchStart.start,
+    now,
   });
 
   const totalSchedulable = capacityDays.reduce((sum, day) => sum + day.schedulableMinutes, 0);
@@ -354,7 +382,9 @@ export function run(input) {
     label: taskById.get(session.taskId)?.title ?? '学习时段',
     locked: Boolean(session.locked),
     derived: false,
-    meta: { state: session.state, plannedMinutes: session.plannedMinutes, reserved: true },
+    // 历史块：仍出现在计划里（统计/回顾需要），但不参与冲突与排程校验
+    history: session.state === SESSION_STATE.COMPLETED || session.state === SESSION_STATE.CANCELLED,
+    meta: { state: session.state, plannedMinutes: session.plannedMinutes, reserved: true, history: session.state === SESSION_STATE.COMPLETED || session.state === SESSION_STATE.CANCELLED },
   }));
 
   const fixedBlocks = fixedSpans.map((span) => ({

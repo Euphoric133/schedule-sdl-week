@@ -83,10 +83,24 @@ export function validatePlanConstraints({
   const blocks = normalizeBlocks({ plan, placements, tasks });
 
   const taskById = new Map(tasks.map((task) => [task.id, task]));
-  const studyBlocks = blocks.filter((block) => block.kind === 'study');
+  const allStudyBlocks = blocks.filter((block) => block.kind === 'study');
   const restBlocks = blocks.filter((block) => block.kind === 'rest');
   const bufferBlocks = blocks.filter((block) => block.kind === 'buffer');
   const fixedSpans = expandFixedSpans(fixedActivities, blocks);
+
+  /**
+   * 关键区分：**历史记录不等于当前有效日程占位**。
+   *
+   * 已完成 / 已取消的时段必须继续出现在计划里（统计与回顾需要它，H9 也要求保护它），
+   * 但它不应该再参与"是否与固定活动重叠""是否落在允许学习时间内"这类**排程校验**。
+   *
+   * 否则会出现这种情况：今天 13:00–14:00 写作业并标记完成，15:00 想在同一时段
+   * 安排一门固定课程，却被 V051「学习时段与固定活动重叠」永久拦住——
+   * 明明那段时间已经过去了，任务也做完了。
+   */
+  const isHistoryBlock = (block) => block.history === true || block.meta?.history === true;
+  const studyBlocks = allStudyBlocks.filter((block) => !isHistoryBlock(block));
+  const historyBlocks = allStudyBlocks.filter(isHistoryBlock);
 
   checkH1(studyBlocks, fixedSpans, violations);
   checkH2(studyBlocks, violations);
@@ -95,6 +109,7 @@ export function validatePlanConstraints({
   checkH5(studyBlocks, taskById, violations);
   checkH6(studyBlocks, taskById, policy, violations);
   checkH7(studyBlocks, taskById, violations);
+  void historyBlocks;
   checkH8(restBlocks, bufferBlocks, violations);
   const protectedSessions = checkH9H10(plan, sessions, violations);
 
@@ -116,6 +131,8 @@ function normalizeBlocks({ plan, placements, tasks }) {
       subject: placement.subject ?? taskById.get(placement.taskId)?.subject ?? null,
       locked: false,
       derived: placement.kind === 'rest' || placement.kind === 'buffer',
+      history: placement.history === true || placement.state === 'completed' || placement.state === 'cancelled',
+      meta: placement.meta ?? null,
     }));
   }
   if (plan) {
@@ -130,6 +147,9 @@ function normalizeBlocks({ plan, placements, tasks }) {
       subject: block.subject ?? null,
       locked: Boolean(block.locked),
       derived: Boolean(block.derived),
+      // 历史块（已完成 / 已取消）只用于统计与回顾，不参与排程校验
+      history: block.history === true || block.meta?.history === true,
+      meta: block.meta ?? null,
     }));
   }
   return [];

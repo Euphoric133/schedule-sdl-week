@@ -24,6 +24,7 @@ import {
   weekday,
 } from '../domain/time.js';
 import { mergeSpans } from '../domain/fixedActivity.js';
+import { DIAGNOSTIC_CODE } from './policy.js';
 
 /* ------------------------------------------------------------------ *
  * 区间运算（纯函数）
@@ -110,17 +111,53 @@ export function subtractSpans(windows, blocked) {
  * @param {number} params.bufferRatio 已废弃，恒为 0（缓冲功能已移除）
  * @returns {Array<object>} 按日期升序的容量明细，元素含 freeWindows 供放位使用
  */
-export function computeWindowCapacity({ windowStart, windowEnd, studyWindows, fixedSpans = [], reservedSpans = [], bufferRatio = 0 }) {
+export function computeWindowCapacity({
+  windowStart,
+  windowEnd,
+  studyWindows,
+  fixedSpans = [],
+  reservedSpans = [],
+  bufferRatio = 0,
+  /** 本次规划的搜索起点：{ date, minutes }。早于它的时间不会被安排任何学习时段。 */
+  searchStart = null,
+  /** 当前时间 { date, minutes }：任何早于它的日期一律不产生可用容量（不排过去）。 */
+  now = null,
+}) {
   const days = [];
   for (let date = windowStart; date <= windowEnd; date = addDays(date, 1)) {
-    days.push(computeDayCapacity({ date, studyWindows, fixedSpans, reservedSpans, bufferRatio }));
+    // 过去的日期不产生新容量：过去只能有历史，不能再被安排
+    if (now && date < now.date) {
+      days.push(computeDayCapacity({ date, studyWindows, fixedSpans, reservedSpans, bufferRatio, earliestStartMinutes: 1440 }));
+      continue;
+    }
+    const earliestStartMinutes =
+      searchStart && searchStart.date === date
+        ? Math.max(searchStart.minutes, now && now.date === date ? now.minutes : 0)
+        : now && now.date === date
+          ? 0
+          : 0;
+    days.push(computeDayCapacity({ date, studyWindows, fixedSpans, reservedSpans, bufferRatio, earliestStartMinutes }));
   }
   return days;
 }
 
 /** 单日容量明细 */
-export function computeDayCapacity({ date, studyWindows, fixedSpans = [], reservedSpans = [], bufferRatio = 0 }) {
-  const windows = normalizeStudyWindows(date, studyWindows);
+export function computeDayCapacity({ date, studyWindows, fixedSpans = [], reservedSpans = [], bufferRatio = 0, earliestStartMinutes = 0 }) {
+  const rawWindows = normalizeStudyWindows(date, studyWindows);
+  /**
+   * 把允许窗口裁剪到"最早可以开始的时间"之后。
+   *
+   * 这是"计划开始时间"落地的地方：用户指定（或系统默认推导）一个起点后，
+   * 起点之前的时间段不再参与放位，因此不会出现"现在 20:24，却给今天排了 09:00"这种过去时段。
+   */
+  const windows = Number.isInteger(earliestStartMinutes) && earliestStartMinutes > 0
+    ? rawWindows
+        .map((window) => ({
+          ...window,
+          startMinutes: Math.max(window.startMinutes, Math.min(earliestStartMinutes, window.endMinutes)),
+        }))
+        .filter((window) => window.endMinutes > window.startMinutes)
+    : rawWindows;
   const fixedMerged = mergeDaySpans(fixedSpans, date);
   const reservedMerged = mergeDaySpans(reservedSpans, date);
   const occupied = mergeDaySpans([...fixedMerged, ...reservedMerged], date);
@@ -200,4 +237,83 @@ export function preferredOverlapMinutes(startMinutes, endMinutes, preferredFocus
 export function isWithinWindows(date, startMinutes, endMinutes, studyWindows) {
   const windows = normalizeStudyWindows(date, studyWindows);
   return windows.some((window) => startMinutes >= window.startMinutes && endMinutes <= window.endMinutes);
+}
+
+/* ------------------------------------------------------------------ *
+ * 规划搜索起点
+ * ------------------------------------------------------------------ */
+
+/**
+ * 计算"当前时刻之后的下一个整点"。
+ *
+ * 规则是**严格之后**，不是"把分钟向上取整"：
+ *   20:24 → 21:00    20:00 → 21:00    20:59 → 21:00    21:00 → 22:00
+ *
+ * 到 24:00 时顺延到下一天 00:00（由调用方按窗口与允许时间再裁剪）。
+ *
+ * @param {{date: string, minutes: number}} now
+ * @returns {{date: string, minutes: number}}
+ */
+export function nextHourAfter(now) {
+  const next = Math.floor(now.minutes / 60) * 60 + 60;
+  if (next < 1440) return { date: now.date, minutes: next };
+  const days = Math.floor(next / 1440);
+  return { date: addDays(now.date, days), minutes: next % 1440 };
+}
+
+/**
+ * 解析本次规划的搜索起点，并给出**用户可见**的说明。
+ *
+ * 返回值里的 diagnostics 会被合入计划的诊断信息，最终显示在预览页上，
+ * 因此"开始时间被调整过"永远不是静默发生的。
+ *
+ * @param {object} params
+ * @param {{date: string, minutes: number}} params.now
+ * @param {{date: string, minutes: number}|null} params.requested
+ */
+export function resolveSearchStart({ now, requested }) {
+  const fallback = nextHourAfter(now);
+  const diagnostics = [];
+
+  if (!requested || typeof requested !== 'object') {
+    diagnostics.push({
+      code: DIAGNOSTIC_CODE.START_TIME_DEFAULT,
+      level: 'info',
+      date: fallback.date,
+      message: `未指定开始时间，从当前时刻之后的下一个整点开始规划（${formatMinutesLocal(fallback.minutes)}）。`,
+    });
+    return { start: fallback, diagnostics, source: 'default' };
+  }
+
+  if (!Number.isInteger(requested.minutes) || requested.minutes < 0 || requested.minutes > 1440) {
+    diagnostics.push({
+      code: DIAGNOSTIC_CODE.START_TIME_INVALID,
+      level: 'warning',
+      date: fallback.date,
+      message: `开始时间不合法，已改为从 ${formatMinutesLocal(fallback.minutes)} 开始规划。`,
+    });
+    return { start: fallback, diagnostics, source: 'fallback-invalid' };
+  }
+
+  const requestedDate = typeof requested.date === 'string' && requested.date >= now.date ? requested.date : now.date;
+  const isPast = requestedDate < now.date || (requestedDate === now.date && requested.minutes < now.minutes);
+
+  if (isPast) {
+    diagnostics.push({
+      code: DIAGNOSTIC_CODE.START_TIME_IN_PAST,
+      level: 'warning',
+      date: fallback.date,
+      message: `你指定的开始时间（${formatMinutesLocal(requested.minutes)}）已经过去，已改为从 ${formatMinutesLocal(fallback.minutes)} 开始规划。`,
+    });
+    return { start: fallback, diagnostics, source: 'fallback-past' };
+  }
+
+  return { start: { date: requestedDate, minutes: requested.minutes }, diagnostics, source: 'user' };
+}
+
+function formatMinutesLocal(minutes) {
+  const clamped = Math.max(0, Math.min(1440, minutes));
+  const hh = String(Math.floor(clamped / 60)).padStart(2, '0');
+  const mm = String(clamped % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
 }

@@ -36,6 +36,14 @@ const REPAIRABLE_CODES = new Set([
   C.TASK_DURATION_INCONSISTENT,
   C.TASK_OVER_COMPLETED,
   C.ENTITY_DANGLING_REF,
+  /**
+   * 时段引用了不存在的任务（任务被彻底删除但时段没清掉）。
+   *
+   * 这类"孤立占位"是历史版本留下的：它会让冲突检测认为那段时间仍然被占，
+   * 于是用户在已经完全空出来的时段上再也安排不了任何东西。
+   * reconcile 会把这类**未完成**时段的取消掉，已完成的学习记录原样保留。
+   */
+  C.SESSION_TASK_MISSING,
 ]);
 
 /** 计划里是否已经没有任何缓冲内容（用于避免无谓地重写数据） */

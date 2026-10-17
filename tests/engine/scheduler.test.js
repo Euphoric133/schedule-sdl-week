@@ -512,14 +512,27 @@ test('场景 18b：凌晨（04:00 之前）的窗口归属前一天业务日，�
 
   const result = env.run();
   assert.equal(result.ok, true);
-  // 该场景的关键是"日期与窗口归属不错位"：00:00–01:00 的窗口必须被识别为 7 天都有 60 分钟容量。
+  // 该场景的关键是"日期与窗口归属不错位"：00:00–01:00 的窗口必须被识别为 60 分钟容量。
   // 缓冲功能已移除，因此可用容量就是净容量 60 分钟（不再扣除 10%）。
   assert.equal(result.capacityDays.length, 7);
-  for (const day of result.capacityDays) {
+
+  // 今天（now = 20:30）的 00:00–01:00 已经过去，**不应该**再被安排；
+  // 但从明天起，同样的凌晨窗口必须完整可用——这正是"日期归属不错位"的验证点。
+  const today = result.capacityDays[0];
+  assert.equal(today.date, '2025-10-16');
+  assert.equal(today.netCapacityMinutes, 0, '今天的凌晨窗口已经过去，不再产生可用容量');
+  assert.equal(today.schedulableMinutes, 0);
+
+  for (const day of result.capacityDays.slice(1)) {
     assert.equal(day.netCapacityMinutes, 60, `${day.date} 凌晨窗口容量应为 60 分钟`);
     assert.equal(day.schedulableMinutes, 60, '缓冲已移除，可用容量等于净容量');
     assert.equal(day.bufferMinutes, 0);
   }
+  assert.equal(
+    result.plan.blocks.some((block) => block.date === '2025-10-16'),
+    false,
+    '不得在已经过去的凌晨窗口里生成学习时段',
+  );
   for (const block of studyBlocks(result.plan)) {
     assert.ok(block.startMinutes >= 0 && block.endMinutes <= 60, '凌晨窗口内的片段应落在 00:00–01:00');
   }

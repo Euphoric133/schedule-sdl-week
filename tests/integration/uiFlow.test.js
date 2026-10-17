@@ -347,8 +347,10 @@ test('固定活动：新增课程会减少可用时间，预览里能看到容�
           title: '高等数学课',
           type: FIXED_ACTIVITY_TYPE.CLASS,
           recurrence: { kind: 'weekly', daysOfWeek: [4] },
-          start: '20:00',
-          end: '21:00',
+          // 注意：规划起点是"当前时刻之后的下一个整点"（now = 20:30 → 21:00），
+          // 因此要用 22:00–23:00 这样**尚未开始**的时段来验证"课程会占用容量"。
+          start: '22:00',
+          end: '23:00',
         },
       },
     ],
@@ -358,13 +360,13 @@ test('固定活动：新增课程会减少可用时间，预览里能看到容�
 
   const candidate = previewed.preview.candidate;
   const after = candidate.days.find((day) => day.date === '2025-10-16').netCapacityMinutes;
-  assert.equal(after, before - 60, '20:00–21:00 的课程让当天净容量减少 60 分钟');
+  assert.equal(after, before - 60, '22:00–23:00 的课程让当天净容量减少 60 分钟');
   assert.ok(candidate.diagnostics.length >= 0);
 
   // 学习时段不得与新课重叠
   const dayBlocks = candidate.blocks.filter((block) => block.date === '2025-10-16' && block.kind !== 'fixed');
   for (const block of dayBlocks) {
-    const overlaps = block.startMinutes < 21 * 60 && 20 * 60 < block.endMinutes;
+    const overlaps = block.startMinutes < 23 * 60 && 22 * 60 < block.endMinutes;
     assert.equal(overlaps, false, `时段 ${block.startMinutes}-${block.endMinutes} 与课程重叠`);
   }
 });
