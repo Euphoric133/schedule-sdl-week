@@ -184,12 +184,23 @@ export function renderSettings({ app, services }) {
       title: '危险操作',
       hint: '这些操作会影响设置或历史版本，执行前都会二次确认',
       body: el('div', {}, [
-        el('h3', { text: '重置系统', style: { marginBottom: 'var(--space-2)' } }),
+        el('h3', { text: '恢复出厂设置', style: { marginBottom: 'var(--space-2)' } }),
         el('div.card__hint', {
-          text: '清空全部业务数据（任务、学习时段、固定日程、休息、科目、计划与版本历史），保留设置与外观偏好。执行前会二次确认。',
+          text: '把应用恢复到首次使用时的状态：清空全部数据（任务、已删除历史、学习时段、固定日程、休息、科目、计划与版本历史），并把主题、壁纸、通知等个性化设置恢复默认。程序本身与内置默认配置保留。执行前会二次确认。',
         }),
         el('div.form-actions', { style: { justifyContent: 'flex-start', marginTop: 'var(--space-3)' } }, [
-          button('重置系统（清空数据）', {
+          button('恢复出厂设置', {
+            variant: 'danger',
+            onClick: () => services.ui.resetFactory(),
+          }),
+        ]),
+
+        el('h3', { text: '仅清空数据', style: { margin: 'var(--space-5) 0 var(--space-2)' } }),
+        el('div.card__hint', {
+          text: '只清空业务数据，保留你调好的设置与外观偏好（适合"想重新开始安排，但不想重设偏好"）。执行前会二次确认。',
+        }),
+        el('div.form-actions', { style: { justifyContent: 'flex-start', marginTop: 'var(--space-3)' } }, [
+          button('仅清空数据（保留设置）', {
             variant: 'danger',
             onClick: () => services.ui.resetSystem(),
           }),

@@ -44,6 +44,7 @@ import { openRestForm } from './ui/forms/restForm.js';
 import { openPlanStartForm } from './ui/forms/planStartForm.js';
 import { openRestSettingsForm } from './ui/forms/restSettingsForm.js';
 import { createEmptyState } from './domain/schemas.js';
+import { defaultPreferences } from './services/preferences.js';
 import { openSessionDetail } from './ui/forms/sessionDetail.js';
 
 const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -188,6 +189,134 @@ function createUiService({ services, getShell = () => null }) {
         changeSummary: changeSummary ?? '生成计划',
         trigger: trigger ?? 'plan-form',
       });
+    },
+
+    /**
+     * 恢复出厂设置：把应用恢复到**首次使用时的状态**。
+     *
+     * 与 resetSystem 的区别（这也是本轮修复的核心）：
+     * - `resetSystem` 只清业务数据，**保留**设置与外观偏好；
+     * - `resetFactory` 连**用户改过的设置与个性化配置一起恢复默认**：
+     *   主题回到默认、壁纸移除、通知偏好回到默认、通知去重台账清空。
+     *
+     * 之前的界面上只有 resetSystem，用户点完发现主题/设置还在，
+     * 自然认为"重置整个应用没有生效"——本轮补上真正的出厂重置。
+     *
+     * 保留：程序代码、内置资源、默认配置与初始化逻辑（即应用本身照常能启动）。
+     */
+    async resetFactory() {
+      const state = services.app.getState();
+      const prefs = services.appearanceService.getPreferences();
+      const counts = {
+        tasks: (state.tasks ?? []).length,
+        deletedTasks: (state.tasks ?? []).filter((task) => task.status === 'deleted').length,
+        sessions: (state.sessions ?? []).length,
+        fixedActivities: (state.fixedActivities ?? []).length,
+        restPeriods: (state.restPeriods ?? []).length,
+        subjects: (state.subjects ?? []).length,
+        planVersions: (state.planHistory ?? []).length,
+        hasOfficialPlan: Boolean(state.officialPlan),
+        hasPendingPreview: Boolean(state.pendingPreview),
+        theme: prefs.appearance?.theme ?? 'light',
+        wallpaper: Boolean(prefs.appearance?.wallpaper?.enabled),
+        notifications: Boolean(prefs.notifications?.enabled),
+      };
+
+      const confirmed = await confirmDialog({
+        title: '恢复出厂设置？',
+        message: '应用会回到首次使用时的状态：所有数据与个性化设置都会清空。此操作不可撤销，建议先导出备份。',
+        bullets: [
+          `学习任务 ${counts.tasks} 个（其中已删除历史 ${counts.deletedTasks} 个）`,
+          `学习时段 ${counts.sessions} 个　·　固定日程 ${counts.fixedActivities} 个　·　休息 ${counts.restPeriods} 个`,
+          `科目 ${counts.subjects} 个　·　计划版本 ${counts.planVersions} 个`,
+          counts.hasOfficialPlan ? '正式计划会被清空' : '当前没有正式计划',
+          counts.hasPendingPreview ? '未确认的候选计划也会被丢弃' : '当前没有候选计划',
+          `外观设置会恢复默认（当前主题：${counts.theme}${counts.wallpaper ? '，已设置壁纸' : ''}）`,
+          counts.notifications ? '通知开关与提醒设置会恢复默认' : '通知设置本来就没开启',
+          '程序本身与内置默认配置会保留，应用照常可用',
+        ],
+        confirmLabel: '恢复出厂设置',
+        cancelLabel: '取消',
+        confirmVariant: 'danger',
+        requireAcknowledge: true,
+      });
+      if (!confirmed) return { ok: false, cancelled: true };
+
+      /**
+       * 1) 业务数据 + 设置：写一份全新的空状态（含默认设置）。
+       * 走 commit，失败会回滚内存并保留磁盘原数据。
+       */
+      const blank = createEmptyState({
+        nowIso: services.clockIso(),
+        windowStart: services.now().date,
+        timeZone: state.timeZone ?? null,
+      });
+      const written = services.app.commit(() => blank, { reason: 'reset-factory' });
+      if (!written.ok) {
+        toast(
+          `恢复出厂设置失败：${written.error?.message ?? '写入本地存储失败'}。你的数据没有被清除，请重试或先导出备份。`,
+          'error',
+          12000,
+        );
+        return { ok: false, error: written.error ?? null };
+      }
+
+      /**
+       * 2) 个性化偏好：主题与通知回到默认。
+       * 这些存在**另一个存储键**里（preferences），只清业务数据是清不掉的。
+       *
+       * 注意这里只做**同步**操作。
+       * 以前把 `await clearWallpaper()`（IndexedDB）放在这一步，
+       * 一旦 IndexedDB 不响应（隐私模式、权限被拦、存储损坏），
+       * 后面的"备份槽同步 / 重新渲染 / 成功提示"就全都不会执行——
+       * 用户看到的就是"点了没反应"。因此把异步清理挪到最后且不阻塞。
+       */
+      try {
+        services.appearanceService.setTheme(defaultPreferences().appearance.theme);
+      } catch {
+        // 主题写入失败不阻断整体重置：下面还有一次 applyAll 兜底
+      }
+      try {
+        services.notificationService.resetLedger?.();
+      } catch {
+        // 通知台账清理失败不影响主流程
+      }
+
+      /**
+       * 3) 让"自动恢复备份"与出厂状态一致：
+       * 否则一旦主数据读取失败，自动恢复会把出厂前的内容装回来。
+       */
+      const backupSynced = services.app.syncRecoveryBackup?.();
+      if (backupSynced && backupSynced.ok === false && !backupSynced.skipped) {
+        toast('提示：自动恢复备份未能更新，如出现"已从备份恢复"，请再执行一次恢复出厂设置。', 'warning', 10000);
+      }
+
+      // 4) 重新应用外观（主题）并刷新所有视图
+      try {
+        services.appearanceService.applyAll();
+      } catch {
+        // 外观应用失败不影响数据重置结果
+      }
+      const shellInstance = getShell();
+      if (shellInstance?.renderCurrent) shellInstance.renderCurrent();
+      toast('已恢复出厂设置：数据与个性化设置都已回到初始状态。', 'success', 8000);
+
+      /**
+       * 5) 壁纸图片存在 IndexedDB 里，删除是异步的。
+       * 这里**不 await**：它只影响一张图片，绝不能因为它卡住就把
+       * "重置成功"这件事变成"没有反应"。失败时给一句可执行的提示即可。
+       */
+      Promise.resolve()
+        .then(() => services.appearanceService.clearWallpaper())
+        .then(() => {
+          const instance = getShell();
+          if (instance?.renderCurrent) instance.renderCurrent();
+        })
+        .catch(() => {
+          toast('个性化设置已重置，但壁纸图片未能删除（可能是浏览器阻止了本地存储）。可稍后在「外观主题」里手动移除。', 'warning', 10000);
+        });
+
+      return { ok: true, counts };
     },
 
     /**

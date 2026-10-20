@@ -74,6 +74,9 @@ export function renderNotifications({ app, services, now }) {
     }),
   );
 
+  /* ---------- 通知使用限制（必须在开启前就能看到） ---------- */
+  nodes.push(renderLimitations({ status, services }));
+
   /* ---------- 当前状态 ---------- */
   const statusKind = status.level === 'granted' ? 'success' : status.level === 'denied' || status.level === 'unsupported' ? 'danger' : 'warning';
   nodes.push(
@@ -299,4 +302,68 @@ function toHHmm(minutes) {
 function toMinutes(value) {
   const match = /^(\d{2}):(\d{2})$/.exec(String(value ?? ''));
   return match ? Number(match[1]) * 60 + Number(match[2]) : 0;
+}
+
+
+/**
+ * 「通知使用限制」说明。
+ *
+ * 写这一块的唯一目的：让用户在**开启之前**就知道哪些情况能收到、哪些收不到，
+ * 而不是开了权限之后等不到通知还以为是应用坏了。
+ *
+ * 每一条都对应代码里的真实实现（不是泛泛而谈）：
+ * - 提醒由页面内的 `setInterval`（每 30 秒）检查，因此必须保持页面运行；
+ * - 代码里没有 Service Worker、没有推送服务，所以关闭页面后不可能提醒；
+ * - 发送依赖 `new Notification(...)`，在非安全上下文与不支持该构造器的浏览器上会失败；
+ * - 代码会检测并如实报告，不会假装成功。
+ */
+function renderLimitations({ status, services }) {
+  const environment = services.notificationService.describeEnvironment();
+  const capabilities = services.notificationService.capabilities();
+
+  const conditions = [
+    '在浏览器里允许本应用发送通知，并在系统设置里允许该浏览器发送通知（macOS：系统设置 → 通知）。',
+    '保持这个页面处于打开状态。提醒由页面内的定时检查触发，页面关闭后不会再提醒。',
+    '通过 http://127.0.0.1 或 HTTPS 打开本应用（例如运行 node scripts/serve.mjs）。',
+    '使用实现了标准通知构造器的浏览器：Chrome、Edge 等 Chromium 内核浏览器。',
+  ];
+
+  const unsupported = [
+    'iPhone / iPad（iOS、iPadOS）：当前版本不支持。iOS 要到「添加到主屏幕」的网页应用 + Service Worker 才能推送，本应用没有实现。',
+    'Safari（macOS）：不支持直接创建通知（它会抛错，需要 Service Worker 通道），本应用没有实现，因此 Safari 上收不到系统通知。',
+    '直接双击打开本地 HTML 文件（file://）：属于非安全上下文，浏览器会拒绝通知。请用本地服务器或 HTTPS 打开。',
+    '通过 http://局域网IP 访问：同样不是安全上下文，通知会被拒绝。',
+  ];
+
+  const cantGuarantee = [
+    '关闭页面、关闭浏览器、退出应用或系统休眠后，提醒不会触发——本应用没有后台推送/Service Worker。',
+    '浏览器在后台标签页会降低定时器频率，提醒可能比设定时间晚几十秒；代码用真实时间戳比较，因此不会"漏一天"，但无法保证精确到秒。',
+    '系统开启「勿扰模式」「专注模式」，或在通知中心里把该浏览器设为静音时，系统不会弹出通知。',
+    '清理浏览器站点数据会同时清掉权限记录，需要重新授权。',
+  ];
+
+  return card({
+    title: '通知使用限制',
+    hint: '开启前请先确认这些条件；不满足时应用会明确提示，而不是静默失败',
+    body: el('div', {}, [
+      el('div.notice.notice--' + (environment.level === 'ok' ? 'info' : environment.level === 'warning' ? 'warning' : 'danger'), {}, [
+        el('div', {}, [
+          el('div.notice__title', {
+            text: environment.level === 'ok' ? '当前环境检测结果：可以使用系统通知' : '当前环境检测结果：无法使用系统通知',
+          }),
+          el('div', { text: environment.text }),
+          el('div.card__hint', {
+            text: `安全上下文：${capabilities.secure ? '是' : '否'}　·　通知 API：${capabilities.api ? '有' : '无'}　·　可直接创建通知：${capabilities.constructorUsable ? '是' : '否'}　·　当前状态：${status.active ? '已可发送' : '暂不可发送'}`,
+          }),
+        ]),
+      ]),
+      el('h3', { text: '需要满足的条件', style: { margin: 'var(--space-4) 0 var(--space-2)' } }),
+      el('ul', { style: { margin: 0, paddingLeft: '1.2em', lineHeight: '1.75' } }, conditions.map((text) => el('li', { text }))),
+      el('h3', { text: '不受支持、或无法保证的情况', style: { margin: 'var(--space-4) 0 var(--space-2)' } }),
+      el('ul', { style: { margin: 0, paddingLeft: '1.2em', lineHeight: '1.75' } }, [...unsupported, ...cantGuarantee].map((text) => el('li', { text }))),
+      el('div.card__hint', {
+        text: '在不支持系统通知的环境里，应用内的页面提示（例如"下一项学习即将开始"）仍然可用，只是不会弹出系统通知。',
+      }),
+    ]),
+  });
 }

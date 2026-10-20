@@ -572,3 +572,191 @@ test('重置系统：自动恢复备份槽同步为已重置状态，不会被�
   assert.equal(probe.getLoadReport().recovered, false);
   assert.deepEqual(probe.getState().tasks, [], '备份槽里也必须是已重置的状态');
 });
+
+/* ================================================================== *
+ * 七、恢复出厂设置（本轮收尾）
+ * ================================================================== */
+
+test('恢复出厂设置：数据、设置、主题一起回到初始状态', async () => {
+  await withUi(async ({ dom, instance, services, app, flush, findButton }) => {
+    const mk = (title) => taskInput({ title, plannedMinutes: 60, deadlineDate: '2025-10-20' });
+    services.taskService.addTask(mk('出厂前的任务'));
+    services.planService.requestPreview({
+      now: services.now(),
+      ops: [
+        {
+          kind: 'fixedActivity.add',
+          input: { title: '课程', type: 'class', recurrence: { kind: 'weekly', daysOfWeek: [4] }, start: '08:00', end: '09:00' },
+        },
+      ],
+    });
+    services.planService.applyPreview();
+    services.appearanceService.setTheme('dark');
+    app.commit((state) => ({ ...state, settings: { ...state.settings, maxSessionsPerDay: 7 } }), { reason: 'tweak' });
+
+    assert.equal(app.getState().tasks.length, 1);
+    assert.ok(app.getState().officialPlan);
+    assert.equal(services.appearanceService.getPreferences().appearance.theme, 'dark');
+
+    services.ui.resetFactory();
+    const confirm = findButton('恢复出厂设置');
+    assert.ok(confirm, '必须出现二次确认');
+    confirm.click();
+    await flush();
+    await flush();
+
+    const after = app.getState();
+    assert.equal(after.tasks.length, 0, '任务必须清空');
+    assert.equal(after.fixedActivities.length, 0, '固定日程必须清空');
+    assert.equal(after.sessions.length, 0, '学习时段必须清空');
+    assert.equal(after.officialPlan, null, '正式计划必须清空');
+    assert.equal(after.planHistory.length, 0, '版本历史必须清空');
+    assert.equal(after.settings.maxSessionsPerDay, 24, '设置必须恢复默认');
+    assert.equal(services.appearanceService.getPreferences().appearance.theme, 'light', '主题必须恢复默认');
+    assert.equal(validateAppState(after).ok, true, '重置后数据仍然合法');
+  });
+});
+
+test('恢复出厂设置：取消时不修改任何数据与设置', async () => {
+  await withUi(async ({ services, app, flush, findButton }) => {
+    services.taskService.addTask(taskInput({ title: '不该被删', plannedMinutes: 60, deadlineDate: '2025-10-20' }));
+    services.appearanceService.setTheme('dark');
+
+    services.ui.resetFactory();
+    const cancel = findButton('取消');
+    assert.ok(cancel, '应提供取消');
+    cancel.click();
+    await flush();
+
+    assert.equal(app.getState().tasks.length, 1, '取消后任务不变');
+    assert.equal(services.appearanceService.getPreferences().appearance.theme, 'dark', '取消后主题不变');
+  });
+});
+
+test('恢复出厂设置：备份槽同步，重新打开不会复活旧数据', async () => {
+  const { createAppState } = await import('../../src/services/appState.js');
+  const { createMemoryAdapter } = await import('../../src/storage/memoryAdapter.js');
+  const { createEmptyState, defaultSettings } = await import('../../src/domain/schemas.js');
+
+  const adapter = createMemoryAdapter();
+  const app1 = createAppState({ adapter, clock: () => '2025-10-16T05:23:00.000Z' });
+  app1.load();
+  app1.commit((state) => ({ ...state, tasks: [{ ...makeSeedTask() }] }), { reason: 'seed' });
+  app1.commit((state) => ({ ...state }), { reason: 'seed-2' }); // 让"有任务"的版本进入备份槽
+
+  // 恢复出厂设置关键三步
+  app1.commit(() => createEmptyState({ nowIso: '2025-10-16T05:23:00.000Z', windowStart: '2025-10-16' }), {
+    reason: 'reset-factory',
+  });
+  assert.equal(app1.syncRecoveryBackup().ok, true);
+  assert.equal(app1.getState().tasks.length, 0);
+
+  // 重新打开
+  const app2 = createAppState({ adapter, clock: () => '2025-10-16T05:23:00.000Z' });
+  const report = app2.load();
+  assert.equal(app2.getState().tasks.length, 0, '重开后不应出现旧任务');
+  assert.equal(report.recovered, false, '不应触发"从备份恢复"');
+  assert.deepEqual(app2.getState().settings, defaultSettings(), '重开后设置应为默认值');
+});
+
+test('恢复出厂设置：重置后仍可正常创建任务并生成计划', async () => {
+  await withUi(async ({ services, app, flush, findButton }) => {
+    services.taskService.addTask(taskInput({ title: '出厂前', plannedMinutes: 60, deadlineDate: '2025-10-20' }));
+    services.ui.resetFactory();
+    findButton('恢复出厂设置').click();
+    await flush();
+    await flush();
+
+    assert.equal(app.getState().tasks.length, 0);
+
+    // 重置后重新使用
+    const created = services.taskService.addTask(taskInput({ title: '出厂后', plannedMinutes: 60, deadlineDate: '2025-10-21' }));
+    assert.equal(created.ok, true, '重置后必须还能创建任务');
+    const preview = services.planService.requestPreview({ now: services.now(), changeSummary: '重新生成' });
+    assert.equal(preview.ok, true, preview.issues?.map((i) => i.message).join('; '));
+    assert.equal(services.planService.applyPreview().ok, true, '重置后必须还能生成并应用计划');
+    assert.ok(app.getState().officialPlan, '应有新的正式计划');
+  });
+});
+
+test('恢复出厂设置：不使用 localStorage.clear，也不删除整个数据库', async () => {
+  const source = await readFile(join(projectRoot, 'src', 'main.js'), 'utf8');
+  const start = source.indexOf('async resetFactory()');
+  // 去掉注释再检查：注释里出现的"localStorage.clear()"是解释"为什么不用它"，不是真实调用
+  const block = source
+    .slice(start, start + 5200)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  assert.equal(/localStorage\.clear\(\)/.test(block), false, '不得整体清空 localStorage');
+  assert.equal(/indexedDB\.deleteDatabase/.test(block), false, '不得删除整个 IndexedDB 数据库');
+  assert.match(block, /app\.commit\(/, '必须走原子提交');
+  assert.match(block, /syncRecoveryBackup/, '必须同步自动恢复备份');
+});
+
+function makeSeedTask() {
+  return {
+    id: 'tsk_factory_probe',
+    title: '出厂前的任务',
+    subject: '数学',
+    plannedMinutes: 60,
+    priorCompletedMinutes: null,
+    deadlineDate: '2025-10-20',
+    deadlineTime: '23:00',
+    importance: 3,
+    difficulty: 3,
+    procrastination: 3,
+    splittable: true,
+    minChunkMinutes: null,
+    maxChunkMinutes: null,
+    plannedStartMinutes: null,
+    dependsOn: [],
+    status: 'not_started',
+    note: '',
+    createdAt: '2025-10-16T00:00:00.000Z',
+    updatedAt: '2025-10-16T00:00:00.000Z',
+    startedAt: null,
+    completedAt: null,
+    cancelledAt: null,
+    deletedAt: null,
+  };
+}
+
+/* ================================================================== *
+ * 八、通知使用限制说明
+ * ================================================================== */
+
+test('通知页：展示使用限制，覆盖 iOS / Safari / 本地文件 / 后台推送', async () => {
+  await withUi(async ({ dom, instance }) => {
+    const text = pageText(dom, instance, '#/notifications');
+
+    assert.match(text, /通知使用限制/, '必须有明确的限制说明区块');
+    assert.match(text, /需要满足的条件/, '必须区分"需要满足的条件"');
+    assert.match(text, /不受支持|无法保证/, '必须区分"无法保证的情况"');
+
+    // 逐条核对该说明必须覆盖的关键限制
+    assert.match(text, /iPhone|iPad|iOS/, '必须说明 iOS/iPadOS 不支持');
+    assert.match(text, /Safari/, '必须说明 Safari 的限制');
+    assert.ok(text.includes('file://'), '必须说明本地 HTML 文件的限制');
+    assert.match(text, /后台|关闭页面/, '必须说明关闭页面后无法推送');
+    assert.match(text, /勿扰|静音/, '必须说明系统通知权限/勿扰模式的影响');
+    assert.match(text, /Service Worker/, '必须说明没有实现后台推送');
+  });
+});
+
+test('通知页：不支持的环境不会只显示"已开启"', async () => {
+  const originals = { Notification: globalThis.Notification, secure: globalThis.isSecureContext };
+  globalThis.isSecureContext = false;
+  globalThis.Notification = function Notification() {};
+  globalThis.Notification.permission = 'granted';
+  try {
+    await withUi(async ({ dom, instance, services }) => {
+      // 在非安全上下文里，status.active 必须是 false
+      assert.equal(services.notificationService.status().active, false, '非安全上下文不能算"已开启"');
+      const text = pageText(dom, instance, '#/notifications');
+      assert.match(text, /无法使用系统通知/, '应明确显示当前环境不可用');
+    });
+  } finally {
+    globalThis.Notification = originals.Notification;
+    globalThis.isSecureContext = originals.secure;
+  }
+});
