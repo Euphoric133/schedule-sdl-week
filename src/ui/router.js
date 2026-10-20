@@ -12,6 +12,7 @@ export const ROUTES = Object.freeze([
   { path: 'tasks', label: '学习任务', title: '学习任务', icon: '✅' },
   { path: 'activities', label: '固定日程', title: '固定日程', icon: '📌' },
   { path: 'stats', label: '学习统计', title: '学习统计', icon: '📊' },
+  { path: 'garden', label: '专注花园', title: '专注花园', icon: '🌱' },
   { path: 'preview', label: '调整预览', title: '调整预览', icon: '🔍' },
   { path: 'versions', label: '版本历史', title: '版本历史', icon: '🕘' },
   { path: 'appearance', label: '外观主题', title: '外观主题', icon: '🎨' },

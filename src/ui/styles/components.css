@@ -1494,3 +1494,30 @@ legend {
 .day-tag--locked { background: var(--color-locked-soft); color: var(--color-locked); }
 .day-tag--overdue { background: var(--color-danger-soft); color: var(--color-danger); }
 .day-tag--cancelled { background: var(--color-surface-alt); color: var(--color-text-faint); }
+
+/* ==========================================================================
+   专注花园（内嵌的独立应用）
+   用 iframe 承载：它有自己的样式与 #root，与本应用的样式完全隔离。
+   ========================================================================== */
+
+.garden-frame-host {
+  padding: var(--space-3);
+  background: var(--color-surface-alt);
+}
+
+.garden-frame {
+  display: block;
+  width: 100%;
+  /* 让花园有自己的滚动区域，而不是把整页撑长 */
+  height: clamp(520px, calc(100vh - 260px), 1200px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+@media (max-width: 720px) {
+  .garden-frame {
+    height: calc(100vh - 230px);
+    min-height: 460px;
+  }
+}

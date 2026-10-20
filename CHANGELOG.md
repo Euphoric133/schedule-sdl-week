@@ -5,6 +5,76 @@
 
 ---
 
+## [1.7.0] — 把「专注花园」内嵌进应用（侧边栏入口）
+
+日期：2026-10-17
+
+### 做了什么
+
+在侧边栏「学习统计」之后新增 **专注花园** 入口，点进去就是完整的专注花园应用，
+另外提供「在新窗口打开」。两种版本（多文件版与单文件版 `dist/standalone.html`）都能用。
+
+### 为什么用 iframe + srcdoc，而不是把它的代码并进来
+
+花园是一个**独立的单文件应用**（React 已打包、样式内联、挂载到它自己的 `#root`、有自己的 localStorage 键）。
+它和本应用是两套运行时：
+
+- 用 iframe 承载 → 它的全局样式、`#root`、快捷键、存储键都不会污染规划器；
+- 用 `srcdoc` 内联而不是引用外部文件 → 单文件版也能打开（相对路径的 iframe 在单文件版里会失效）。
+
+### 新增文件
+
+| 文件 | 用途 |
+|---|---|
+| `focus-garden.html` | 花园的源文件（ASCII 文件名，供重新生成内联模块用） |
+| `scripts/build-garden-embed.mjs` | 把 HTML 转成 ES 模块（含 `</script>` 转义） |
+| `src/embed/focusGardenHtml.js` | 生成的内联模块（约 479 KB，由脚本产出，请勿手改） |
+| `src/ui/pages/garden.js` | 花园页面：iframe + 新窗口按钮 + 数据独立性说明 |
+
+### 关键实现细节
+
+1. **`</script>` 必须转义**：单文件版把所有模块塞进一个 `<script>` 标签，
+   花园 HTML 里自带的 `</script>` 会提前截断脚本、导致白屏。生成时写成 `<\/script`。
+2. **去掉依赖相对路径的外链**（`manifest.webmanifest`、`icons/icon.svg` 等）：
+   `srcdoc` 里的相对地址按父页面解析，只会 404；它们只用于安装/标签页图标，内嵌场景无意义。
+   源文件保持原样，只改内联副本。
+3. **sandbox 必须放行脚本与同源**：否则页面空白，且 localStorage 不可用（花园无法保存专注记录）。
+4. **数据是分开的**：花园存自己的键，规划器的任务不会同步进去，反之亦然；两边都会在刷新后保留。
+5. **数据一致性有测试兜底**：如果 `focus-garden.html` 更新了却忘记重新生成内联模块，测试会失败并提示命令。
+
+### 更新花园版本的方法
+
+```bash
+# 1) 用新的「专注花园」HTML 覆盖 focus-garden.html
+# 2) 重新生成内联模块
+node scripts/build-garden-embed.mjs
+# 3) 重新构建单文件版
+node scripts/build-standalone.mjs
+```
+
+### 测试结果（真实执行）
+
+```
+$ node --test "tests/**/*.test.js"
+ℹ tests 545
+ℹ pass 545
+ℹ fail 0
+
+$ node scripts/build-standalone.mjs
+已生成 dist/standalone.html（1393 KB，内联 71 个模块）
+```
+
+新增 `tests/integration/garden.test.js`（6 个）：入口位置、iframe/srcdoc 内容完整性、
+sandbox 放行、新窗口按钮与拦截提示、内联模块与源文件一致、单文件版的脚本结构完整。
+
+### 注意
+
+- 单文件版体积从 909 KB 增加到约 1.2 MB（花园本身 460 KB），这是"内联而不是外链"的代价。
+- 内嵌时花园的安装图标/manifest 不可用（浏览器只在顶层文档读取它们）；
+  需要"添加到桌面"时请用「在新窗口打开」。
+
+---
+
 ## [1.6.0] — 收尾：真正的「恢复出厂设置」与通知使用限制说明
 
 日期：2026-10-17

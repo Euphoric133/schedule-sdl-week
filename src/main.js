@@ -36,6 +36,7 @@ import { renderHome } from './ui/pages/home.js';
 import { renderAppearance } from './ui/pages/appearance.js';
 import { renderNotifications } from './ui/pages/notifications.js';
 import { renderStats } from './ui/pages/stats.js';
+import { renderGarden } from './ui/pages/garden.js';
 import { renderActivities } from './ui/pages/activities.js';
 import { renderVersions } from './ui/pages/versions.js';
 import { openTaskForm } from './ui/forms/taskForm.js';
@@ -678,6 +679,7 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
     appearance: renderAppearance,
     notifications: renderNotifications,
     stats: renderStats,
+    garden: renderGarden,
   };
 
   shell = createShell({
