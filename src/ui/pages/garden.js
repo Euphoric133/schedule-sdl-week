@@ -1,95 +1,144 @@
 /**
- * 专注花园页。
+ * 专注花园：在**独立窗口**里打开，而不是嵌在网站页面里。
  *
- * 花园是一个**独立的单文件应用**（React 已打包、样式内联、挂载到它自己的 #root）。
- * 它和本应用是两套完全独立的运行时，因此这里用 **iframe 的 `srcdoc`** 承载：
- * - 它的全局样式、`#root`、localStorage 键、键盘快捷键都不会污染规划器；
- * - 内联而不是引用外部文件，所以**多文件版与单文件版（dist/standalone.html）都能打开**。
+ * 为什么改成独立窗口：
+ * - 花园是一个完整的番茄钟应用（自己的计时器、全屏布局、键盘快捷键），
+ *   嵌在规划器的内容区里既浪费空间，也没法真正"全屏使用"；
+ * - 独立窗口可以有自己的一整块屏幕，计时器不会因为切换规划器页面而被打断。
  *
- * 数据说明（重要）：
- * iframe 的 `srcdoc` 继承父页面的源，因此花园用的是**同一个站点**的 localStorage，
- * 只是它存的是自己的键。也就是说：花园的番茄记录不会出现在规划器的任务里，
- * 规划器的任务也不会出现在花园里——两边各自独立，但都会在刷新后保留。
+ * 打开方式：**点击侧边栏时直接开窗**（必须由用户点击触发，否则会被浏览器拦截）。
+ * 这个页面本身是"启动器"：从地址栏直接进入 #/garden、或窗口被拦截时，
+ * 用户可以在这里再点一次按钮。
  *
- * 「在新窗口打开」用 Blob URL：同样继承当前源，数据与内嵌时是同一份，
- * 不会出现"内嵌里记的专注记录，新窗口里看不到"的问题。
+ * 数据说明：花园用自己的一套 localStorage 键，和规划器的数据互不影响；
+ * 关掉窗口再打开，专注记录仍然在（同一个站点）。
  */
 
 import { button, card, notice } from '../components.js';
 import { el, toast } from '../dom.js';
 import { FOCUS_GARDEN_HTML } from '../../embed/focusGardenHtml.js';
 
-export function renderGarden() {
-  const nodes = [];
+/** 窗口名：用固定名字，重复点击会复用同一个窗口，而不是开出一堆 */
+const WINDOW_NAME = 'focus-garden-window';
 
-  nodes.push(
+/**
+ * 在独立窗口里打开花园。
+ *
+ * 细节：
+ * - 把窗口尺寸设成"可用屏幕大小"，打开就是铺满屏的一整块工作区；
+ *   想要系统级全屏，再按 macOS 的 ⌃⌘F（Windows/Linux 是 F11）即可。
+ * - 用 Blob URL 而不是文件路径：单文件版（dist/standalone.html）旁边没有
+ *   focus-garden.html，用相对路径会 404；Blob URL 两种版本都能用。
+ * - **不 revoke**：这个窗口是一次长期使用的工具，用户随时可能刷新它；
+ *   460 KB 的 Blob 占用可以忽略。
+ *
+ * @returns {{ok: boolean, reason?: string}}
+ */
+export function openGardenWindow() {
+  if (typeof globalThis.open !== 'function') return { ok: false, reason: 'unsupported' };
+
+  let url = null;
+  try {
+    const blob = new Blob([FOCUS_GARDEN_HTML], { type: 'text/html;charset=utf-8' });
+    url = URL.createObjectURL(blob);
+  } catch (error) {
+    return { ok: false, reason: 'blob-failed', message: error?.message ?? null };
+  }
+
+  const screenRef = globalThis.screen ?? {};
+  const availWidth = Number.isFinite(screenRef.availWidth) ? screenRef.availWidth : 1440;
+  const availHeight = Number.isFinite(screenRef.availHeight) ? screenRef.availHeight : 900;
+  const width = Math.max(960, Math.round(availWidth * 0.98));
+  const height = Math.max(640, Math.round(availHeight * 0.96));
+  const left = Math.max(0, Math.round((availWidth - width) / 2));
+  const top = Math.max(0, Math.round((availHeight - height) / 2));
+
+  const features = `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`;
+
+  let opened = null;
+  try {
+    opened = globalThis.open(url, WINDOW_NAME, features);
+  } catch (error) {
+    return { ok: false, reason: 'open-failed', message: error?.message ?? null };
+  }
+
+  if (!opened) {
+    // 被浏览器拦截：保留 Blob 供用户再点一次，不做 revoke
+    return { ok: false, reason: 'blocked' };
+  }
+
+  try {
+    opened.focus();
+  } catch {
+    // 某些浏览器不允许 opener 调 focus，忽略即可
+  }
+  return { ok: true };
+}
+
+/** 统一处理"打开失败"的提示，避免每个调用点各写一套文案 */
+export function reportOpenFailure(result) {
+  if (!result || result.ok) return;
+  if (result.reason === 'blocked') {
+    toast('浏览器拦截了新窗口：请允许本站弹出窗口，然后点页面上的「打开专注花园」按钮重试。', 'error', 10000);
+    return;
+  }
+  if (result.reason === 'unsupported') {
+    toast('当前环境不允许打开新窗口，请用桌面浏览器访问。', 'error', 8000);
+    return;
+  }
+  toast(`无法打开专注花园窗口：${result.message ?? '未知原因'}`, 'error', 8000);
+}
+
+export function renderGarden() {
+  return [
     el('header.page-head', {}, [
       el('div', {}, [
         el('h1', { text: '专注花园' }),
         el('p.page-head__sub', {
-          text: '内置的独立番茄钟应用：专注计时、任务、历史与统计都在它自己里面完成，和规划器的数据互不影响。',
+          text: '在一个独立窗口里使用：铺满整个屏幕，计时不会被规划器的页面切换打断。',
         }),
       ]),
       el('div.page-head__actions', {}, [
-        button('在新窗口打开', {
+        button('打开专注花园窗口', {
           size: 'sm',
           variant: 'primary',
-          onClick: () => openInNewWindow(),
+          onClick: () => reportOpenFailure(openGardenWindow()),
         }),
       ]),
     ]),
-  );
 
-  nodes.push(
     notice({
       level: 'info',
-      title: '这是一个独立应用，数据与规划器分开保存',
+      title: '它在一个单独的窗口里运行，不在本页面内',
       message:
-        '花园有自己的任务、专注记录与设置（保存在同一个站点的本地存储里，刷新后仍在）。规划器的学习任务不会同步进花园；如果需要按规划来专注，在花园里新建对应任务即可。',
+        '专注花园是独立的番茄钟应用，有自己的任务、专注记录与设置。点左侧「专注花园」或上面的按钮，会打开一个新窗口；关掉窗口后专注记录仍然保留（存在同一个站点的本地存储里）。',
     }),
-  );
 
-  nodes.push(
     card({
-      title: '专注花园',
-      hint: '如果下方区域显示空白，可以用右上角「在新窗口打开」，或检查浏览器是否阻止了内嵌页面',
-      flush: true,
-      body: el('div.garden-frame-host', {}, [
-        el('iframe', {
-          class: 'garden-frame',
-          title: '专注花园',
-          srcdoc: FOCUS_GARDEN_HTML,
-          // 让花园拥有完整权限：它需要 localStorage 保存专注记录
-          sandbox: 'allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads',
-          allow: 'fullscreen',
-          loading: 'eager',
-        }),
+      title: '为什么用独立窗口',
+      hint: '嵌在页面里没法真正全屏，也不适合长时间盯着计时器',
+      body: el('ul', { style: { margin: 0, paddingLeft: '1.2em', lineHeight: '1.8' } }, [
+        el('li', { text: '窗口会按屏幕大小打开，整块区域都是专注界面。' }),
+        el('li', { text: '需要系统级全屏时，按 macOS 的 ⌃⌘F（Windows / Linux 是 F11）。' }),
+        el('li', { text: '专注花园与规划器的数据各自独立：规划器的任务不会自动出现在花园里。' }),
+        el('li', { text: '重复点击左侧「专注花园」会复用同一个窗口，不会开出一堆重复窗口。' }),
       ]),
     }),
-  );
 
-  return nodes;
-}
-
-/**
- * 在新窗口打开花园。
- *
- * 用 Blob URL 而不是 `srcdoc`：新窗口需要一个真实可导航的地址，
- * 而 Blob URL 继承当前源，因此 localStorage 与内嵌时是同一份数据。
- */
-function openInNewWindow() {
-  try {
-    const blob = new Blob([FOCUS_GARDEN_HTML], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const opened = globalThis.open?.(url, '_blank', 'noopener');
-    if (!opened) {
-      URL.revokeObjectURL(url);
-      toast('浏览器拦截了新窗口，请允许本站弹出窗口后重试。', 'error', 8000);
-      return;
-    }
-    // 给新窗口留出加载时间再回收，避免地址立刻失效
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  } catch (error) {
-    toast(`无法打开新窗口：${error?.message ?? error}`, 'error', 8000);
-  }
+    card({
+      title: '窗口没有打开？',
+      hint: '多半是被浏览器的弹窗拦截挡住了',
+      body: el('div', {}, [
+        el('div.card__hint', {
+          text: '浏览器只允许"由用户点击"触发的新窗口。请允许本站弹出窗口后，点下面的按钮再试一次。',
+        }),
+        el('div.form-actions', { style: { justifyContent: 'flex-start', marginTop: 'var(--space-3)' } }, [
+          button('打开专注花园窗口', {
+            size: 'sm',
+            onClick: () => reportOpenFailure(openGardenWindow()),
+          }),
+        ]),
+      ]),
+    }),
+  ];
 }

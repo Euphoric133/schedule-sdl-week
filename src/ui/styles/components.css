@@ -1521,3 +1521,17 @@ legend {
     min-height: 460px;
   }
 }
+
+/* 导航里的"打开新窗口"项（专注花园）：用 button 承载，外观与其它导航项一致 */
+.app-nav__link--window {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.app-nav__link--window:hover {
+  color: var(--color-primary);
+}

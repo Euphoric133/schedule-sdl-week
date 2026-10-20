@@ -242,12 +242,18 @@ test('端到端：所有导航入口都能到达且页面渲染正常', async ()
   try {
     env.instance.services.taskService.addTask(TASK_INPUT);
     const navLinks = env.dom.appHost.children[0].byClass('app-nav__link');
-    // 番茄钟与奖励转盘已移除，导航剩 11 项
-    assert.ok(navLinks.length >= 11, `侧边导航应有全部页面，实际 ${navLinks.length}`);
+    // 番茄钟与奖励转盘已移除；"专注花园"是打开独立窗口，不是页面跳转
+    assert.ok(navLinks.length >= 12, `侧边导航应有全部页面，实际 ${navLinks.length}`);
 
     for (const link of navLinks) {
       const hash = link.getAttribute('href');
-      assert.ok(hash && hash.startsWith('#/'), `导航链接必须可用，实际 ${hash}`);
+      // 「专注花园」用 button 承载（点击直接开新窗口），没有 href；它不属于页面导航
+      if (hash === null) {
+        assert.equal(link.tagName, 'BUTTON', '没有 href 的导航项必须是"打开窗口"的按钮');
+        assert.match(link.textContent, /专注花园/);
+        continue;
+      }
+      assert.ok(hash.startsWith('#/'), `导航链接必须可用，实际 ${hash}`);
       env.go(hash);
       const text = env.texts();
       assert.ok(!/页面不存在/.test(text), `${hash} 不应显示"页面不存在"`);

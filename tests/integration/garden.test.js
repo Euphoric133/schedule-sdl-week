@@ -60,50 +60,101 @@ test('侧边栏：有「专注花园」入口，且紧跟在「学习统计」�
   const garden = ROUTES.find((route) => route.path === 'garden');
   assert.equal(garden.label, '专注花园');
   assert.ok(garden.icon, '导航项应有图标');
+  // 说明：它是"打开独立窗口"，但路由仍然保留，供地址栏直达启动器页
 });
 
-test('渲染：花园页用 iframe + srcdoc 承载，内容就是那份单文件应用', async () => {
-  await withUi(async ({ dom, instance }) => {
-    dom.location.hash = '#/garden';
-    instance.shell.render();
+test('侧边栏：点击「专注花园」直接打开独立窗口，不切换页面', async () => {
+  await withUi(async ({ dom, instance, services }) => {
+    const calls = [];
+    const originalOpen = globalThis.open;
+    globalThis.open = (url, name, features) => {
+      calls.push({ url, name, features });
+      return { focus() {} };
+    };
+    try {
+      dom.location.hash = '#/home';
+      instance.shell.render();
+      const navItem = dom.appHost.children[0].byClass('app-nav__link--window')[0];
+      assert.ok(navItem, '侧边栏应有"打开窗口"式的导航项');
+      assert.equal(navItem.tagName, 'BUTTON', '必须是 button，才能由点击直接触发新窗口');
+      assert.equal(navItem.getAttribute('href'), null, '不应带有页面跳转的 href');
 
-    const main = dom.appHost.children[0].byClass('app-main')[0];
-    const iframe = main.all().find((node) => node.tagName === 'IFRAME');
-    assert.ok(iframe, '页面必须包含一个 iframe');
+      navItem.click();
 
-    const srcdoc = iframe.getAttribute('srcdoc') ?? '';
-    assert.ok(srcdoc.length > 100_000, `srcdoc 应该是完整应用，实际 ${srcdoc.length} 字符`);
-    assert.match(srcdoc, /^<!doctype html>/i, '应当是完整的 HTML 文档');
-    assert.ok(srcdoc.includes('id="root"'), '应当包含花园的 #root 挂载点');
-    assert.ok(srcdoc.trimEnd().endsWith('</html>'), '应当是完整的 HTML 结尾');
-
-    // 花园需要脚本与本地存储；sandbox 必须放行，否则页面会是空白
-    const sandbox = iframe.getAttribute('sandbox') ?? '';
-    assert.match(sandbox, /allow-scripts/, 'sandbox 必须允许脚本');
-    assert.match(sandbox, /allow-same-origin/, 'sandbox 必须允许同源（否则 localStorage 不可用）');
-
-    assert.equal(iframe.getAttribute('title'), '专注花园', 'iframe 需要无障碍名称');
+      assert.equal(calls.length, 1, '点击应调用一次 window.open');
+      assert.match(calls[0].url, /^blob:/, '应通过 Blob URL 打开（两种版本都可用）');
+      assert.match(calls[0].features, /width=\d+/, '应指定窗口尺寸');
+      assert.match(calls[0].features, /height=\d+/, '应指定窗口尺寸');
+      assert.equal(dom.location.hash, '#/home', '点击不应改变当前页面（不是页面跳转）');
+    } finally {
+      globalThis.open = originalOpen;
+    }
   });
 });
 
-test('渲染：提供「在新窗口打开」，并对弹窗被拦给出提示', async () => {
+test('侧边栏：重复点击复用同一个窗口，不会开出一堆', async () => {
+  await withUi(async ({ dom, instance }) => {
+    const names = [];
+    const originalOpen = globalThis.open;
+    globalThis.open = (url, name) => {
+      names.push(name);
+      return { focus() {} };
+    };
+    try {
+      instance.shell.render();
+      const navItem = dom.appHost.children[0].byClass('app-nav__link--window')[0];
+      navItem.click();
+      navItem.click();
+      assert.deepEqual(names, ['focus-garden-window', 'focus-garden-window'], '窗口名必须固定，才能复用');
+    } finally {
+      globalThis.open = originalOpen;
+    }
+  });
+});
+
+test('启动器页：不再内嵌 iframe，而是提供打开窗口的按钮', async () => {
   await withUi(async ({ dom, instance }) => {
     dom.location.hash = '#/garden';
     instance.shell.render();
     const main = dom.appHost.children[0].byClass('app-main')[0];
-    const openButton = main.all().find((node) => node.tagName === 'BUTTON' && node.textContent.trim() === '在新窗口打开');
-    assert.ok(openButton, '应有"在新窗口打开"按钮');
 
-    // 模拟被浏览器拦截：不应抛异常，且要给出提示
+    assert.equal(
+      main.all().filter((node) => node.tagName === 'IFRAME').length,
+      0,
+      '不应再把花园嵌在页面里',
+    );
+
+    const buttons = main.all().filter((node) => node.tagName === 'BUTTON' && node.textContent.trim() === '打开专注花园窗口');
+    assert.ok(buttons.length >= 1, '应提供"打开专注花园窗口"按钮');
+
+    const opened = [];
     const originalOpen = globalThis.open;
-    const originalUrl = globalThis.URL;
-    globalThis.open = () => null;
-    globalThis.URL = Object.assign(function URL() {}, { createObjectURL: () => 'blob:probe', revokeObjectURL: () => {} });
+    globalThis.open = (url) => {
+      opened.push(url);
+      return { focus() {} };
+    };
     try {
-      assert.doesNotThrow(() => openButton.click());
+      buttons[0].click();
+      assert.equal(opened.length, 1, '点击按钮应打开窗口');
     } finally {
       globalThis.open = originalOpen;
-      globalThis.URL = originalUrl;
+    }
+  });
+});
+
+test('启动器页：开关被拦截时给出可执行的提示，而不是静默失败', async () => {
+  await withUi(async ({ dom, instance }) => {
+    const originalOpen = globalThis.open;
+    globalThis.open = () => null; // 模拟被拦截
+    try {
+      const result = instance.services.ui.openGardenWindow();
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'blocked');
+      const notices = dom.document.body.all().filter((node) => node.classList?.contains('notice--danger'));
+      assert.ok(notices.length > 0, '必须给出提示');
+      assert.match(notices.map((node) => node.textContent).join(' '), /拦截|弹出窗口/);
+    } finally {
+      globalThis.open = originalOpen;
     }
   });
 });

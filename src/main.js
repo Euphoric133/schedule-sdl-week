@@ -36,7 +36,7 @@ import { renderHome } from './ui/pages/home.js';
 import { renderAppearance } from './ui/pages/appearance.js';
 import { renderNotifications } from './ui/pages/notifications.js';
 import { renderStats } from './ui/pages/stats.js';
-import { renderGarden } from './ui/pages/garden.js';
+import { openGardenWindow, renderGarden, reportOpenFailure } from './ui/pages/garden.js';
 import { renderActivities } from './ui/pages/activities.js';
 import { renderVersions } from './ui/pages/versions.js';
 import { openTaskForm } from './ui/forms/taskForm.js';
@@ -413,6 +413,16 @@ function createUiService({ services, getShell = () => null }) {
       if (shellInstance?.renderCurrent) shellInstance.renderCurrent();
       toast('已重置：业务数据已清空，设置与外观偏好保留。', 'success', 8000);
       return { ok: true, counts };
+    },
+
+    /**
+     * 在独立窗口里打开「专注花园」。
+     * 侧边栏点击与花园页上的按钮都走这里，保证行为一致。
+     */
+    openGardenWindow() {
+      const result = openGardenWindow();
+      reportOpenFailure(result);
+      return result;
     },
 
     /** 重新渲染当前页面（数据变更后让界面立刻反映结果） */

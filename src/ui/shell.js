@@ -78,10 +78,47 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
     fileInput.click();
   }
 
+  /**
+   * 侧边栏里有些项**不切换页面**，而是打开一个独立窗口（目前是「专注花园」）。
+   *
+   * 为什么用 button 而不是 <a href>：新窗口必须由**用户点击**直接触发，
+   * 否则会被浏览器当成弹窗拦截。如果先跳到 #/garden 再在渲染时开窗，
+   * 就已经脱离了点击上下文，必然失败。
+   */
+  const OPENS_WINDOW = new Set(['garden']);
+
   function renderNav(activePath) {
     clear(navList);
     ROUTES.forEach((route, index) => {
       const isActive = route.path === activePath;
+      if (OPENS_WINDOW.has(route.path)) {
+        navList.appendChild(
+          el('li', {}, [
+            el(
+              'button.app-nav__link.app-nav__link--window',
+              {
+                type: 'button',
+                title: `在新窗口打开（快捷键 ${index + 1}）`,
+                on: {
+                  click: () => {
+                    try {
+                      services.ui.openGardenWindow();
+                    } catch {
+                      // 打不开窗口时不要把导航搞挂：退回到说明页
+                      globalThis.location.hash = `#/${route.path}`;
+                    }
+                  },
+                },
+              },
+              [
+                el('span', { text: route.label }),
+                el('span', { class: 'app-nav__key', text: '↗', 'aria-hidden': 'true' }),
+              ],
+            ),
+          ]),
+        );
+        return;
+      }
       navList.appendChild(
         el('li', {}, [
           el(
@@ -238,7 +275,13 @@ function installKeyboardShortcuts({ app, services, render }) {
     const index = Number.parseInt(key, 10);
     if (Number.isInteger(index) && index >= 1 && index <= ROUTES.length) {
       event.preventDefault();
-      globalThis.location.hash = `#/${ROUTES[index - 1].path}`;
+      const target = ROUTES[index - 1];
+      // 与侧边栏保持一致：花园这类"开窗口"的页面，快捷键也直接开窗
+      if (target.path === 'garden') {
+        services.ui.openGardenWindow();
+        return;
+      }
+      globalThis.location.hash = `#/${target.path}`;
       return;
     }
 
