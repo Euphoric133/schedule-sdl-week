@@ -3,258 +3,307 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>七天学习规划器 · 历史版本</title>
+<title>七天学习规划器 · 全部历史版本</title>
 <style>
-  :root { color-scheme: light dark; --fg:#1f2328; --muted:#6a737d; --line:#e1e4e8; --bg:#fff; --accent:#2f6f4f; --chip:#eef5f0; }
-  @media (prefers-color-scheme: dark) { :root { --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --bg:#0d1117; --accent:#5cc08f; --chip:#16241d; } }
+  :root { color-scheme: light dark; --fg:#1f2328; --muted:#6a737d; --line:#e1e4e8; --bg:#fff; --accent:#2f6f4f; --chip:#eef5f0; --card:#fafbfc; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --bg:#0d1117; --accent:#5cc08f; --chip:#16241d; --card:#11161c; } }
   * { box-sizing: border-box; }
   body { margin:0; padding:32px 20px 64px; background:var(--bg); color:var(--fg);
          font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; }
-  .wrap { max-width: 900px; margin: 0 auto; }
+  .wrap { max-width: 980px; margin: 0 auto; }
   h1 { font-size:22px; margin:0 0 6px; }
-  p.lead { color:var(--muted); margin:0 0 24px; font-size:14px; }
+  p.lead { color:var(--muted); margin:0 0 8px; font-size:14px; }
+  .stats { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .stats b { color:var(--fg); }
   table { width:100%; border-collapse: collapse; font-size:14px; }
-  th, td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align: top; }
+  th, td { text-align:left; padding:10px 10px; border-bottom:1px solid var(--line); vertical-align: top; }
   th { font-weight:600; color:var(--muted); font-size:12.5px; border-bottom:2px solid var(--line); }
   td.n { color:var(--muted); font-variant-numeric: tabular-nums; width:38px; }
-  td.d { color:var(--muted); font-variant-numeric: tabular-nums; white-space:nowrap; width:96px; }
-  td.s { width:70px; color:var(--muted); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; }
+  td.d { color:var(--muted); font-variant-numeric: tabular-nums; white-space:nowrap; width:92px; }
+  td.s { width:66px; color:var(--muted); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; }
   a { color:var(--accent); text-decoration:none; }
   a:hover { text-decoration:underline; }
-  .chip { display:inline-block; margin-left:8px; padding:1px 8px; border-radius:999px;
-          background:var(--chip); color:var(--accent); font-size:12px; font-weight:600; white-space:nowrap; }
-  note { display:block; margin-top:28px; color:var(--muted); font-size:13px; }
+  tr.major { background: var(--card); }
+  .tag { display:inline-block; margin-right:8px; padding:1px 7px; border-radius:999px; font-size:11.5px; font-weight:700; white-space:nowrap; border:1px solid; }
+  .label { display:block; margin-top:3px; color:var(--muted); font-size:12.5px; }
+  tr.major .subject { font-weight:600; }
+  note { display:block; margin-top:28px; color:var(--muted); font-size:13px; line-height:1.8; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>七天学习规划器 · 历史版本</h1>
-  <p class="lead">每个文件都是那个提交当时完整可运行的应用（单文件，双击即可打开）。共 31 个版本，按时间从早到晚排列。</p>
+  <h1>七天学习规划器 · 全部历史版本</h1>
+  <p class="lead">每个文件都是那个提交当时完整可运行的应用（单文件，双击即可打开）。按时间从早到晚排列。</p>
+  <div class="stats">共 <b>37</b> 个版本 · 其中<b>大改动 18</b> 个、<b>里程碑 4</b> 个</div>
   <table>
     <thead><tr><th>#</th><th>版本说明</th><th>提交</th><th>时间</th><th>大小</th></tr></thead>
     <tbody>
-      <tr>
+      <tr class="major">
         <td class="n">1</td>
-        <td><a href="01-2026-10-16-1c5b995.html">阶段 1：基础项目、核心数据模型、基础校验逻辑与项目文档</a><span class="chip">最初版（阶段 1）</span></td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="01-2026-10-16-1c5b995.html">阶段 1：基础项目、核心数据模型、基础校验逻辑与项目文档</a><span class="label">最初版：数据模型 + 基础校验（无界面）</span></td>
         <td class="s">1c5b995</td>
         <td class="d">10-16 13:29</td>
         <td class="d">303 KB</td>
       </tr>
       <tr>
         <td class="n">2</td>
-        <td><a href="02-2026-10-16-931868a.html">阶段 1 收尾：界面冒烟测试发现的缺陷修复与文档同步</a></td>
+        <td><a class="subject" href="02-2026-10-16-931868a.html">阶段 1 收尾：界面冒烟测试发现的缺陷修复与文档同步</a></td>
         <td class="s">931868a</td>
         <td class="d">10-16 13:29</td>
         <td class="d">303 KB</td>
       </tr>
-      <tr>
+      <tr class="major">
         <td class="n">3</td>
-        <td><a href="03-2026-10-16-45a0b60.html">阶段 2：无 AI 排程引擎、差异预览闭环、硬约束校验与引擎级测试</a><span class="chip">排程引擎出现（阶段 2）</span></td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="03-2026-10-16-45a0b60.html">阶段 2：无 AI 排程引擎、差异预览闭环、硬约束校验与引擎级测试</a><span class="label">排程引擎诞生（阶段 2）</span></td>
         <td class="s">45a0b60</td>
         <td class="d">10-16 13:57</td>
         <td class="d">472 KB</td>
       </tr>
       <tr>
         <td class="n">4</td>
-        <td><a href="04-2026-10-16-983577d.html">阶段 2 收尾：修复局部优化与休息块重叠缺陷，补充回归测试与文档</a></td>
+        <td><a class="subject" href="04-2026-10-16-983577d.html">阶段 2 收尾：修复局部优化与休息块重叠缺陷，补充回归测试与文档</a></td>
         <td class="s">983577d</td>
         <td class="d">10-16 13:57</td>
         <td class="d">475 KB</td>
       </tr>
-      <tr>
+      <tr class="major">
         <td class="n">5</td>
-        <td><a href="05-2026-10-16-0e26457.html">阶段 3：草稿变更层、预览交互闭环、时段与固定活动管理、每日视图、图形化设置、窗口滚动</a><span class="chip">第一版可用界面（阶段 3）</span></td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="05-2026-10-16-0e26457.html">阶段 3：草稿变更层、预览交互闭环、时段与固定活动管理、每日视图、图形化设置、窗口滚动</a><span class="label">第一版可用界面：预览闭环 + 每日视图</span></td>
         <td class="s">0e26457</td>
         <td class="d">10-16 14:09</td>
         <td class="d">567 KB</td>
       </tr>
       <tr>
         <td class="n">6</td>
-        <td><a href="06-2026-10-16-a72b9d7.html">阶段 3 收尾：修复确认预览时的任务 ID 映射缺陷，补充回归测试与文档</a></td>
+        <td><a class="subject" href="06-2026-10-16-a72b9d7.html">阶段 3 收尾：修复确认预览时的任务 ID 映射缺陷，补充回归测试与文档</a></td>
         <td class="s">a72b9d7</td>
         <td class="d">10-16 14:10</td>
         <td class="d">570 KB</td>
       </tr>
       <tr>
         <td class="n">7</td>
-        <td><a href="07-2026-10-16-a83a5bf.html">阶段 4：学习计时工作台、计时持久化、清理入口、导入两步校验与存储面板</a><span class="chip">计时工作台（阶段 4）</span></td>
+        <td><a class="subject" href="07-2026-10-16-a83a5bf.html">阶段 4：学习计时工作台、计时持久化、清理入口、导入两步校验与存储面板</a></td>
         <td class="s">a83a5bf</td>
         <td class="d">10-16 14:35</td>
         <td class="d">601 KB</td>
       </tr>
       <tr>
         <td class="n">8</td>
-        <td><a href="08-2026-10-16-de4cdb5.html">阶段 5：合并写入路径、计时实时刷新、键盘与可访问性、交付文档定稿</a><span class="chip">阶段 5 交付</span></td>
+        <td><span class="tag" style="background:#eef5f0;color:#2f6f4f;border-color:#c8ddd1">里程碑</span><a class="subject" href="08-2026-10-16-de4cdb5.html">阶段 5：合并写入路径、计时实时刷新、键盘与可访问性、交付文档定稿</a><span class="label">阶段 5 交付：计时工作台、键盘与可访问性</span></td>
         <td class="s">de4cdb5</td>
         <td class="d">10-16 18:54</td>
         <td class="d">605 KB</td>
       </tr>
       <tr>
         <td class="n">9</td>
-        <td><a href="09-2026-10-16-9288f83.html">修复核心规划流程：无改动重排误报为全部重排、空任务谎报完整可行、内部枚举与开发痕迹上屏</a></td>
+        <td><a class="subject" href="09-2026-10-16-9288f83.html">修复核心规划流程：无改动重排误报为全部重排、空任务谎报完整可行、内部枚举与开发痕迹上屏</a></td>
         <td class="s">9288f83</td>
         <td class="d">10-16 19:31</td>
         <td class="d">620 KB</td>
       </tr>
-      <tr>
+      <tr class="major">
         <td class="n">10</td>
-        <td><a href="10-2026-10-16-bc35357.html">新增首页/外观主题与壁纸/通知提醒/番茄钟/奖励转盘/学习统计，修复打包器导出别名缺陷</a><span class="chip">加入番茄钟/奖励转盘/时间轴</span></td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="10-2026-10-16-bc35357.html">新增首页/外观主题与壁纸/通知提醒/番茄钟/奖励转盘/学习统计，修复打包器导出别名缺陷</a><span class="label">加入番茄钟 / 奖励转盘 / 时间轴 / 统计（功能大扩张）</span></td>
         <td class="s">bc35357</td>
         <td class="d">10-16 19:37</td>
         <td class="d">817 KB</td>
       </tr>
       <tr>
         <td class="n">11</td>
-        <td><a href="11-2026-10-16-28cb265.html">为新增功能补齐测试（计时精度、通知去重、奖励防重复、统计口径），修正每日简报与即将开始重复提醒的问题</a></td>
+        <td><a class="subject" href="11-2026-10-16-28cb265.html">为新增功能补齐测试（计时精度、通知去重、奖励防重复、统计口径），修正每日简报与即将开始重复提醒的问题</a></td>
         <td class="s">28cb265</td>
         <td class="d">10-16 19:53</td>
         <td class="d">818 KB</td>
       </tr>
       <tr>
         <td class="n">12</td>
-        <td><a href="12-2026-10-16-0206a31.html">修复预览页确认应用/放弃修改按钮调用不存在的方法；新增端到端点击测试与接口审计</a></td>
+        <td><a class="subject" href="12-2026-10-16-0206a31.html">修复预览页确认应用/放弃修改按钮调用不存在的方法；新增端到端点击测试与接口审计</a></td>
         <td class="s">0206a31</td>
         <td class="d">10-16 19:57</td>
         <td class="d">818 KB</td>
       </tr>
       <tr>
         <td class="n">13</td>
-        <td><a href="13-2026-10-16-1272c05.html">新增任务已完成/剩余时长声明与每任务安排时间展示；修复 createTask 缺失字段</a></td>
+        <td><a class="subject" href="13-2026-10-16-1272c05.html">新增任务已完成/剩余时长声明与每任务安排时间展示；修复 createTask 缺失字段</a></td>
         <td class="s">1272c05</td>
         <td class="d">10-16 19:59</td>
         <td class="d">824 KB</td>
       </tr>
-      <tr>
+      <tr class="major">
         <td class="n">14</td>
-        <td><a href="14-2026-10-16-7640669.html">新增成就反馈与存储容量提醒；更新文档至 v1.0.0（README/CHANGELOG/ARCHITECTURE/验收清单）</a><span class="chip">v1.0.0 完整版</span></td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="14-2026-10-16-7640669.html">新增成就反馈与存储容量提醒；更新文档至 v1.0.0（README/CHANGELOG/ARCHITECTURE/验收清单）</a><span class="label">v1.0.0 完整版</span></td>
         <td class="s">7640669</td>
         <td class="d">10-16 20:01</td>
         <td class="d">829 KB</td>
       </tr>
       <tr>
         <td class="n">15</td>
-        <td><a href="15-2026-10-16-459ba8f.html">新增固定专注功能栏（跨页面可见可控）与成就反馈；补齐文档</a></td>
+        <td><a class="subject" href="15-2026-10-16-459ba8f.html">新增固定专注功能栏（跨页面可见可控）与成就反馈；补齐文档</a></td>
         <td class="s">459ba8f</td>
         <td class="d">10-16 20:04</td>
         <td class="d">834 KB</td>
       </tr>
       <tr>
         <td class="n">16</td>
-        <td><a href="16-2026-10-16-11ab484.html">新增移动端响应式布局与视觉系统回归测试</a></td>
+        <td><a class="subject" href="16-2026-10-16-11ab484.html">新增移动端响应式布局与视觉系统回归测试</a></td>
         <td class="s">11ab484</td>
         <td class="d">10-16 20:04</td>
         <td class="d">836 KB</td>
       </tr>
-      <tr>
+      <tr class="major">
         <td class="n">17</td>
-        <td><a href="17-2026-10-17-7e1bd03.html">修复任务与计划时段的数据一致性：完成任务/改工作量/改已完成后同步取消超出时段；加载旧数据时安全修复而非显示空白</a></td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="17-2026-10-17-7e1bd03.html">修复任务与计划时段的数据一致性：完成任务/改工作量/改已完成后同步取消超出时段；加载旧数据时安全修复而非显示空白</a><span class="label">v1.1 起点：修复任务与时段数据一致性（核心正确性）</span></td>
         <td class="s">7e1bd03</td>
         <td class="d">10-17 16:26</td>
         <td class="d">850 KB</td>
       </tr>
-      <tr>
+      <tr class="major">
         <td class="n">18</td>
-        <td><a href="18-2026-10-17-6ce7851.html">修复壁纸不显示（背景层从未创建）并移除显示方式设置；完整移除缓冲时间功能，兼容旧计划中的缓冲块</a></td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="18-2026-10-17-6ce7851.html">修复壁纸不显示（背景层从未创建）并移除显示方式设置；完整移除缓冲时间功能，兼容旧计划中的缓冲块</a><span class="label">移除缓冲时间；修复壁纸不显示</span></td>
         <td class="s">6ce7851</td>
         <td class="d">10-17 16:29</td>
         <td class="d">848 KB</td>
       </tr>
-      <tr>
+      <tr class="major">
         <td class="n">19</td>
-        <td><a href="19-2026-10-17-c1a2e64.html">移除番茄钟与奖励转盘：页面、服务、路由、入口、状态字段、通知类型与相关样式；保留普通学习记录统计</a></td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="19-2026-10-17-c1a2e64.html">移除番茄钟与奖励转盘：页面、服务、路由、入口、状态字段、通知类型与相关样式；保留普通学习记录统计</a><span class="label">大规模移除：番茄钟 + 奖励转盘</span></td>
         <td class="s">c1a2e64</td>
         <td class="d">10-17 16:31</td>
         <td class="d">749 KB</td>
       </tr>
       <tr>
         <td class="n">20</td>
-        <td><a href="20-2026-10-17-4ed947d.html">重设每日视图为日期为列、任务为内容的日程概览，替换原时间轴网格；补充排序与状态测试</a></td>
+        <td><a class="subject" href="20-2026-10-17-4ed947d.html">重设每日视图为日期为列、任务为内容的日程概览，替换原时间轴网格；补充排序与状态测试</a></td>
         <td class="s">4ed947d</td>
         <td class="d">10-17 16:32</td>
         <td class="d">757 KB</td>
       </tr>
       <tr>
         <td class="n">21</td>
-        <td><a href="21-2026-10-17-c2a1d6c.html">更新文档至 1.1.0：数据一致性修复、壁纸修复、功能精简与每日视图重设</a><span class="chip">v1.1.0（精简功能）</span></td>
+        <td><span class="tag" style="background:#eef5f0;color:#2f6f4f;border-color:#c8ddd1">里程碑</span><a class="subject" href="21-2026-10-17-c2a1d6c.html">更新文档至 1.1.0：数据一致性修复、壁纸修复、功能精简与每日视图重设</a><span class="label">v1.1.0</span></td>
         <td class="s">c2a1d6c</td>
         <td class="d">10-17 16:33</td>
         <td class="d">757 KB</td>
       </tr>
       <tr>
         <td class="n">22</td>
-        <td><a href="22-2026-10-17-be807aa.html">不再把任务全部完成当成数据警告（正常状态不应弹警告横幅）</a></td>
+        <td><a class="subject" href="22-2026-10-17-be807aa.html">不再把任务全部完成当成数据警告（正常状态不应弹警告横幅）</a></td>
         <td class="s">be807aa</td>
         <td class="d">10-17 16:34</td>
         <td class="d">757 KB</td>
       </tr>
-      <tr>
+      <tr class="major">
         <td class="n">23</td>
-        <td><a href="23-2026-10-17-d0cd0ea.html">修复壁纸层级（负 z-index）与卡片 backdrop-filter 造成的发蒙/遮挡；统一任务名称 10 字符上限</a></td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="23-2026-10-17-d0cd0ea.html">修复壁纸层级（负 z-index）与卡片 backdrop-filter 造成的发蒙/遮挡；统一任务名称 10 字符上限</a><span class="label">修复背景遮挡；任务名称统一 10 字上限</span></td>
         <td class="s">d0cd0ea</td>
         <td class="d">10-17 19:43</td>
         <td class="d">761 KB</td>
       </tr>
-      <tr>
+      <tr class="major">
         <td class="n">24</td>
-        <td><a href="24-2026-10-17-0870336.html">七天计划改为日期列看板（删除时间列与所有时间刻度）；新增休息时间实体与跨午夜拆分、卡片网格尺寸与任务删除/完成入口</a></td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="24-2026-10-17-0870336.html">七天计划改为日期列看板（删除时间列与所有时间刻度）；新增休息时间实体与跨午夜拆分、卡片网格尺寸与任务删除/完成入口</a><span class="label">七天计划改为日期列看板（删除时间轴）+ 新增休息时间</span></td>
         <td class="s">0870336</td>
         <td class="d">10-17 19:46</td>
         <td class="d">800 KB</td>
       </tr>
       <tr>
         <td class="n">25</td>
-        <td><a href="25-2026-10-17-3dd9871.html">首页与每日视图统一为看板卡片；彻底删除时间轴组件、样式与尺寸变量；固定日程页新增休息时间管理</a></td>
+        <td><a class="subject" href="25-2026-10-17-3dd9871.html">首页与每日视图统一为看板卡片；彻底删除时间轴组件、样式与尺寸变量；固定日程页新增休息时间管理</a></td>
         <td class="s">3dd9871</td>
         <td class="d">10-17 19:48</td>
         <td class="d">796 KB</td>
       </tr>
       <tr>
         <td class="n">26</td>
-        <td><a href="26-2026-10-17-89be691.html">跨夜休息片段结束于午夜时显示 24:00；补充界面级测试</a></td>
+        <td><a class="subject" href="26-2026-10-17-89be691.html">跨夜休息片段结束于午夜时显示 24:00；补充界面级测试</a></td>
         <td class="s">89be691</td>
         <td class="d">10-17 19:48</td>
         <td class="d">797 KB</td>
       </tr>
       <tr>
         <td class="n">27</td>
-        <td><a href="27-2026-10-17-1352887.html">更新文档至 1.2.0：背景层级、任务删除与完成隐藏、跨周重复、名称上限、网格基准、休息时间</a><span class="chip">v1.2.0（看板布局）</span></td>
+        <td><span class="tag" style="background:#eef5f0;color:#2f6f4f;border-color:#c8ddd1">里程碑</span><a class="subject" href="27-2026-10-17-1352887.html">更新文档至 1.2.0：背景层级、任务删除与完成隐藏、跨周重复、名称上限、网格基准、休息时间</a><span class="label">v1.2.0</span></td>
         <td class="s">1352887</td>
         <td class="d">10-17 19:49</td>
         <td class="d">797 KB</td>
       </tr>
-      <tr>
+      <tr class="major">
         <td class="n">28</td>
-        <td><a href="28-2026-10-17-f512421.html">核心修复：历史记录不再锁定时间（区分容量/冲突两层）；修复孤立时段无法修复；新增规划开始时间与不排过去规则</a></td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="28-2026-10-17-f512421.html">核心修复：历史记录不再锁定时间（区分容量/冲突两层）；修复孤立时段无法修复；新增规划开始时间与不排过去规则</a><span class="label">历史记录不再锁定时间；规划开始时间规则</span></td>
         <td class="s">f512421</td>
         <td class="d">10-17 20:40</td>
         <td class="d">806 KB</td>
       </tr>
-      <tr>
+      <tr class="major">
         <td class="n">29</td>
-        <td><a href="29-2026-10-17-03de665.html">修复休息保存无响应（ui 服务作用域错误）；新增「设置休息」今晚/每周两模式、科目管理、柱状图重做、删除可学习时间区块</a></td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="29-2026-10-17-03de665.html">修复休息保存无响应（ui 服务作用域错误）；新增「设置休息」今晚/每周两模式、科目管理、柱状图重做、删除可学习时间区块</a><span class="label">修复休息保存；新增科目管理与「设置休息」两模式</span></td>
         <td class="s">03de665</td>
         <td class="d">10-17 20:45</td>
         <td class="d">852 KB</td>
       </tr>
       <tr>
         <td class="n">30</td>
-        <td><a href="30-2026-10-17-7b32449.html">补第三轮回归测试；修复优化器把片段回填到规划起点之前的问题</a></td>
+        <td><a class="subject" href="30-2026-10-17-7b32449.html">补第三轮回归测试；修复优化器把片段回填到规划起点之前的问题</a></td>
         <td class="s">7b32449</td>
         <td class="d">10-17 20:47</td>
         <td class="d">852 KB</td>
       </tr>
       <tr>
         <td class="n">31</td>
-        <td><a href="31-2026-10-17-7faeaf7.html">更新文档至 1.3.0</a><span class="chip">v1.3.0（当前版本）</span></td>
+        <td><span class="tag" style="background:#eef5f0;color:#2f6f4f;border-color:#c8ddd1">里程碑</span><a class="subject" href="31-2026-10-17-7faeaf7.html">更新文档至 1.3.0</a><span class="label">v1.3.0</span></td>
         <td class="s">7faeaf7</td>
         <td class="d">10-17 20:47</td>
         <td class="d">852 KB</td>
       </tr>
+      <tr class="major">
+        <td class="n">32</td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="32-2026-10-20-e65e72f.html">第四轮：修复计划延迟到16:00（根因是遗留的每天7小时默认窗口）与截止时间失效；任务列表只显示有效任务；可选属性与计划开始时间；删除跟随系统主题；新增自动生成预览开关</a><span class="label">修复计划延迟到 16:00；任务列表、可选属性、自动预览开关、移除跟随系统主题</span></td>
+        <td class="s">e65e72f</td>
+        <td class="d">10-20 11:06</td>
+        <td class="d">878 KB</td>
+      </tr>
+      <tr class="major">
+        <td class="n">33</td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="33-2026-10-20-fa0c982.html">第五轮：新增重置系统与彻底删除任务历史；计划开始时间改为真实下界；修复通知可用性判断（安全上下文/Safari 构造器/失败原因）；顺带修复 describeDraftOps 误插代码</a><span class="label">新增恢复出厂前置能力：重置系统、彻底删除任务历史、计划开始时间生效、通知可用性</span></td>
+        <td class="s">fa0c982</td>
+        <td class="d">10-20 12:34</td>
+        <td class="d">898 KB</td>
+      </tr>
+      <tr class="major">
+        <td class="n">34</td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="34-2026-10-20-0e04e12.html">收尾：新增真正的「恢复出厂设置」（数据+设置+主题+壁纸+通知）；修复异步壁纸清理阻塞重置的问题；新增通知使用限制说明</a><span class="label">真正的「恢复出厂设置」+ 通知使用限制说明（v1.6.0）</span></td>
+        <td class="s">0e04e12</td>
+        <td class="d">10-20 13:18</td>
+        <td class="d">909 KB</td>
+      </tr>
+      <tr class="major">
+        <td class="n">35</td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="35-2026-10-20-46e02c5.html">内嵌「专注花园」独立应用：侧边栏入口（学习统计之后）+ iframe srcdoc + 新窗口打开；新增内联构建脚本与一致性测试</a><span class="label">内嵌「专注花园」独立应用（侧边栏入口）</span></td>
+        <td class="s">46e02c5</td>
+        <td class="d">10-20 14:06</td>
+        <td class="d">1393 KB</td>
+      </tr>
+      <tr class="major">
+        <td class="n">36</td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="36-2026-10-20-6cd8545.html">专注花园改为独立窗口打开（侧边栏点击直接开窗，可全屏使用）；启动器页不再内嵌 iframe</a><span class="label">专注花园改为独立窗口，可全屏使用</span></td>
+        <td class="s">6cd8545</td>
+        <td class="d">10-20 14:14</td>
+        <td class="d">1398 KB</td>
+      </tr>
+      <tr class="major">
+        <td class="n">37</td>
+        <td><span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span><a class="subject" href="37-2026-10-20-ff0959e.html">修复专注花园奖励转盘动画：首次不再0秒、每次至少6圈并从当前角度累加、结果延后到停止后显示；新增幂等补丁脚本与数值验证测试</a><span class="label">修复专注花园奖励转盘旋转动画（当前版本）</span></td>
+        <td class="s">ff0959e</td>
+        <td class="d">10-20 14:58</td>
+        <td class="d">1398 KB</td>
+      </tr>
     </tbody>
   </table>
   <note>
-    说明：这些文件与你的当前数据完全隔离（它们以 file:// 打开，和你平时用的是不同的存储位置），
-    随便点开不会影响现在的任务与计划。第 1 个提交只有数据模型和文档，界面基本是空的，属于正常现象。
+    <b>标注说明：</b>「重大」= 功能体系变化、架构性调整、大规模新增或移除（红色标签，行底色加深）；「里程碑」= 阶段性版本节点（绿色标签）。<br>
+    <b>数据隔离：</b>这些文件以 file:// 打开，与你平时用的应用是不同的存储位置，随便点开不会影响现在的任务与计划。<br>
+    <b>早期版本：</b>第 1 个提交只有数据模型和文档，界面基本是空的，属于正常现象。<br>
+    <b>关于专注花园：</b>第 35 个版本起内置了「专注花园」；第 36 个版本起改为独立窗口打开。
   </note>
 </div>
 </body>
