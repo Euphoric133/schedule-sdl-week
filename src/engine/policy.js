@@ -29,6 +29,7 @@ export const UNSCHEDULED_REASON = Object.freeze({
   DEPENDENCY_UNREACHABLE: 'dependency_unreachable', // 前置任务被取消/删除，永远无法满足
   NON_SPLITTABLE_NO_SLOT: 'non_splittable_no_slot', // 不可拆分任务找不到能一次放下的连续时段
   DEADLINE_PASSED: 'deadline_passed', // 截止时间已过
+  DEADLINE_TOO_CLOSE: 'deadline_too_close', // 截止前剩余可用时间放不下这个任务
   WINDOW_TOO_NARROW: 'window_too_narrow', // 可用窗口为空或过窄
   DAILY_CAP_REACHED: 'daily_cap_reached', // 触达每日学习上限或每日片段数上限
   OVERLOADED: 'overloaded', // 总需求超过总容量（整体超载）

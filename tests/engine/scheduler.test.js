@@ -14,6 +14,8 @@ import { TASK_STATUS } from '../../src/domain/task.js';
 import { SESSION_STATE } from '../../src/domain/session.js';
 import { UNSCHEDULED_REASON } from '../../src/engine/policy.js';
 import { describeViolations } from '../../src/engine/constraints.js';
+import { defaultSettings } from '../../src/domain/schemas.js';
+import { weekday } from '../../src/domain/time.js';
 import { blocksOfTask, engineContext, overlaps, plannedMinutesOf, stablePlanShape, studyBlocks } from '../helpers/engine.js';
 
 /* ------------------------------------------------------------------ *
@@ -41,9 +43,16 @@ test('场景 1b：每个片段都落在允许的学习时间内，且不跨越�
   env.addTask({ plannedMinutes: 120 });
   const result = env.run();
 
+  // 默认窗口已从旧的 16:00–23:00（每天 7 小时的遗留限制）改为 07:00–23:00，
+  // 因此断言改为"落在当前默认窗口内"，而不是写死 16:00 之后。
+  const defaults = defaultSettings().studyWindows;
   for (const block of studyBlocks(result.plan)) {
-    assert.ok(block.startMinutes >= 16 * 60, `片段开始时间应在 16:00 之后：${block.startMinutes}`);
-    assert.ok(block.endMinutes <= 23 * 60, `片段结束时间应在 23:00 之前：${block.endMinutes}`);
+    const windows = defaults[weekday(block.date)] ?? [];
+    assert.ok(
+      windows.some((w) => block.startMinutes >= w.startMinutes && block.endMinutes <= w.endMinutes),
+      `片段 ${block.startMinutes}-${block.endMinutes} 应落在默认允许窗口内`,
+    );
+    assert.ok(block.endMinutes <= 24 * 60, '不跨越午夜');
   }
 });
 

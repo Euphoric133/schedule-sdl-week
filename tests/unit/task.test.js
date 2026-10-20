@@ -55,7 +55,10 @@ test('createTaskDraft 的数值默认值本身合法（用户只需要填名称�
     `草稿默认值应当合法，实际错误：${validation.errors.map((i) => `${i.code} ${i.path}`).join('; ')}`,
   );
   assert.equal(draft.plannedMinutes % 5, 0, '默认时长应是 5 的倍数，便于整齐拆分');
-  assert.ok(draft.minChunkMinutes >= 5 && draft.minChunkMinutes <= draft.maxChunkMinutes);
+  // 最短/最长学习时段现在是**可选**字段，草稿默认留空（由排程器按系统默认值决定）
+  assert.equal(draft.minChunkMinutes, null, '最短学习时段默认留空');
+  assert.equal(draft.maxChunkMinutes, null, '最长学习时段默认留空');
+  assert.equal(draft.plannedStartMinutes, null, '计划开始时间默认留空');
 });
 
 test('validateTask：必填字段、评分范围、状态枚举都会产生结构化错误', () => {

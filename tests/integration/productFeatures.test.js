@@ -13,6 +13,7 @@ import { NOTIFICATION_TYPE, THEME, defaultPreferences, loadPreferences, savePref
 import { createAppearanceService } from '../../src/services/appearanceService.js';
 import { createNotificationService } from '../../src/services/notificationService.js';
 import { createStatsService, computeStreak } from '../../src/services/statsService.js';
+import { claimedPriorMinutes } from '../../src/domain/task.js';
 import { buildBackup, serializeBackup } from '../../src/storage/backup.js';
 import { migrateState } from '../../src/storage/migrations.js';
 import { createTestApp, taskInput } from '../helpers/app.js';
@@ -68,7 +69,9 @@ function makeEnv({ clockMs = FIXED_MS } = {}) {
 
 test('偏好：默认值只包含外观与通知两个分区（番茄钟与转盘已移除）', () => {
   const prefs = defaultPreferences();
-  assert.equal(prefs.appearance.theme, THEME.SYSTEM);
+  // "跟随系统"已移除，默认改为显式浅色主题
+  assert.equal(prefs.appearance.theme, THEME.LIGHT);
+  assert.equal('SYSTEM' in THEME, false, '不应再有"跟随系统"选项');
   assert.equal(prefs.appearance.wallpaper.enabled, false);
   assert.equal(prefs.notifications.enabled, false, '默认不开启通知，必须由用户主动开启');
   assert.equal(prefs.notifications.permission, 'default');
@@ -111,7 +114,7 @@ test('偏好：存储损坏时回退默认值，不影响应用启动', () => {
   };
   try {
     const prefs = loadPreferences();
-    assert.equal(prefs.appearance.theme, THEME.SYSTEM, '损坏的偏好回退默认主题');
+    assert.equal(prefs.appearance.theme, THEME.LIGHT, '损坏的偏好回退默认主题');
     assert.equal(prefs.notifications.enabled, false, '损坏的偏好回退默认通知设置');
   } finally {
     if (original === undefined) delete globalThis.localStorage;
@@ -143,14 +146,18 @@ test('偏好：老数据缺少新增字段时用默认值补齐，不会崩', ()
  * 外观：主题与壁纸
  * ================================================================== */
 
-test('外观：切换主题会更新偏好并通知订阅者（三种主题都可切换）', () => {
+test('外观：切换主题会更新偏好并通知订阅者（只剩浅色与深色两种显式主题）', () => {
   const { service, saved } = makeAppearance();
-  for (const theme of [THEME.DARK, THEME.LIGHT, THEME.SYSTEM]) {
+  for (const theme of [THEME.DARK, THEME.LIGHT]) {
     const result = service.setTheme(theme);
     assert.equal(result.ok, true);
     assert.equal(service.getPreferences().appearance.theme, theme);
   }
-  assert.ok(saved.length >= 3, '每次变更都应通知订阅者');
+  assert.ok(saved.length >= 2, '每次变更都应通知订阅者');
+
+  // "跟随系统"已被移除：不再是一个合法主题
+  assert.equal(Object.keys(THEME).length, 2, '主题只应剩两种');
+  assert.equal(service.setTheme('system').ok, false, '已废弃的 system 不应再被接受');
 });
 
 test('外观：未知主题被拒绝，不会写坏偏好', () => {
@@ -612,7 +619,10 @@ test('剩余时长：不填声明值时行为与以前完全一致（向后兼�
   const env = makeEnv();
   env.services.taskService.addTask(taskInput({ title: '普通任务', plannedMinutes: 90, deadlineDate: '2025-10-20' }));
   const view = env.services.taskService.listTaskViews()[0];
-  assert.equal(view.task.priorCompletedMinutes, 0);
+  // 留空现在保存为 null（"还没开始做"），与显式 0 在**存储上**可区分，
+  // 但在计算上一律按 0 分钟处理——因此剩余工作量与以前完全一致。
+  assert.equal(view.task.priorCompletedMinutes, null, '留空应保存为 null，而不是被悄悄改成 0');
+  assert.equal(claimedPriorMinutes(view.task), 0, '计算时按 0 分钟处理');
   assert.equal(view.remainingMinutes, 90);
 });
 

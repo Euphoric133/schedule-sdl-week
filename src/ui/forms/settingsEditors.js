@@ -29,6 +29,13 @@ export function renderNumericEditor({ services, settings }) {
   const inputs = {};
   const errorHost = el('div');
 
+  /** "自动生成预览"是一个开关，不参与下面的数字收集逻辑 */
+  const autoPreviewInput = el('input', {
+    type: 'checkbox',
+    id: 'set-auto-preview',
+    checked: settings.autoPreview !== false,
+  });
+
   const numberField = (key, label, { min, max, step = 5, hint, value } = {}) => {
     const input = el('input', { type: 'number', min, max, step, value: value ?? settings[key], id: `set-${key}` });
     inputs[key] = input;
@@ -57,6 +64,18 @@ export function renderNumericEditor({ services, settings }) {
       numberField('maxSessionsPerDay', '每日片段数上限', { min: 1, max: 96, step: 1 }),
       numberField('riskWindowDays', '风险评估窗口（天）', { min: 1, max: 365, step: 1 }),
       numberField('planHistoryLimit', '保留版本数上限', { min: 1, max: 200, step: 1 }),
+    ]),
+    el('fieldset', {}, [
+      el('legend', { text: '预览与确认' }),
+      el('div.form-field', {}, [
+        el('label', { for: 'set-auto-preview' }, [
+          autoPreviewInput,
+          el('span', { text: ' 自动生成计划预览' }),
+        ]),
+        el('div.form-field__hint', {
+          text: '开启后，添加或修改学习任务、固定日程时会直接生成候选计划预览，减少重复确认；仍然需要你确认才会应用正式计划。关闭后，每次改动会先询问是否生成预览。',
+        }),
+      ]),
     ]),
     el('fieldset', {}, [
       el('legend', { text: '休息规则' }),
@@ -97,10 +116,18 @@ export function renderNumericEditor({ services, settings }) {
             showIssues(errorHost, issues);
             return;
           }
-          const result = services.ui.previewWith([{ kind: 'settings.update', settings: { ...next, restRule } }], {
-            changeSummary: '修改排程参数',
-            trigger: 'settings-editor',
-          });
+          // 设置变更本身也要带上开关的新值；它不参与排程，但必须持久化
+          const settingsPatch = { ...next, restRule, autoPreview: autoPreviewInput.checked };
+          const result = services.ui.previewWith(
+            [{ kind: 'settings.update', settings: settingsPatch }],
+            {
+              changeSummary: '修改排程参数',
+              trigger: 'settings-editor',
+              // 设置页自己就是"生成预览"的入口：关闭自动预览时不要再弹一次确认，
+              // 否则用户点"保存并生成预览"还要再回答一次"要不要生成预览"。
+              skipConfirm: true,
+            },
+          );
           if (!result.ok) {
             showIssues(errorHost, result.issues?.length ? result.issues : [{ severity: 'error', message: result.message ?? '无法生成预览。' }]);
             return;

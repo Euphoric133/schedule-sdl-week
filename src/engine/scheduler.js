@@ -20,7 +20,7 @@
  *  10. 计算差异与风险评估，交给上层生成预览
  */
 
-import { buildPolicy, DIAGNOSTIC_CODE, RISK_LEVEL, UNSCHEDULED_REASON } from './policy.js';
+import { buildPolicy, DIAGNOSTIC_CODE, REASON_TEXT, RISK_LEVEL, UNSCHEDULED_REASON } from './policy.js';
 import { computeInputHash, computePolicyHash, deriveBlockId, deriveSessionId } from './versionHash.js';
 import { computeWindowCapacity, longestFreeSlot, normalizeStudyWindows, resolveSearchStart } from './capacity.js';
 import { scoreTask, sortBySchedulePriority, ratingToScore } from './priority.js';
@@ -35,7 +35,7 @@ import { SESSION_STATE } from '../domain/session.js';
 import { expandFixedActivities, mergeSpans } from '../domain/fixedActivity.js';
 import { BLOCK_KIND } from '../domain/calendarBlock.js';
 import { PLAN_STATUS } from '../domain/plan.js';
-import { addDays, formatMinutes, MINUTES_PER_DAY, weekday } from '../domain/time.js';
+import { absoluteMinutes, addDays, formatMinutes, MINUTES_PER_DAY, parseTimeString, weekday } from '../domain/time.js';
 import { validateAppState } from '../domain/schemas.js';
 import { VALIDATION_CODES, error, warning as makeWarning } from '../domain/validation.js';
 
@@ -315,6 +315,38 @@ export function run(input) {
   // 用真实的任务与片段信息重写学习块 ID，保证"同一任务同一片段 → 同一 ID"
   const placements = reassignSessionIds(placementResult.placements, fragmentsByTask, inputHash);
 
+  /**
+   * 某个任务在**它的截止时间之前**还剩下多少可用容量。
+   *
+   * 用途：把"排不下"的原因说准。以前一律报"七天容量不足"，
+   * 但真正的原因可能是"截止 13:00 之前只剩下 60 分钟，而这个任务要 120 分钟"。
+   */
+  function capacityBeforeDeadline(task) {
+    const minutes = parseDeadlineMinutes(task?.deadlineTime);
+    if (!task?.deadlineDate || minutes === null) return null;
+    const deadlineAbsolute = absoluteMinutes({ date: task.deadlineDate, minutes });
+    let total = 0;
+    for (const day of capacityDays) {
+      const dayStart = absoluteMinutes({ date: day.date, minutes: 0 });
+      const latest = deadlineAbsolute - dayStart;
+      if (latest <= 0) continue;
+      for (const window of day.freeWindows) {
+        const end = Math.min(window.endMinutes, latest);
+        if (end > window.startMinutes) total += end - window.startMinutes;
+      }
+    }
+    return total;
+  }
+
+  /** 给"放不下"的任务挑一个最准确的原因 */
+  function refineReason(task, remaining, fallback) {
+    const beforeDeadline = capacityBeforeDeadline(task);
+    if (beforeDeadline !== null && beforeDeadline < remaining) {
+      return UNSCHEDULED_REASON.DEADLINE_TOO_CLOSE;
+    }
+    return fallback;
+  }
+
   /* ---------- 第 6b 步：无法放置的片段 ---------- */
   const placedByTask = countPlacedMinutes(placements);
   for (const entry of orderedEntries) {
@@ -322,17 +354,25 @@ export function run(input) {
     const placed = placedByTask.get(entry.task.id) ?? 0;
     if (placed >= planned) continue;
     const already = unscheduled.find((item) => item.taskId === entry.task.id);
-    if (already) continue;
+    if (already) {
+      // 原因可能被更早的路径写成泛化描述，这里用截止时间口径纠正一次
+      already.reasonCode = refineReason(entry.task, planned, already.reasonCode);
+      already.reasonText = REASON_TEXT[already.reasonCode] ?? already.reasonText;
+      continue;
+    }
     const missing = planned - placed;
     // 不可拆分任务放不下的原因要准确：是"没有足够长的连续空档"，而不是"总容量不足"
     const longestSlot = capacityDays.reduce((max, day) => Math.max(max, longestFreeSlot(day.freeWindows)), 0);
     const isAtomic = entry.task.splittable === false;
     const atomicNoSlot = isAtomic && longestSlot < entry.task.plannedMinutes;
+    // 原因要准确：如果"截止前剩余时间"本身就不够，就不能笼统地说"七天容量不足"
+    const baseReason = atomicNoSlot ? UNSCHEDULED_REASON.NON_SPLITTABLE_NO_SLOT : UNSCHEDULED_REASON.INSUFFICIENT_CAPACITY;
+    const reasonCode = refineReason(entry.task, planned, baseReason);
     unscheduled.push(
       buildUnscheduled({
         task: entry.task,
         remainingMinutes: missing,
-        reasonCode: atomicNoSlot ? UNSCHEDULED_REASON.NON_SPLITTABLE_NO_SLOT : UNSCHEDULED_REASON.INSUFFICIENT_CAPACITY,
+        reasonCode,
         extra: { gapMinutes: missing, longestFreeSlot: longestSlot, totalSchedulable },
       }),
     );
@@ -745,6 +785,7 @@ function describeReason(reasonCode) {
     [UNSCHEDULED_REASON.DEPENDENCY_UNREACHABLE]: '前置任务已被取消或删除，该任务永远无法满足依赖条件。',
     [UNSCHEDULED_REASON.NON_SPLITTABLE_NO_SLOT]: '该任务不可拆分，但窗口内没有足够长的连续空闲时段一次放下。',
     [UNSCHEDULED_REASON.DEADLINE_PASSED]: '截止时间已经过去，安排也无法按时完成。',
+    [UNSCHEDULED_REASON.DEADLINE_TOO_CLOSE]: '截止时间之前剩余的可用时间放不下这个任务（不会排到截止时间之后）。',
     [UNSCHEDULED_REASON.WINDOW_TOO_NARROW]: '允许学习的时间窗口为空或过窄。',
     [UNSCHEDULED_REASON.DAILY_CAP_REACHED]: '已触达每日学习上限或每日片段数上限。',
     [UNSCHEDULED_REASON.OVERLOADED]: '所有任务的剩余工作量之和超过了窗口内的可用容量。',
@@ -754,6 +795,7 @@ function describeReason(reasonCode) {
 
 function suggestFor(reasonCode) {
   const map = {
+    [UNSCHEDULED_REASON.DEADLINE_TOO_CLOSE]: ['move_deadline', 'reduce_workload', 'lower_min_chunk'],
     [UNSCHEDULED_REASON.INSUFFICIENT_CAPACITY]: ['extend_window', 'accept_partial', 'lower_buffer', 'move_deadline'],
     [UNSCHEDULED_REASON.TAIL_TOO_SMALL]: ['lower_min_chunk', 'merge_chunks', 'move_deadline'],
     [UNSCHEDULED_REASON.BLOCKED_BY_DEPENDENCY]: ['finish_dependency', 'remove_dependency'],
@@ -969,9 +1011,16 @@ function tryCompact(placements, { occupiedSpans, studyWindows, windowsByDate = n
       const length = item.endMinutes - item.startMinutes;
       // 优先用"按日期裁剪后"的窗口（含规划起点限制），退回按星期配置
       const windows = (windowsByDate && windowsByDate.get(date)) ?? normalizeStudyWindows(date, studyWindows);
+      /**
+       * 任务的「计划开始时间」是软偏好，但**优化阶段也必须尊重它**：
+       * 否则放位时正确落在 10:00 的片段，会被"向前压缩"立刻推回 09:00，
+       * 用户看到的就是"我设了开始时间但完全没生效"。
+       */
+      const taskForItem = taskById?.get?.(item.taskId);
+      const preferredFloor = Number.isInteger(taskForItem?.plannedStartMinutes) ? taskForItem.plannedStartMinutes : 0;
       let placedAt = item.startMinutes;
       for (const window of windows) {
-        let cursor = window.startMinutes;
+        let cursor = Math.max(window.startMinutes, preferredFloor);
         for (const block of [...occupied].sort((a, b) => a.startMinutes - b.startMinutes)) {
           if (block.endMinutes <= cursor) continue;
           if (cursor + length <= block.startMinutes) break;
@@ -1171,3 +1220,12 @@ function compareBlocks(a, b) {
 }
 
 export { PLAN_STATUS, RISK_LEVEL, DIAGNOSTIC_CODE, UNSCHEDULED_REASON, MINUTES_PER_DAY };
+
+/** 解析截止时间的 HH:mm；非法返回 null（脏数据只降低约束，不抛异常） */
+function parseDeadlineMinutes(value) {
+  try {
+    return parseTimeString(value);
+  } catch {
+    return null;
+  }
+}

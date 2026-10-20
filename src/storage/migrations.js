@@ -137,6 +137,43 @@ function fillMissingContainers(state) {
  * 只做**新增**：不动任何任务、不合并用户的科目、不删除任何东西。
  * 因此即使用户曾经打错字，数据也照原样保留，用户可以自己在科目管理里改名或删除。
  */
+/** 早期版本写死在默认值里的"每天 7 小时"窗口（16:00–23:00） */
+const LEGACY_STUDY_WINDOW = [{ startMinutes: 16 * 60, endMinutes: 23 * 60 }];
+
+/**
+ * 把"从未被用户改过"的旧默认可学习时间升级成新的默认窗口。
+ *
+ * 判定条件（严格，避免覆盖用户自己的设置）：
+ *   **七天全部**都恰好等于 `16:00–23:00` 这一段。
+ * 只要有一天被用户改过，就原样保留，一个字都不动。
+ *
+ * 为什么必须做这一步：用户浏览器里存的是旧默认值，
+ * 只改代码里的默认值对**已有数据**不起作用——那正是"16:00 才开始"一直存在的原因。
+ */
+function upgradeLegacyStudyWindows(state) {
+  const windows = state.settings?.studyWindows;
+  if (!windows || typeof windows !== 'object') return { state, upgraded: false };
+
+  const days = [1, 2, 3, 4, 5, 6, 7];
+  const looksLikeLegacyDefault = days.every((day) => {
+    const list = windows[day] ?? windows[String(day)];
+    if (!Array.isArray(list) || list.length !== 1) return false;
+    const span = list[0];
+    return (
+      Number.isInteger(span?.startMinutes) &&
+      Number.isInteger(span?.endMinutes) &&
+      span.startMinutes === LEGACY_STUDY_WINDOW[0].startMinutes &&
+      span.endMinutes === LEGACY_STUDY_WINDOW[0].endMinutes
+    );
+  });
+  if (!looksLikeLegacyDefault) return { state, upgraded: false };
+
+  const fresh = defaultSettings().studyWindows;
+  const next = { ...windows };
+  for (const day of days) next[day] = fresh[day].map((span) => ({ ...span }));
+  return { state: { ...state, settings: { ...state.settings, studyWindows: next } }, upgraded: true };
+}
+
 function ensureSubjects(state, ctx) {
   const subjects = Array.isArray(state.subjects) ? state.subjects : [];
   if (subjects.length > 0) return state;
@@ -221,6 +258,24 @@ export function migrateState(raw, { skipSemanticValidation = false, allowRepair 
 
   const filled = fillMissingContainers(state);
   state = filled.state;
+
+  /**
+   * 升级"从未被改过"的旧默认可学习时间（16:00–23:00 → 07:00–23:00）。
+   *
+   * 只针对七天都还是旧默认值的状态；用户自定义过就完全不动。
+   */
+  const windowUpgrade = upgradeLegacyStudyWindows(state);
+  if (windowUpgrade.upgraded) {
+    state = windowUpgrade.state;
+    issues.push({
+      severity: 'warning',
+      code: C.SCHEMA_SHAPE,
+      path: 'settings.studyWindows',
+      message:
+        '已把默认可学习时间从 16:00–23:00 扩展为 07:00–23:00（旧版本曾默认"每天最多 7 小时"）。' +
+        '这不会影响固定日程与已完成的学习记录；需要调整可在偏好设置的 JSON 编辑区修改。',
+    });
+  }
 
   // 旧数据只有"任务里的自由文本科目"：把它接入可管理的科目字典（只新增，不改任务）
   const withSubjects = ensureSubjects(state, { idFactory: createIdFactory(), nowIso: new Date().toISOString() });

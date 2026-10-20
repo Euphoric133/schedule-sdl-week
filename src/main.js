@@ -20,7 +20,7 @@ import { createNotificationService } from './services/notificationService.js';
 import { createStatsService } from './services/statsService.js';
 import { loadPreferences, savePreferences } from './services/preferences.js';
 import { createIdFactory } from './domain/ids.js';
-import { applyDraftOp } from './domain/mutations.js';
+import { applyDraftOp, applyDraftOps } from './domain/mutations.js';
 import { confirmDialog } from './ui/modal.js';
 import { toast } from './ui/dom.js';
 import { addDays, wallTimeFromDateObject } from './domain/time.js';
@@ -54,9 +54,88 @@ const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周�
  * 约定：这里的每个方法都返回 `{ ok, message?, preview?, plan? }`，绝不抛异常给页面。
  * 页面只需要根据 ok 决定是否 toast 提示，不用关心引擎与事务细节。
  */
-function createUiService({ services }) {
-  /** 统一处理一次"带数据变更的预览请求" */
+/**
+ * @param {object} options
+ * @param {object} options.services 业务服务集合
+ * @param {() => object|null} [options.getShell] 读取外壳实例（延迟获取：外壳在服务之后才创建）
+ */
+function createUiService({ services, getShell = () => null }) {
+  /**
+   * 统一处理一次"带数据变更的预览请求"。
+   *
+   * 行为由设置项 `settings.autoPreview` 决定：
+   * - 开启（默认）：和以前一样，直接生成候选计划并跳到预览页，**不再多问一次**；
+   * - 关闭：先问用户"要不要生成新的预览"。
+   *   - 用户同意 → 生成候选计划（与开启时完全一样）；
+   *   - 用户拒绝 → **只保存数据，不动正式计划**，并明确告知计划尚未更新。
+   *
+   * 两条路径都不会在用户确认之前把候选计划变成正式计划——
+   * "自动生成预览"绝不等于"自动应用计划"。
+   */
   function previewWith(ops, options = {}) {
+    const auto = services.app.getState()?.settings?.autoPreview !== false;
+    if (!auto && options.askBeforePreview !== false && !options.skipConfirm) {
+      return previewWithConfirm(ops, options);
+    }
+    return runPreview(ops, options);
+  }
+
+  /**
+   * 关闭"自动生成预览"时的确认流程。
+   *
+   * 注意这里用的是**同步返回值 + 异步弹窗**的组合：
+   * 页面拿到的是 `{ ok: false, pending: true }`（表示"还没决定"），
+   * 真正的结果由回调 / 之后的重新渲染体现。这样不需要把整条调用链改成 async。
+   */
+  function previewWithConfirm(ops, options) {
+    confirmDialog({
+      title: '要现在更新学习计划吗？',
+      message: '你的改动会先保存。需要的话我可以立刻生成一份候选计划，你检查后再决定是否应用。',
+      bullets: [
+        options.changeSummary ? `本次改动：${options.changeSummary}` : null,
+        '选择「暂不生成」：数据照常保存，但正式计划保持原样',
+        '选择「生成预览」：只会生成候选计划，仍需你确认才会生效',
+      ].filter(Boolean),
+      confirmLabel: '生成预览',
+      cancelLabel: '暂不生成',
+      confirmVariant: 'primary',
+    }).then((confirmed) => {
+      if (confirmed) {
+        runPreview(ops, options);
+        return;
+      }
+      applyWithoutPreview(ops, options);
+    });
+
+    return { ok: true, pending: true, deferred: true, message: '已保存改动，计划未更新。' };
+  }
+
+  /** 直接把数据变更写入（不重新排程），用于"用户选择暂不生成预览" */
+  function applyWithoutPreview(ops, options = {}) {
+    const applied = applyDraftOps(services.app.getState(), ops, {
+      idFactory: services.idFactory,
+      nowIso: services.clockIso(),
+    });
+    if (!applied.ok) {
+      const message = applied.issues?.[0]?.message ?? '保存失败，数据没有被修改。';
+      toast(message, 'error', 9000);
+      return { ok: false, issues: applied.issues ?? [], message };
+    }
+    const written = services.app.commit(() => applied.state, { reason: options.trigger ?? 'direct-write' });
+    if (!written.ok) {
+      const message = written.error?.message ?? '保存失败，数据没有被修改。';
+      toast(message, 'error', 9000);
+      return { ok: false, message };
+    }
+    toast('改动已保存。正式计划还没有更新，需要时可以在「调整预览」页生成。', 'info', 8000);
+    // 重新渲染当前页面，让"刚保存的改动"立刻可见
+    const shellInstance = getShell();
+    if (shellInstance?.renderCurrent) shellInstance.renderCurrent();
+    return { ok: true, applied: true, planUpdated: false };
+  }
+
+  /** 真正调用引擎生成候选计划 */
+  function runPreview(ops, options = {}) {
     const result = services.planService.requestPreview({
       now: services.now(),
       ops,
@@ -112,7 +191,8 @@ function createUiService({ services }) {
 
     /** 重新渲染当前页面（数据变更后让界面立刻反映结果） */
     renderCurrent() {
-      if (shell) shell.renderCurrent();
+      const shellInstance = getShell();
+      if (shellInstance?.renderCurrent) shellInstance.renderCurrent();
     },
 
     /** 科目：新增 / 重命名 / 删除（都走同一条变更路径） */
@@ -354,7 +434,7 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
   services.focusService = createFocusService({ app, idFactory, now: services.now });
   // 供 ui 服务写入审计字段（createdAt / updatedAt）使用；引擎与 domain 仍然只接受显式传入的时间
   services.clockIso = nowIso;
-  services.ui = createUiService({ services });
+  services.ui = createUiService({ services, getShell: () => shell });
 
   const todayWall = services.now();
   // 主题必须在任何渲染之前落到 <html> 上：否则浅色主题下会先闪一下白底。

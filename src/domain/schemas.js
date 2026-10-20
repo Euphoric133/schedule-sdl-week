@@ -43,8 +43,21 @@ export const DEFAULT_WEIGHTS = Object.freeze({
  * 默认设置。
  * 这些是"合理默认值"，全部可以在偏好设置页修改；修改后必须重新生成候选计划并让用户确认。
  */
+/**
+ * 默认"可学习时间"的历史包袱（重要，改之前请读完）。
+ *
+ * 早期版本曾把"每天最多规划 7 小时"写死在默认值里，于是默认窗口是
+ * `16:00 – 23:00`（7 小时 / 天 = 49 小时 / 周）。
+ * 后来把这个设置从界面上删掉了，但**默认值没有删**：
+ * 于是无论用户怎么清空固定日程，排程器也只能从 16:00 之后找空档——
+ * 这就是"计划总是延迟到下午 16:00 才开始"的真实原因。
+ *
+ * 现在默认窗口改为 `07:00 – 23:00`（覆盖正常作息），
+ * 睡眠、上课这类不可用时间请用"固定日程"表达（它们会从窗口里被扣掉）。
+ * 旧数据里的 16:00–23:00 由 migrations 里的兼容迁移升级，见 upgradeLegacyStudyWindows。
+ */
 export function defaultSettings() {
-  const everyDay = () => [{ startMinutes: 16 * 60, endMinutes: 23 * 60 }];
+  const everyDay = () => [{ startMinutes: 7 * 60, endMinutes: 23 * 60 }];
   return {
     studyWindows: { 1: everyDay(), 2: everyDay(), 3: everyDay(), 4: everyDay(), 5: everyDay(), 6: everyDay(), 7: everyDay() },
     preferredFocusWindows: [
@@ -65,7 +78,17 @@ export function defaultSettings() {
     planHistoryLimit: PLAN_HISTORY_LIMIT,
     allowUndersizedFinalChunk: true,
     maxSessionsPerDay: 24,
-    dailyStudyCapMinutes: null, // null = 不作额外限制，仅用可用窗口
+    /**
+     * 每日学习上限：null = 不作额外限制，只受"可用窗口 − 占用"约束。
+     * （历史上曾有"每天 7 小时"的默认上限，已彻底移除，不得再引入。）
+     */
+    dailyStudyCapMinutes: null,
+    /**
+     * 是否自动生成计划预览。
+     * true（默认，也是应用一直以来的行为）= 改动后立即生成候选预览，不再询问；
+     * false = 先询问用户是否生成预览，拒绝则只保存数据、正式计划保持不变。
+     */
+    autoPreview: true,
   };
 }
 

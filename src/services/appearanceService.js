@@ -10,7 +10,7 @@
  * 因此 `applyThemeOnly()` 可以在 `boot()` 之前调用，而它只依赖同步的 localStorage。
  */
 
-import { loadPreferences, savePreferences, THEME } from './preferences.js';
+import { loadPreferences, normalizeTheme, savePreferences, THEME } from './preferences.js';
 import {
   deleteWallpaper,
   isWallpaperStorageAvailable,
@@ -26,7 +26,6 @@ export { THEME };
 export const THEME_LABELS_ZH = Object.freeze({
   [THEME.LIGHT]: '浅色',
   [THEME.DARK]: '深色',
-  [THEME.SYSTEM]: '跟随系统',
 });
 
 /**
@@ -62,15 +61,18 @@ export function createAppearanceService({ preferences: provided, onChange } = {}
   function applyThemeOnly(theme = preferences.appearance.theme) {
     const root = documentElement();
     if (!root) return;
-    root.setAttribute('data-theme', theme);
+    /**
+     * 写入前统一归一化：即使内存里还残留旧值（`system`），
+     * 也只会有 light/dark 落到 DOM 上，不会出现"data-theme=system"这种无效状态。
+     */
+    const explicit = normalizeTheme(theme, { prefersDark: prefersDarkScheme() });
+    root.setAttribute('data-theme', explicit);
     // 让浏览器地址栏 / 表单控件也跟随（例如深色下的滚动条与输入框）
-    const resolved =
-      theme === THEME.SYSTEM
-        ? globalThis.matchMedia?.('(prefers-color-scheme: dark)')?.matches
-          ? 'dark'
-          : 'light'
-        : theme;
-    root.style.colorScheme = resolved;
+    root.style.colorScheme = explicit;
+  }
+
+  function prefersDarkScheme() {
+    return Boolean(globalThis.matchMedia?.('(prefers-color-scheme: dark)')?.matches);
   }
 
   function setTheme(theme) {

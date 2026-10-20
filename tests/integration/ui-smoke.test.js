@@ -518,7 +518,9 @@ test('界面渲染：七天计划是 7 个日期列，没有时间列也没有�
 test('界面渲染：有待确认候选计划时，预览页显示差异明细与确认按钮', async () => {
   const dom = installFakeDom();
   const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);
-  const instance = boot({ root: dom.appHost });
+  // 注入固定时钟：任务截止时间是写死的日期，若用真实时钟，"今天"会跑到截止日期之后，
+  // 排程器（正确地）不会把任务排到截止时间之后，预览里自然就没有新增时段。
+  const instance = boot({ root: dom.appHost, clock: () => new Date(2025, 9, 16, 9, 0) });
 
   // 通过服务层真实生成一份候选计划（等价于用户点了"生成七天计划"）
   const created = instance.services.taskService.addTask({

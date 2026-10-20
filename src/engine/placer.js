@@ -12,6 +12,7 @@
 
 import { continuousLimitFor } from './policy.js';
 import { preferredOverlapMinutes, slotsFitting, subtractSpans } from './capacity.js';
+import { absoluteMinutes, parseTimeString } from '../domain/time.js';
 
 /** 放位原因码（会写入 StudySession.reasonCodes，并翻译给用户） */
 export const PLACEMENT_REASON = Object.freeze({
@@ -60,6 +61,21 @@ export function placeFragments({ days, fragmentsByTask, taskById, scoreByTask, p
   // （早期版本忘了出队，导致同一个片段在七天里被反复排入——这类缺陷由引擎测试锁定。）
   const queues = new Map([...fragmentsByTask].map(([taskId, list]) => [taskId, [...list]]));
 
+  /**
+   * 任务截止时间的绝对分钟数（date*1440 + 当日分钟）。
+   *
+   * 为什么必须在这里算：放置阶段以前**完全不看截止时间**，
+   * 于是截止 13:00 的任务可能被排到 16:00，而计划仍然被当成"成功"。
+   * 这是"截断时间只显示在界面上、没有参与计算"的直接后果。
+   */
+  const deadlineByTask = new Map();
+  for (const [taskId, task] of taskById) {
+    const minutes = parseTimeOrNull(task?.deadlineTime);
+    if (task?.deadlineDate && minutes !== null) {
+      deadlineByTask.set(taskId, absoluteMinutes({ date: task.deadlineDate, minutes }));
+    }
+  }
+
   for (const day of days) {
     const usage = createDayUsage(day);
     dayUsage.set(day.date, usage);
@@ -92,11 +108,19 @@ export function placeFragments({ days, fragmentsByTask, taskById, scoreByTask, p
         break;
       }
 
-      const freeWindows = freeWindowsNow();
+      const taskForSlot = taskById.get(fragment.taskId);
+      const freeWindows = constrainByDeadline(
+        freeWindowsNow(),
+        day.date,
+        deadlineByTask.get(fragment.taskId),
+        taskForSlot,
+      );
+      if (freeWindows.length === 0) continue; // 这一天已经没有早于截止时间的空档
+
       const slot = chooseSlot({
         freeWindows,
         fragment,
-        task: taskById.get(fragment.taskId),
+        task: taskForSlot,
         policy,
         lastSubject,
         lastEndMinutes,
@@ -253,8 +277,32 @@ function dependenciesSatisfied(task, queues, alreadyPlaced) {
 
 /** 在候选槽里挑选一个：先过滤合法，再按评分与字典序裁决 */
 function chooseSlot({ freeWindows, fragment, task, policy, lastSubject, lastEndMinutes, subjectLastEnd }) {
-  const candidates = slotsFitting(freeWindows, fragment.minutes);
+  let candidates = slotsFitting(freeWindows, fragment.minutes);
   if (candidates.length === 0) return null;
+
+  /**
+   * 任务的「计划开始时间」（可选）：只做**时间偏好的过滤**，不是硬锁。
+   *
+   * 两条边界，必须同时满足：
+   * 1. 它不能凌驾于优先级之上——这里只缩小"这个任务能落在哪里"，
+   *    任务之间的先后顺序仍然由 deadline/优先级决定（scoreTask 完全不受影响）；
+   * 2. 它不能让任务排不进去——如果把候选区间全过滤空了，
+   *    就退回未过滤的候选（宁可早点/晚点，也不因为一个偏好把它彻底排不上）。
+   */
+  const preferredStart = Number.isInteger(task?.plannedStartMinutes) ? task.plannedStartMinutes : null;
+  if (preferredStart !== null) {
+    // 注意：slotsFitting 返回的是"整段空闲区间"，不是任意起点。
+    // 所以这里要把区间**从偏好时间开始裁剪**，而不是按区间起点过滤
+    // （按起点过滤会把 09:00–23:00 这样的整段直接丢掉，偏好就永远不生效）。
+    const clipped = candidates
+      .map((slot) => ({
+        ...slot,
+        startMinutes: Math.max(slot.startMinutes, preferredStart),
+        length: slot.endMinutes - Math.max(slot.startMinutes, preferredStart),
+      }))
+      .filter((slot) => slot.length >= fragment.minutes);
+    if (clipped.length > 0) candidates = clipped;
+  }
 
   const scored = candidates.map((slot) => {
     // 片段从空闲区间的**最早时刻**开始：让安排尽量紧凑，避免留下无法利用的碎片
@@ -323,6 +371,43 @@ function scoreSlot({ startMinutes, endMinutes, slot, fragment, task, policy, las
   score += weights.earlierSlot * (1 / (1 + startMinutes / 60));
 
   return Math.round(score * 1000) / 1000;
+}
+
+/**
+ * 按截止时间裁剪当天的空闲区间。
+ *
+ * 规则：**任何学习片段都不得晚于截止时间结束**。
+ * 一旦当天剩下的空档都在截止时间之后，这里直接返回空数组，
+ * 该片段就会去找更早的日期/时段；如果整个窗口都放不下，
+ * 上层会把它列入"未能安排"并给出原因——而不是排到截止之后还声称成功。
+ *
+ * 截止时间在同一天时按当日分钟裁剪；在之后的日期则整天空档都有效。
+ */
+function constrainByDeadline(freeWindows, date, deadlineAbsolute, task) {
+  if (!Number.isInteger(deadlineAbsolute)) return freeWindows;
+  const dayStartAbsolute = absoluteMinutes({ date, minutes: 0 });
+  const dayEndAbsolute = dayStartAbsolute + 1440;
+  if (deadlineAbsolute >= dayEndAbsolute) return freeWindows; // 截止在更晚的日期，当天不限制
+
+  const latestMinute = deadlineAbsolute - dayStartAbsolute; // 当天最晚可结束时刻
+  if (latestMinute <= 0) return []; // 截止时间早于这一天，整天不可用
+
+  const clipped = [];
+  for (const window of freeWindows) {
+    const end = Math.min(window.endMinutes, latestMinute);
+    if (end <= window.startMinutes) continue;
+    clipped.push({ ...window, endMinutes: end });
+  }
+  return clipped;
+}
+
+/** 解析 HH:mm，非法时返回 null（不抛异常：脏数据只应降低约束，不应炸掉排程） */
+function parseTimeOrNull(value) {
+  try {
+    return parseTimeString(value);
+  } catch {
+    return null;
+  }
 }
 
 /** 生成放位原因码（用于差异预览的中文说明） */

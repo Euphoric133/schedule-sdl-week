@@ -28,15 +28,20 @@ export function openTaskForm({ task = null, services }) {
         title: task.title,
         subject: task.subject,
         plannedMinutes: task.plannedMinutes,
-        priorCompletedMinutes: task.priorCompletedMinutes ?? 0,
+        // 可选字段一律用空字符串表示"留空"，回显时才能区分"没填"和"填了 0"
+        priorCompletedMinutes: task.priorCompletedMinutes === null || task.priorCompletedMinutes === undefined ? '' : task.priorCompletedMinutes,
         deadlineDate: task.deadlineDate,
         deadlineTime: task.deadlineTime,
         importance: task.importance,
         difficulty: task.difficulty,
         procrastination: task.procrastination,
         splittable: task.splittable,
-        minChunkMinutes: task.minChunkMinutes,
-        maxChunkMinutes: task.maxChunkMinutes,
+        minChunkMinutes: task.minChunkMinutes ?? '',
+        maxChunkMinutes: task.maxChunkMinutes ?? '',
+        plannedStartMinutes:
+          task.plannedStartMinutes === null || task.plannedStartMinutes === undefined
+            ? ''
+            : minutesToHHmm(task.plannedStartMinutes),
         dependsOn: [...(task.dependsOn ?? [])],
         note: task.note ?? '',
       }
@@ -205,21 +210,27 @@ export function openTaskForm({ task = null, services }) {
       el('div.form-grid', {}, [
         textField('plannedMinutes', '预计总用时（分钟，必填）', { type: 'number', min: 5, step: 5, hint: '必须是 5 的倍数，例如 45、90' }),
         el('div.form-field', {}, [
-          el('label', { for: 'af-priorCompleted', text: '已经完成（分钟，可留 0）' }),
+          el('label', { for: 'af-priorCompleted', text: '已经完成（分钟，可留空）' }),
           (() => {
             const input = el('input', {
               type: 'number',
               id: 'af-priorCompleted',
               min: '0',
               step: '5',
-              value: String(task?.priorCompletedMinutes ?? 0),
+              placeholder: '留空表示还没开始做',
+              value:
+                base.priorCompletedMinutes === '' ||
+                base.priorCompletedMinutes === null ||
+                base.priorCompletedMinutes === undefined
+                  ? ''
+                  : String(base.priorCompletedMinutes),
               on: { input: () => updateRemainingHint() },
             });
             inputs.priorCompletedMinutes = input;
             return input;
           })(),
           el('div.form-field__hint', {
-            text: '在应用之外完成的部分（纸质作业、线下课等）。填写后剩余时长会相应减少，排程不会再安排这部分。',
+            text: '在应用之外完成的部分（纸质作业、线下课等）。可以留空（= 还没开始做），也可以明确填 0。填写后剩余时长会相应减少。',
           }),
           remainingHint,
         ]),
@@ -227,8 +238,20 @@ export function openTaskForm({ task = null, services }) {
           el('label', { for: 'tf-splittable' }, [splittable, el('span', { text: ' 允许拆分到多天/多段' })]),
           el('div.form-field__hint', { text: '不勾选时，该任务必须一次安排完整个时长（不可拆分）。' }),
         ]),
-        textField('minChunkMinutes', '最短学习时段（分钟）', { type: 'number', min: 5, step: 5 }),
-        textField('maxChunkMinutes', '最长学习时段（分钟）', { type: 'number', min: 5, step: 5 }),
+        textField('minChunkMinutes', '最短学习时段（分钟，可选）', {
+          type: 'number',
+          min: 5,
+          step: 5,
+          placeholder: '留空 = 由系统决定',
+          hint: '留空表示不额外限制，由排程器按系统默认规则与可用时间决定',
+        }),
+        textField('maxChunkMinutes', '最长学习时段（分钟，可选）', {
+          type: 'number',
+          min: 5,
+          step: 5,
+          placeholder: '留空 = 由系统决定',
+          hint: '限制的是**单个学习时段**的长度，不是任务总时长',
+        }),
       ]),
     ]),
     el('fieldset', {}, [
@@ -237,6 +260,18 @@ export function openTaskForm({ task = null, services }) {
         textField('deadlineDate', '截止日期（YYYY-MM-DD）', { type: 'date' }),
         textField('deadlineTime', '截止时间（HH:mm）', { type: 'time' }),
       ]),
+    ]),
+    el('fieldset', {}, [
+      el('legend', { text: '计划开始时间（可选）' }),
+      el('div.form-grid', {}, [
+        textField('plannedStartMinutes', '希望从这个时间之后开始安排（可选）', {
+          type: 'time',
+          hint: '只是一个时间偏好：不填表示从本次规划起点开始考虑；填了也不会跳过更紧急的任务',
+        }),
+      ]),
+      el('div.form-field__hint', {
+        text: '它不同于"截止时间"（最晚什么时候必须完成），也不同于固定日程（不可移动的占用）。',
+      }),
     ]),
     el('fieldset', {}, [
       el('legend', { text: '评估（1 = 最低，5 = 最高，用于计算优先级，不改变硬约束）' }),
@@ -264,15 +299,16 @@ export function openTaskForm({ task = null, services }) {
       title: inputs.title.value.trim(),
       subject: inputs.subject.value === '__new__' ? inputs.newSubject.value.trim() : String(inputs.subject.value).trim(),
       plannedMinutes: Number.parseInt(inputs.plannedMinutes.value, 10),
-      priorCompletedMinutes: Number.parseInt(inputs.priorCompletedMinutes.value, 10) || 0,
+      priorCompletedMinutes: parseOptionalInt(inputs.priorCompletedMinutes.value),
       deadlineDate: inputs.deadlineDate.value,
       deadlineTime: inputs.deadlineTime.value,
       importance: Number.parseInt(inputs.importance.value, 10),
       difficulty: Number.parseInt(inputs.difficulty.value, 10),
       procrastination: Number.parseInt(inputs.procrastination.value, 10),
       splittable: inputs.splittable.checked,
-      minChunkMinutes: Number.parseInt(inputs.minChunkMinutes.value, 10),
-      maxChunkMinutes: Number.parseInt(inputs.maxChunkMinutes.value, 10),
+      minChunkMinutes: parseOptionalInt(inputs.minChunkMinutes.value),
+      maxChunkMinutes: parseOptionalInt(inputs.maxChunkMinutes.value),
+      plannedStartMinutes: parseOptionalTime(inputs.plannedStartMinutes.value),
       dependsOn: checkedDeps,
       note: inputs.note.value,
     };
@@ -316,7 +352,7 @@ export function openTaskForm({ task = null, services }) {
         message: `任务名称最多 ${TITLE_MAX_LENGTH} 个字符（当前 ${[...values.title].length} 个），请精简一下。`,
       });
     }
-    if (values.priorCompletedMinutes > values.plannedMinutes) {
+    if (values.priorCompletedMinutes !== null && values.priorCompletedMinutes > values.plannedMinutes) {
       localIssues.push({
         severity: 'error',
         code: 'V015',
@@ -388,4 +424,38 @@ function ratingHint(key, value) {
     procrastination: ['肯定不会拖', '较少拖延', '一般', '容易拖延', '几乎一定会拖'],
   };
   return hints[key]?.[value - 1] ?? '';
+}
+
+/* ------------------------------------------------------------------ *
+ * 可选字段的解析助手
+ * ------------------------------------------------------------------ */
+
+/**
+ * 把输入框里的文本解析成"可选的整数分钟"。
+ *
+ * 关键约定：**留空返回 null，而不是 0**。
+ * 这样领域层才能区分"用户没填"与"用户明确填了 0"，
+ * 也不会把空字符串算成 0 分钟任务或 0 分钟片段。
+ */
+function parseOptionalInt(value) {
+  const text = String(value ?? '').trim();
+  if (text === '') return null;
+  const number = Number.parseInt(text, 10);
+  return Number.isFinite(number) ? number : null;
+}
+
+/** 把 HH:mm 解析成一天内的分钟数（0–1440）；留空或非法返回 null */
+function parseOptionalTime(value) {
+  const text = String(value ?? '').trim();
+  const match = /^(\d{1,2}):(\d{2})$/.exec(text);
+  if (!match) return null;
+  const minutes = Number(match[1]) * 60 + Number(match[2]);
+  return minutes >= 0 && minutes <= 1440 ? minutes : null;
+}
+
+/** 分钟数 → HH:mm（1440 显示为 24:00） */
+function minutesToHHmm(minutes) {
+  if (!Number.isInteger(minutes)) return '';
+  if (minutes >= 1440) return '24:00';
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 }

@@ -199,7 +199,7 @@ test('端到端：放弃候选计划后正式计划与数据完全不变', async
  * 专注与奖励
  * ================================================================== */
 
-test('端到端：外观页可以切换三种主题，设置被写入偏好', async () => {
+test('端到端：外观页可以切换两种显式主题，设置被写入偏好', async () => {
   const env = await launch();
   try {
     env.go('#/appearance');
@@ -207,7 +207,6 @@ test('端到端：外观页可以切换三种主题，设置被写入偏好', as
     assert.match(text, /外观主题/);
     assert.match(text, /浅色/);
     assert.match(text, /深色/);
-    assert.match(text, /跟随系统/);
 
     env.click('深色');
     assert.equal(env.instance.services.appearanceService.getPreferences().appearance.theme, 'dark');

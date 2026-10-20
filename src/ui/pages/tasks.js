@@ -26,14 +26,34 @@ const STATUS_LABELS = {
 export function renderTasks({ app, services, route }) {
   const statusFilter = route.params.get('status') ?? 'active';
   const subjectFilter = route.params.get('subject') ?? '';
-  const includeDeleted = statusFilter === 'deleted' || statusFilter === 'all';
+  /**
+   * "已删除"需要把软删除的任务也读进来；其它筛选一律不读，
+   * 避免"全部"把已经删除/完成的任务混进普通待办列表。
+   */
+  const includeDeleted = statusFilter === 'deleted';
   const sort = route.params.get('sort') === 'created' ? 'created' : 'deadline';
 
   const allViews = services.taskService.listTaskViews({ includeDeleted: true, sort });
   const subjects = [...new Set(allViews.map((v) => v.task.subject).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN'));
 
+  /**
+   * 每个筛选都明确定义"这个状态包含哪些任务"，绝不出现"不筛选 = 全部历史"。
+   *
+   * 这一处曾经的真实问题：`all` 分支不做任何过滤，于是已完成、已取消、已删除的任务
+   * 全都混在普通任务列表里，看起来像"任务做完了还赖着不走"。
+   *
+   * 现在的规则：
+   * - 待安排（active）：未开始 + 进行中（真正还要做的事）
+   * - 全部（all）：所有**仍然有效**的任务（未完成 / 未取消 / 未删除）——比 active 更宽，
+   *   但同样不含任何历史状态。它与 active 的差别是包含"既没开始也没排进去"的灰色任务。
+   * - 已完成 / 已取消 / 已删除：单独的历史筛选，各有自己的入口。
+   */
+  const ACTIVE_STATUSES = [TASK_STATUS.NOT_STARTED, TASK_STATUS.IN_PROGRESS];
+  const HISTORY_STATUSES = [TASK_STATUS.COMPLETED, TASK_STATUS.CANCELLED, TASK_STATUS.DELETED];
+
   let views = allViews;
-  if (statusFilter === 'active') views = views.filter((v) => v.task.status === TASK_STATUS.NOT_STARTED || v.task.status === TASK_STATUS.IN_PROGRESS);
+  if (statusFilter === 'active') views = views.filter((v) => ACTIVE_STATUSES.includes(v.task.status));
+  else if (statusFilter === 'all') views = views.filter((v) => !HISTORY_STATUSES.includes(v.task.status));
   else if (statusFilter === 'completed') views = views.filter((v) => v.task.status === TASK_STATUS.COMPLETED);
   else if (statusFilter === 'cancelled') views = views.filter((v) => v.task.status === TASK_STATUS.CANCELLED);
   else if (statusFilter === 'deleted') views = views.filter((v) => v.task.status === TASK_STATUS.DELETED);
@@ -76,10 +96,10 @@ export function renderTasks({ app, services, route }) {
           value: statusFilter,
           options: [
             { value: 'active', label: '待安排（未开始 / 进行中）' },
-            { value: 'completed', label: '已完成' },
-            { value: 'cancelled', label: '已取消' },
-            { value: 'deleted', label: '已删除' },
-            { value: 'all', label: '全部' },
+            { value: 'all', label: '全部有效任务（不含已完成/已删除）' },
+            { value: 'completed', label: '已完成（历史）' },
+            { value: 'cancelled', label: '已取消（历史）' },
+            { value: 'deleted', label: '已删除（历史）' },
           ],
           onChange: (value) => updateQuery({ status: value }),
         })),

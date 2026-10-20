@@ -16,7 +16,6 @@ import { confirmDialog } from '../modal.js';
 const THEME_DESCRIPTIONS = {
   [THEME.LIGHT]: '始终使用浅色界面，适合光线充足的环境。',
   [THEME.DARK]: '始终使用深色界面，夜间使用更省眼。',
-  [THEME.SYSTEM]: '跟随操作系统的外观设置自动切换。',
 };
 
 export function renderAppearance({ app, services }) {

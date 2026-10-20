@@ -53,6 +53,13 @@ export const RATING_MAX = 5;
  * 这里保留一个别名供既有代码引用，避免出现两套数字。
  */
 export const TITLE_MAX_LENGTH = TASK_NAME_MAX_LENGTH;
+
+/** 学习片段时长的合法下限（分钟）——与排程器的最小粒度一致 */
+export const CHUNK_MINUTES_FLOOR = 5;
+
+/** 计划开始时间（可选）的合法范围：一天内的分钟数 */
+export const PLANNED_START_MIN = 0;
+export const PLANNED_START_MAX = 24 * 60;
 export const SUBJECT_MAX_LENGTH = 40;
 
 /** 单任务预计用时的硬上限（一周 7×24 小时），防止误输入 999999 分钟 */
@@ -92,8 +99,18 @@ export function createTaskDraft() {
     difficulty: 3,
     procrastination: 3,
     splittable: true,
-    minChunkMinutes: 30,
-    maxChunkMinutes: 60,
+    /**
+     * 以下三个字段都是**可选**的，空值统一用 `null` 表示（不是 0，也不是空字符串）：
+     * - priorCompletedMinutes：留空 = 还没开始做（等价 0 分钟）；显式填 0 也合法
+     * - minChunkMinutes / maxChunkMinutes：留空 = 由排程器按系统默认规则决定
+     * 把"留空"和"填 0"区分开，是为了让界面能如实回显用户到底填了什么。
+     */
+    minChunkMinutes: null,
+    maxChunkMinutes: null,
+    /** 计划开始时间（分钟，0–1440）；null = 不限制，从本次规划起点开始考虑 */
+    plannedStartMinutes: null,
+    /** "已经完成"同样是可选项；草稿里用空值表示"用户还没填" */
+    priorCompletedMinutes: null,
     dependsOn: [],
     note: '',
   };
@@ -113,8 +130,12 @@ export function createTask(input, ctx) {
 
   const splittable = input.splittable !== false;
   const plannedMinutes = input.plannedMinutes;
-  const minChunkMinutes = splittable ? input.minChunkMinutes : plannedMinutes;
-  const maxChunkMinutes = splittable ? input.maxChunkMinutes : plannedMinutes;
+  /**
+   * 可拆分任务保留用户填的（可能为空）最短/最长时段；
+   * 不可拆分任务没有"分段"概念，min/max 就应当等于总时长。
+   */
+  const minChunkMinutes = splittable ? normalizeOptionalMinutes(input.minChunkMinutes) : plannedMinutes;
+  const maxChunkMinutes = splittable ? normalizeOptionalMinutes(input.maxChunkMinutes) : plannedMinutes;
 
   return {
     id: ctx.idFactory.next('task'),
@@ -125,7 +146,7 @@ export function createTask(input, ctx) {
      * 用户手工声明的"已经完成的时长"（应用之外的学习，例如纸质作业）。
      * 剩余时长 = plannedMinutes − (priorCompletedMinutes + 应用内完成记录)，始终是派生值。
      */
-    priorCompletedMinutes: normalizePriorMinutes(input.priorCompletedMinutes),
+    priorCompletedMinutes: normalizeOptionalCompleted(input.priorCompletedMinutes),
     deadlineDate: input.deadlineDate,
     deadlineTime: input.deadlineTime,
     importance: input.importance,
@@ -134,6 +155,8 @@ export function createTask(input, ctx) {
     splittable,
     minChunkMinutes,
     maxChunkMinutes,
+    /** 计划开始时间：只作为"最早考虑时间"的偏好，不是硬锁（见 engine/placer.js） */
+    plannedStartMinutes: normalizeOptionalMinutes(input.plannedStartMinutes),
     dependsOn: Array.isArray(input.dependsOn) ? [...new Set(input.dependsOn)] : [],
     status: TASK_STATUS.NOT_STARTED,
     note: typeof input.note === 'string' ? input.note : '',
@@ -201,13 +224,22 @@ export function validateTask(task, path = 'task', { lenientName = false } = {}) 
   });
   if (plannedIssue) issues.push(plannedIssue);
 
-  // 手工声明的"已完成时长"：必须是 ≥ 0 的整数，且不能超过预计总用时
-  // （否则剩余时长会变成负数，排程结果无法解释）
+  /**
+   * "已经完成（分钟）"：**可选**。
+   * - 留空（null / 缺失）= 还没开始做，按 0 计算；
+   * - 显式 0 合法；
+   * - 唯一硬性要求：不能超过预计总用时（否则剩余工作量会变成负数，排程无法解释）。
+   */
   if (task.priorCompletedMinutes !== undefined && task.priorCompletedMinutes !== null) {
     const prior = task.priorCompletedMinutes;
     if (!Number.isInteger(prior) || prior < 0) {
       issues.push(
-        error(C.RANGE, `${path}.priorCompletedMinutes`, '已完成时长必须是大于等于 0 的整数分钟。', { actual: prior }),
+        error(
+          C.RANGE,
+          `${path}.priorCompletedMinutes`,
+          '已完成时长可以留空，或填写大于等于 0 的整数分钟。',
+          { actual: prior },
+        ),
       );
     } else if (Number.isFinite(task.plannedMinutes) && prior > task.plannedMinutes) {
       issues.push(
@@ -216,6 +248,24 @@ export function validateTask(task, path = 'task', { lenientName = false } = {}) 
           `${path}.priorCompletedMinutes`,
           `已完成时长（${prior} 分钟）不能超过预计总用时（${task.plannedMinutes} 分钟）。`,
           { prior, plannedMinutes: task.plannedMinutes },
+        ),
+      );
+    }
+  }
+
+  /**
+   * "计划开始时间"：**可选**，表示"希望任务从这个时间之后开始被考虑"。
+   * 它不是锁定时间段，也不是固定日程；留空表示不做时间偏好。
+   */
+  if (task.plannedStartMinutes !== undefined && task.plannedStartMinutes !== null) {
+    const start = task.plannedStartMinutes;
+    if (!Number.isInteger(start) || start < PLANNED_START_MIN || start > PLANNED_START_MAX) {
+      issues.push(
+        error(
+          C.RANGE,
+          `${path}.plannedStartMinutes`,
+          '计划开始时间可以留空，或填写 00:00 – 24:00 之间的时刻。',
+          { actual: start },
         ),
       );
     }
@@ -281,17 +331,29 @@ export function validateTask(task, path = 'task', { lenientName = false } = {}) 
       }
     }
   } else if (task.splittable === true) {
-    const minIssue = checkPositiveInt(task.minChunkMinutes, `${path}.minChunkMinutes`, '最短学习时段', {
-      min: 5,
-      max: PLANNED_MINUTES_MAX,
-    });
-    if (minIssue) issues.push(minIssue);
-    const maxIssue = checkPositiveInt(task.maxChunkMinutes, `${path}.maxChunkMinutes`, '最长学习时段', {
-      min: 5,
-      max: PLANNED_MINUTES_MAX,
-    });
-    if (maxIssue) issues.push(maxIssue);
-    if (isPositiveInt(task.minChunkMinutes) && isPositiveInt(task.maxChunkMinutes) && task.minChunkMinutes > task.maxChunkMinutes) {
+    /**
+     * 最短 / 最长学习时段：**可选**。
+     * 留空表示"不额外限制，由排程器按系统默认值与可用时间决定"，
+     * 因此这里只在用户**填了值**时才校验（不能把空值当成 0 分钟）。
+     */
+    const minHas = task.minChunkMinutes !== undefined && task.minChunkMinutes !== null;
+    const maxHas = task.maxChunkMinutes !== undefined && task.maxChunkMinutes !== null;
+
+    if (minHas) {
+      const minIssue = checkPositiveInt(task.minChunkMinutes, `${path}.minChunkMinutes`, '最短学习时段', {
+        min: CHUNK_MINUTES_FLOOR,
+        max: PLANNED_MINUTES_MAX,
+      });
+      if (minIssue) issues.push(minIssue);
+    }
+    if (maxHas) {
+      const maxIssue = checkPositiveInt(task.maxChunkMinutes, `${path}.maxChunkMinutes`, '最长学习时段', {
+        min: CHUNK_MINUTES_FLOOR,
+        max: PLANNED_MINUTES_MAX,
+      });
+      if (maxIssue) issues.push(maxIssue);
+    }
+    if (minHas && maxHas && isPositiveInt(task.minChunkMinutes) && isPositiveInt(task.maxChunkMinutes) && task.minChunkMinutes > task.maxChunkMinutes) {
       issues.push(
         error(
           C.TASK_MIN_MAX_CHUNK,
@@ -370,14 +432,44 @@ export function completedMinutesForTask(taskId, sessions = []) {
  * 注意：剩余时长**依然是派生值**（预计总用时 − 已完成），从不单独存储，
  * 因此不会出现"剩余时长与记录不一致"的脏数据。
  */
-function normalizePriorMinutes(value) {
+/**
+ * "已经完成（分钟）"的可选值归一化。
+ *
+ * 规则（与界面提示一致）：
+ * - 留空（null / undefined / ''）→ `null`，表示"还没开始做"，计算时按 0 处理；
+ * - 显式 0 → `0`，是一种真实输入，保留；
+ * - 正数 → 向下取整的整数分钟；
+ * - 负数或非数字 → `null`（交给校验器报错，而不是悄悄当成 0）。
+ */
+function normalizeOptionalCompleted(value) {
+  if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
-  if (!Number.isFinite(number) || number <= 0) return 0;
+  if (!Number.isFinite(number)) return null;
+  if (number < 0) return null;
   return Math.floor(number);
 }
 
+/**
+ * "最短/最长学习时段"与"计划开始时间"的可选值归一化：
+ * 留空或非法 → `null`（表示不使用用户自定义值），正数 → 整数分钟。
+ */
+function normalizeOptionalMinutes(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return Math.floor(number);
+}
+
+/**
+ * 读取"已经完成"的分钟数。
+ *
+ * `null`（用户留空）与 `0`（用户明确填 0）在这里都按 0 分钟参与计算——
+ * 这是**明确定义的默认规则**，不是把两种输入混为一谈：
+ * 存储上它们依然可区分（界面会如实回显用户填了什么）。
+ */
 export function claimedPriorMinutes(task) {
   const value = task?.priorCompletedMinutes;
+  if (value === null || value === undefined) return 0;
   if (!Number.isFinite(value) || value <= 0) return 0;
   return Math.floor(value);
 }
@@ -468,6 +560,7 @@ export const TASK_PATCHABLE_FIELDS = Object.freeze([
   'dependsOn',
   'note',
   'priorCompletedMinutes',
+  'plannedStartMinutes',
 ]);
 
 /**
@@ -489,10 +582,26 @@ export function applyTaskPatch(task, patch, ctx) {
   if (typeof next.title === 'string') next.title = next.title.trim();
   if (typeof next.subject === 'string') next.subject = next.subject.trim();
 
+  // 可选字段：把空字符串/undefined 统一成 null，保证"留空"语义不会退化成 0
+  for (const key of ['priorCompletedMinutes', 'minChunkMinutes', 'maxChunkMinutes', 'plannedStartMinutes']) {
+    if (!(key in next)) continue;
+    const value = next[key];
+    if (value === undefined || value === null || value === '') {
+      next[key] = null;
+    } else if (typeof value === 'string' && value.trim() === '') {
+      next[key] = null;
+    }
+  }
+
   if (next.splittable === false) {
     next.minChunkMinutes = next.plannedMinutes;
     next.maxChunkMinutes = next.plannedMinutes;
-  } else if (isPositiveInt(next.minChunkMinutes) && isPositiveInt(next.maxChunkMinutes) && next.minChunkMinutes > next.maxChunkMinutes) {
+  } else if (
+    isPositiveInt(next.minChunkMinutes) &&
+    isPositiveInt(next.maxChunkMinutes) &&
+    next.minChunkMinutes > next.maxChunkMinutes
+  ) {
+    // 用户同时填了最短与最长，且最短更大：以"最短"为准抬高最长（校验器仍会给出提示）
     next.maxChunkMinutes = next.minChunkMinutes;
   }
 

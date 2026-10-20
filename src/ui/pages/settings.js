@@ -81,6 +81,9 @@ export function renderSettings({ app, services }) {
             ['科目切换惩罚', `${settings.subjectSwitchPenaltyMinutes} 分钟`],
             ['偏好专注时段', (settings.preferredFocusWindows ?? []).map((w) => `${toHHmm(w.startMinutes)}–${toHHmm(w.endMinutes)}`).join('、') || '未设置'],
           ]),
+          definitionList('预览与确认', [
+            ['自动生成计划预览', settings.autoPreview === false ? '关闭（每次先询问）' : '开启（改动后直接生成候选预览）'],
+          ]),
           definitionList('其它', [
             ['风险评估窗口', `${settings.riskWindowDays} 天`],
             ['业务日边界', `${String(settings.dayBoundaryHour).padStart(2, '0')}:00（此前算前一天）`],
