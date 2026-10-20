@@ -56,16 +56,13 @@ export function renderWeek({ app, services, route, now }) {
         button('回到本周', { size: 'sm', disabled: offsetWeeks === 0, onClick: () => gotoWeek(0) }),
         button('下一周 →', { size: 'sm', onClick: () => gotoWeek(offsetWeeks + 1) }),
         button('添加休息', { size: 'sm', onClick: () => services.ui.openRestForm(null) }),
-        button(plan && plan.version > 0 ? '重新规划' : '生成计划', {
-          variant: 'primary',
-          size: 'sm',
-          onClick: () => {
-            services.ui.openPlanForm({
-              changeSummary: plan && plan.version > 0 ? '重新规划' : '生成第一份计划',
-              trigger: 'week-page',
-            });
-          },
-        }),
+        /**
+         * 这里原本有一个「重新规划 / 生成计划」按钮。
+         *
+         * 本轮按要求**只删除七日计划页面的这一个入口**。
+         * 注意：planService.requestPreview、services.ui.openPlanForm（生成/重新规划的实际能力）、
+         * 首页与每日视图里的生成入口都**原样保留**——被删除的只是这个页面上的按钮。
+         */
       ]),
     ]),
   );

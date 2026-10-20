@@ -66,8 +66,73 @@ export function createNotificationService({ appearanceService, now, clock }) {
   let lastCheck = null;
   const recent = []; // 本次页面会话内已发出的通知（用于界面展示"刚才提醒了什么"）
 
+  /**
+   * 通知能力检查（修复"权限已开但收不到通知"的核心）。
+   *
+   * 以前这里只判断 `typeof Notification === 'function'`，于是出现了两个假阳性：
+   *
+   * 1. **非安全上下文**（用 `file://` 双击打开、或通过 `http://局域网IP` 访问）：
+   *    浏览器有 `Notification` 对象，但发送会被静默拒绝，权限甚至直接是 denied。
+   * 2. **Safari（macOS 与 iOS）**：`Notification` 存在、`requestPermission()` 也能返回 granted，
+   *    但 `new Notification()` 会抛错——Safari 只支持通过 Service Worker 的
+   *    `registration.showNotification()` 显示通知。于是"看起来开启成功，实际一条也发不出"。
+   *
+   * 现在把两件事分开判断，并把结论如实报给界面。
+   */
+  /**
+   * 运行时学习结果：某些浏览器（典型是 Safari）`new Notification()` 会抛
+   * "Illegal constructor"，但事先无法用特性检测区分。
+   * 一旦真的失败过，就记住这个事实，后续的能力判断与环境说明会如实变成"不支持"，
+   * 而不是继续显示"支持"。
+   */
+  let constructorKnownBroken = false;
+
+  function capabilities() {
+    const api = typeof globalThis.Notification === 'function';
+    const secure = globalThis.isSecureContext !== false;
+    // Safari 有 Notification 但没有可用的构造器（需要 Service Worker 通道）
+    let constructorUsable = false;
+    if (api && secure && !constructorKnownBroken) {
+      try {
+        constructorUsable = globalThis.Notification.prototype?.constructor === globalThis.Notification && 'permission' in globalThis.Notification;
+      } catch {
+        constructorUsable = false;
+      }
+    }
+    const serviceWorkerChannel = Boolean(globalThis.navigator?.serviceWorker && secure);
+    const channel = constructorUsable ? 'constructor' : serviceWorkerChannel ? 'service-worker' : 'none';
+    return { api, secure, constructorUsable, serviceWorkerChannel, channel, supported: secure && (constructorUsable || serviceWorkerChannel) };
+  }
+
   function supported() {
-    return typeof globalThis.Notification === 'function';
+    return capabilities().supported;
+  }
+
+  /** 给界面用的、可读的环境说明（不伪造"应该能收到"） */
+  function describeEnvironment() {
+    const caps = capabilities();
+    if (!caps.secure) {
+      return {
+        level: 'unsupported',
+        text: '当前页面不是安全上下文（HTTPS 或 localhost），浏览器不会允许任何通知。请用 `node scripts/serve.mjs` 启动后访问 http://127.0.0.1:4173/，或部署到 HTTPS。',
+      };
+    }
+    if (!caps.api) {
+      return { level: 'unsupported', text: '当前浏览器没有 Notification API，无法发送系统通知。' };
+    }
+    if (!caps.constructorUsable && !caps.serviceWorkerChannel) {
+      return {
+        level: 'unsupported',
+        text: '当前浏览器不提供可用的通知通道（例如 Safari 需要 Service Worker，而本应用未内置）。请改用 Chrome / Edge 访问本应用。',
+      };
+    }
+    if (!caps.constructorUsable) {
+      return {
+        level: 'unsupported',
+        text: '浏览器拒绝创建通知（Safari 需要 Service Worker 通道，本应用未内置）。系统通知不会弹出，请改用 Chrome / Edge 访问，或留意应用内的页面提示。',
+      };
+    }
+    return { level: 'ok', text: '当前环境支持系统通知。若仍收不到，请检查 macOS「系统设置 → 通知」里是否允许浏览器发送通知，以及是否开启了「勿扰模式」。' };
   }
 
   function permission() {
@@ -255,21 +320,48 @@ export function createNotificationService({ appearanceService, now, clock }) {
   function deliver({ key, type, title, body, tag }) {
     if (alreadyNotified(key)) return { ok: false, reason: 'duplicate' };
     if (!appearanceService.getPreferences().notifications.types[type]) return { ok: false, reason: 'type-disabled' };
-    if (!supported() || permission() !== 'granted') return { ok: false, reason: 'no-permission' };
 
-    try {
-      const notification = new globalThis.Notification(title, {
-        body,
-        tag: tag ?? key, // 相同 tag 会替换而不是叠加
-        icon: undefined,
-        silent: false,
-      });
-      notification.onclick = () => {
-        globalThis.focus?.();
-        notification.close?.();
-      };
-    } catch {
-      return { ok: false, reason: 'failed' };
+    const caps = capabilities();
+    if (!caps.secure) return { ok: false, reason: 'insecure-context' };
+    if (!caps.supported) return { ok: false, reason: 'unsupported' };
+    if (permission() !== 'granted') return { ok: false, reason: 'no-permission' };
+
+    let delivered = false;
+    let failure = null;
+
+    if (caps.constructorUsable) {
+      try {
+        const notification = new globalThis.Notification(title, {
+          body,
+          tag: tag ?? key, // 相同 tag 会替换而不是叠加
+          silent: false,
+        });
+        notification.onclick = () => {
+          globalThis.focus?.();
+          notification.close?.();
+        };
+        delivered = true;
+      } catch (error) {
+        // Safari 等环境：构造器存在但不可用 → 记住并如实上报，再尝试 Service Worker 通道
+        constructorKnownBroken = true;
+        failure = error;
+      }
+    }
+
+    if (!delivered && caps.serviceWorkerChannel) {
+      try {
+        const registration = globalThis.__dshServiceWorkerRegistration;
+        if (registration?.showNotification) {
+          registration.showNotification(title, { body, tag: tag ?? key });
+          delivered = true;
+        }
+      } catch (error) {
+        failure = failure ?? error;
+      }
+    }
+
+    if (!delivered) {
+      return { ok: false, reason: 'no-channel', detail: failure?.message ?? null };
     }
 
     markNotified(key, { type, title, body });
@@ -433,6 +525,8 @@ export function createNotificationService({ appearanceService, now, clock }) {
     stop,
     isScheduled,
     sendTest,
+    capabilities,
+    describeEnvironment,
     handleVisibility,
     /** 供测试清空"已提醒"记录 */
     resetLedger: () => writeLedger({}),

@@ -43,6 +43,7 @@ import { openFixedActivityForm } from './ui/forms/fixedActivityForm.js';
 import { openRestForm } from './ui/forms/restForm.js';
 import { openPlanStartForm } from './ui/forms/planStartForm.js';
 import { openRestSettingsForm } from './ui/forms/restSettingsForm.js';
+import { createEmptyState } from './domain/schemas.js';
 import { openSessionDetail } from './ui/forms/sessionDetail.js';
 
 const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -187,6 +188,101 @@ function createUiService({ services, getShell = () => null }) {
         changeSummary: changeSummary ?? '生成计划',
         trigger: trigger ?? 'plan-form',
       });
+    },
+
+    /**
+     * 重置系统：清空**用户业务数据**，保留应用运行所必需的配置。
+     *
+     * 为什么不用 `localStorage.clear()`：
+     * 同一个源下还存着偏好（主题/壁纸/通知）、以及"上次导出备份时间"这类运行状态。
+     * 全部清空会把用户的主题和通知权限记录一起抹掉，属于"用破坏换省事"。
+     *
+     * 因此这里做的是**有范围的重置**：
+     * - 清空：任务、学习时段、固定日程、休息安排、科目字典、正式计划、候选计划、版本历史、已删除历史
+     * - 保留：设置（含可学习时间/拆分规则/权重）、偏好（主题/壁纸/通知）、schemaVersion
+     *
+     * 写入走 commit（单次原子提交）：失败会回滚内存状态并保留磁盘原数据，
+     * 绝不会出现"清了一半"的状态。
+     */
+    async resetSystem() {
+      const state = services.app.getState();
+      const counts = {
+        tasks: (state.tasks ?? []).length,
+        deletedTasks: (state.tasks ?? []).filter((task) => task.status === 'deleted').length,
+        sessions: (state.sessions ?? []).length,
+        fixedActivities: (state.fixedActivities ?? []).length,
+        restPeriods: (state.restPeriods ?? []).length,
+        subjects: (state.subjects ?? []).length,
+        planVersions: (state.planHistory ?? []).length,
+        hasOfficialPlan: Boolean(state.officialPlan),
+        hasPendingPreview: Boolean(state.pendingPreview),
+      };
+
+      const confirmed = await confirmDialog({
+        title: '重置系统？',
+        message: '这会清空你的全部业务数据，只保留设置与外观偏好。此操作不可撤销，建议先导出备份。',
+        bullets: [
+          `学习任务 ${counts.tasks} 个（其中已删除历史 ${counts.deletedTasks} 个）`,
+          `学习时段 ${counts.sessions} 个`,
+          `固定日程 ${counts.fixedActivities} 个　·　休息安排 ${counts.restPeriods} 个`,
+          `科目 ${counts.subjects} 个　·　计划版本 ${counts.planVersions} 个`,
+          counts.hasOfficialPlan ? '正式计划会被清空（之后需要重新生成）' : '当前没有正式计划',
+          counts.hasPendingPreview ? '未确认的候选计划也会被丢弃' : '当前没有候选计划',
+          '设置、主题、壁纸与通知偏好会保留',
+        ],
+        confirmLabel: '确认重置',
+        cancelLabel: '取消',
+        confirmVariant: 'danger',
+      });
+      if (!confirmed) return { ok: false, cancelled: true };
+
+      const blank = createEmptyState({
+        nowIso: services.clockIso(),
+        windowStart: services.now().date,
+        timeZone: state.timeZone ?? null,
+      });
+
+      const result = services.app.commit(
+        () => ({
+          ...blank,
+          // 保留用户配置（这些不是业务数据，也不该因为"清空任务"而丢失）
+          settings: state.settings,
+          meta: {
+            ...blank.meta,
+            initialWindowStart: services.now().date,
+            // 保留"上次导出备份"的时间戳：它是运行状态，不属于被重置的业务数据
+            lastBackupAt: state.meta?.lastBackupAt ?? null,
+          },
+        }),
+        { reason: 'reset-system' },
+      );
+
+      if (!result.ok) {
+        toast(
+          `重置失败：${result.error?.message ?? '写入本地存储失败'}。你的数据没有被清除，请重试或先导出备份。`,
+          'error',
+          12000,
+        );
+        return { ok: false, error: result.error ?? null };
+      }
+
+      /**
+       * 让"自动恢复备份"与重置结果一致。
+       *
+       * 不这么做的话：保存时会把**重置前**的数据轮转进 backup 槽，
+       * 之后一旦主数据读取失败，自动恢复会把清空的数据又装回来。
+       * 这里失败也不影响重置本身（主数据已经清空），只提示一句。
+       */
+      const backupSynced = services.app.syncRecoveryBackup?.();
+      if (backupSynced && backupSynced.ok === false && !backupSynced.skipped) {
+        toast('提示：自动恢复备份未能更新，如果之后出现"已从备份恢复"，请再执行一次重置。', 'warning', 10000);
+      }
+
+      // 让所有视图立刻反映重置结果
+      const shellInstance = getShell();
+      if (shellInstance?.renderCurrent) shellInstance.renderCurrent();
+      toast('已重置：业务数据已清空，设置与外观偏好保留。', 'success', 8000);
+      return { ok: true, counts };
     },
 
     /** 重新渲染当前页面（数据变更后让界面立刻反映结果） */

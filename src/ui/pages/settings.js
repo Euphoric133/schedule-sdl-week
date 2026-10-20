@@ -183,8 +183,20 @@ export function renderSettings({ app, services }) {
     card({
       title: '危险操作',
       hint: '这些操作会影响设置或历史版本，执行前都会二次确认',
-      body: el('div.form-actions', { style: { justifyContent: 'flex-start' } }, [
-        button('恢复默认设置', {
+      body: el('div', {}, [
+        el('h3', { text: '重置系统', style: { marginBottom: 'var(--space-2)' } }),
+        el('div.card__hint', {
+          text: '清空全部业务数据（任务、学习时段、固定日程、休息、科目、计划与版本历史），保留设置与外观偏好。执行前会二次确认。',
+        }),
+        el('div.form-actions', { style: { justifyContent: 'flex-start', marginTop: 'var(--space-3)' } }, [
+          button('重置系统（清空数据）', {
+            variant: 'danger',
+            onClick: () => services.ui.resetSystem(),
+          }),
+        ]),
+        el('h3', { text: '恢复默认设置', style: { margin: 'var(--space-5) 0 var(--space-2)' } }),
+        el('div.form-actions', { style: { justifyContent: 'flex-start' } }, [
+          button('恢复默认设置', {
           variant: 'danger',
           onClick: async () => {
             const confirmed = await confirmDialog({
@@ -202,6 +214,7 @@ export function renderSettings({ app, services }) {
             if (!previewed.ok) toast(previewed.message, 'error', 8000);
           },
         }),
+        ]),
       ]),
     }),
   );

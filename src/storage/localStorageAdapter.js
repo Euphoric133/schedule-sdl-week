@@ -101,6 +101,21 @@ export function createLocalStorageAdapter({ storage = null } = {}) {
       }
     },
 
+    /**
+     * 只覆盖"自动恢复备份"槽，不写主数据。
+     * 供"重置系统"使用：让恢复目标与已重置的状态保持一致。
+     */
+    saveBackupOnly(state) {
+      const ls = resolve();
+      if (!ls) return { ok: false, error: makeStorageError(STORAGE_ERROR_CODES.UNAVAILABLE, new Error('本地存储不可用')) };
+      try {
+        ls.setItem(STORAGE_KEYS.backup, JSON.stringify(state));
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: makeStorageError(classifyStorageError(err), err) };
+      }
+    },
+
     clear() {
       const ls = resolve();
       if (!ls) return;

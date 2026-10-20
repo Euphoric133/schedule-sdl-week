@@ -50,6 +50,16 @@ export function createMemoryAdapter({ seed = null } = {}) {
       }
     },
 
+    /** 只覆盖备份槽（与 localStorageAdapter 行为一致，供"重置系统"使用） */
+    saveBackupOnly(state) {
+      try {
+        store.set(STORAGE_KEYS.backup, JSON.stringify(state));
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error };
+      }
+    },
+
     clear() {
       store.clear();
     },

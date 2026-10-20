@@ -99,7 +99,7 @@ export function renderTasks({ app, services, route }) {
             { value: 'all', label: '全部有效任务（不含已完成/已删除）' },
             { value: 'completed', label: '已完成（历史）' },
             { value: 'cancelled', label: '已取消（历史）' },
-            { value: 'deleted', label: '已删除（历史）' },
+            { value: 'deleted', label: '已删除历史（可彻底删除）' },
           ],
           onChange: (value) => updateQuery({ status: value }),
         })),
@@ -158,6 +158,44 @@ function actionButtons(task, { services }) {
             trigger: 'tasks-page',
           });
           if (!result.ok) toast(result.message, 'error', 8000);
+        },
+      }),
+    );
+
+    /**
+     * 已删除历史里额外提供**彻底删除**：
+     * 「删除」只是把它标记为 deleted（还能恢复），
+     * 「彻底删除」才会真正从本地数据里移除任务、它的学习时段与计划里的对应块。
+     * 两者必须分开，否则用户没有办法清理历史。
+     */
+    buttons.push(
+      button('彻底删除', {
+        size: 'sm',
+        variant: 'danger',
+        onClick: async () => {
+          const confirmed = await confirmDialog({
+            title: `彻底删除「${task.title}」？`,
+            message: '这条历史记录会被永久移除，无法恢复。',
+            bullets: [
+              '任务本身会从本地数据中删除',
+              '它的学习时段会一并删除（含已完成的记录）',
+              '正式计划里属于它的时段会被移除',
+              '其它任务对它的依赖会被自动解除',
+              '其它任务、固定日程、休息安排与设置不受影响',
+            ],
+            confirmLabel: '彻底删除',
+            cancelLabel: '取消',
+            confirmVariant: 'danger',
+            requireAcknowledge: true,
+          });
+          if (!confirmed) return;
+          const result = services.taskService.purgeTask(task.id);
+          if (!result.ok) {
+            toast(result.issues?.[0]?.message ?? '彻底删除失败，数据没有被修改。', 'error', 9000);
+            return;
+          }
+          toast(`已彻底删除「${task.title}」。`, 'success', 6000);
+          services.ui.renderCurrent();
         },
       }),
     );

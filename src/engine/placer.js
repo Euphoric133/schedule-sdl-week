@@ -281,27 +281,32 @@ function chooseSlot({ freeWindows, fragment, task, policy, lastSubject, lastEndM
   if (candidates.length === 0) return null;
 
   /**
-   * 任务的「计划开始时间」（可选）：只做**时间偏好的过滤**，不是硬锁。
+   * 任务的「计划开始时间」（可选）。
    *
-   * 两条边界，必须同时满足：
-   * 1. 它不能凌驾于优先级之上——这里只缩小"这个任务能落在哪里"，
-   *    任务之间的先后顺序仍然由 deadline/优先级决定（scoreTask 完全不受影响）；
-   * 2. 它不能让任务排不进去——如果把候选区间全过滤空了，
-   *    就退回未过滤的候选（宁可早点/晚点，也不因为一个偏好把它彻底排不上）。
+   * 语义（本轮修正）：它是**该任务的时间下界**——不允许排在这个时间之前。
+   *
+   * 以前这里写的是"如果过滤后没有候选，就退回未过滤的候选"，
+   * 结果是：用户填了 15:30，系统照样把它排到 14:00，而且不告诉用户——
+   * 这正是"填了计划开始时间却仍然按默认整点安排"的真实原因。
+   *
+   * 现在：
+   * - 它只是**这个任务**的下界，不改变任务之间的优先级顺序（scoreTask 完全不看它）；
+   * - 如果这个下界之后确实没有可用时段，就不安排（交给上层给出明确原因），
+   *   绝不静默忽略用户设置、也绝不排到用户指定的时间之前。
    */
   const preferredStart = Number.isInteger(task?.plannedStartMinutes) ? task.plannedStartMinutes : null;
   if (preferredStart !== null) {
-    // 注意：slotsFitting 返回的是"整段空闲区间"，不是任意起点。
-    // 所以这里要把区间**从偏好时间开始裁剪**，而不是按区间起点过滤
-    // （按起点过滤会把 09:00–23:00 这样的整段直接丢掉，偏好就永远不生效）。
-    const clipped = candidates
+    // slotsFitting 返回的是"整段空闲区间"，因此要把区间**从下界开始裁剪**，
+    // 而不是按区间起点过滤（那样会把 09:00–23:00 这样的整段直接丢掉）。
+    candidates = candidates
       .map((slot) => ({
         ...slot,
         startMinutes: Math.max(slot.startMinutes, preferredStart),
         length: slot.endMinutes - Math.max(slot.startMinutes, preferredStart),
       }))
       .filter((slot) => slot.length >= fragment.minutes);
-    if (clipped.length > 0) candidates = clipped;
+
+    if (candidates.length === 0) return null;
   }
 
   const scored = candidates.map((slot) => {

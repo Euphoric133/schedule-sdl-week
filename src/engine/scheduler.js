@@ -338,13 +338,47 @@ export function run(input) {
     return total;
   }
 
+  /** 某个任务在它的"计划开始时间"之后还剩多少可用容量 */
+  function capacityAfterPlannedStart(task) {
+    const plannedStart = Number.isInteger(task?.plannedStartMinutes) ? task.plannedStartMinutes : null;
+    if (plannedStart === null) return null;
+    let total = 0;
+    for (const day of capacityDays) {
+      for (const window of day.freeWindows) {
+        const start = Math.max(window.startMinutes, plannedStart);
+        if (window.endMinutes > start) total += window.endMinutes - start;
+      }
+    }
+    return total;
+  }
+
   /** 给"放不下"的任务挑一个最准确的原因 */
   function refineReason(task, remaining, fallback) {
     const beforeDeadline = capacityBeforeDeadline(task);
     if (beforeDeadline !== null && beforeDeadline < remaining) {
       return UNSCHEDULED_REASON.DEADLINE_TOO_CLOSE;
     }
+    const afterStart = capacityAfterPlannedStart(task);
+    if (afterStart !== null && afterStart < remaining) {
+      return UNSCHEDULED_REASON.PLANNED_START_UNREACHABLE;
+    }
     return fallback;
+  }
+
+  /**
+   * 用户填的"计划开始时间"如果早于本次规划的搜索起点，
+   * 实际生效的是搜索起点（不可能排到过去）。这种情况必须**明说**，
+   * 否则用户会以为自己的设置被完全忽略了。
+   */
+  for (const task of state.tasks ?? []) {
+    if (!Number.isInteger(task.plannedStartMinutes)) continue;
+    if (task.plannedStartMinutes >= searchStart.start.minutes) continue;
+    if (task.deadlineDate && task.deadlineDate < searchStart.start.date) continue;
+    diagnostics.push({
+      code: 'planned_start_clamped',
+      level: 'info',
+      message: `任务「${task.title}」的计划开始时间（${formatMinutes(task.plannedStartMinutes)}）早于本次规划起点（${formatMinutes(searchStart.start.minutes)}），已按规划起点开始考虑。`,
+    });
   }
 
   /* ---------- 第 6b 步：无法放置的片段 ---------- */
@@ -786,6 +820,7 @@ function describeReason(reasonCode) {
     [UNSCHEDULED_REASON.NON_SPLITTABLE_NO_SLOT]: '该任务不可拆分，但窗口内没有足够长的连续空闲时段一次放下。',
     [UNSCHEDULED_REASON.DEADLINE_PASSED]: '截止时间已经过去，安排也无法按时完成。',
     [UNSCHEDULED_REASON.DEADLINE_TOO_CLOSE]: '截止时间之前剩余的可用时间放不下这个任务（不会排到截止时间之后）。',
+    [UNSCHEDULED_REASON.PLANNED_START_UNREACHABLE]: '你设置的计划开始时间之后没有足够的可用时间（不会排到你指定的时间之前）。',
     [UNSCHEDULED_REASON.WINDOW_TOO_NARROW]: '允许学习的时间窗口为空或过窄。',
     [UNSCHEDULED_REASON.DAILY_CAP_REACHED]: '已触达每日学习上限或每日片段数上限。',
     [UNSCHEDULED_REASON.OVERLOADED]: '所有任务的剩余工作量之和超过了窗口内的可用容量。',
@@ -796,6 +831,7 @@ function describeReason(reasonCode) {
 function suggestFor(reasonCode) {
   const map = {
     [UNSCHEDULED_REASON.DEADLINE_TOO_CLOSE]: ['move_deadline', 'reduce_workload', 'lower_min_chunk'],
+    [UNSCHEDULED_REASON.PLANNED_START_UNREACHABLE]: ['clear_planned_start', 'extend_window', 'reduce_workload'],
     [UNSCHEDULED_REASON.INSUFFICIENT_CAPACITY]: ['extend_window', 'accept_partial', 'lower_buffer', 'move_deadline'],
     [UNSCHEDULED_REASON.TAIL_TOO_SMALL]: ['lower_min_chunk', 'merge_chunks', 'move_deadline'],
     [UNSCHEDULED_REASON.BLOCKED_BY_DEPENDENCY]: ['finish_dependency', 'remove_dependency'],

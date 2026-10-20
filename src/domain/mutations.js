@@ -51,6 +51,8 @@ export function applyDraftOp(state, op, ctx) {
       return taskStatusOp(state, op, ctx);
     case 'task.delete':
       return deleteTaskOp(state, op, ctx);
+    case 'task.purge':
+      return purgeTaskOp(state, op, ctx);
     case 'session.lock':
       return sessionLockOp(state, op, ctx);
     case 'session.move':
@@ -143,6 +145,9 @@ export function describeDraftOps(ops) {
       case 'task.delete':
         parts.push('删除任务');
         break;
+      case 'task.purge':
+        parts.push('彻底删除任务历史');
+        break;
       case 'session.lock':
         parts.push(op.locked ? '锁定时段' : '解锁时段');
         break;
@@ -180,12 +185,15 @@ export function describeDraftOps(ops) {
         parts.push('删除固定活动');
         break;
       case 'subject.ensure':
-      return subjectEnsureOp(state, op, ctx);
-    case 'subject.rename':
-      return subjectRenameOp(state, op, ctx);
-    case 'subject.remove':
-      return subjectRemoveOp(state, op);
-    case 'rest.add':
+        parts.push(`新增科目「${op.name ?? ''}」`);
+        break;
+      case 'subject.rename':
+        parts.push('重命名科目');
+        break;
+      case 'subject.remove':
+        parts.push('删除科目');
+        break;
+      case 'rest.add':
         parts.push(`新增休息时间「${op.input?.title ?? ''}」`);
         break;
       case 'rest.update':
@@ -297,6 +305,73 @@ function deleteTaskOp(state, op, ctx) {
   }
   // 有历史记录 → 软删除（保留记录，可恢复）
   return taskStatusOp(state, { kind: 'task.status', taskId: op.taskId, to: TASK_STATUS.DELETED }, ctx);
+}
+
+/**
+ * 彻底删除一个任务：从持久化数据里真正移除它，并清掉不再需要的关联数据。
+ *
+ * 与 `task.delete`（软删除）的区别：
+ * - `task.delete`：把状态改成 deleted，记录保留在"已删除历史"里，可以恢复；
+ * - `task.purge`：任务本身从 `tasks` 里消失，**它的学习时段也一并移除**，
+ *   正式计划里引用它的块会被删掉，其它任务对它的依赖会被解除。
+ *
+ * 为什么要一起清掉这些：
+ * 1. 只删任务会留下"引用了不存在任务的时段"（V052），下次打开会报警告甚至拒绝读取；
+ * 2. `dependsOn` 里留着已删除任务的 ID 会让依赖校验（V013）失败，导致整个应用无法保存；
+ * 3. 正式计划里残留它自己的块，会让时间表/看板继续显示一个已经不存在的任务。
+ *
+ * 不动的东西：其它任何任务、固定日程、休息安排、已完成的其他任务记录、设置。
+ */
+function purgeTaskOp(state, op, ctx) {
+  const task = (state.tasks ?? []).find((item) => item.id === op.taskId);
+  if (!task) return { ok: false, state, issues: [error(C.REQUIRED, 'task', '任务不存在。', { taskId: op.taskId })] };
+
+  const ownSessions = (state.sessions ?? []).filter((session) => session.taskId === op.taskId);
+  const ownSessionIds = new Set(ownSessions.map((session) => session.id));
+
+  // 1) 移除任务本身
+  const tasks = (state.tasks ?? []).filter((item) => item.id !== op.taskId);
+  // 2) 顺带解除其它任务对它的依赖（否则会留下无法满足的依赖）
+  const cleanedTasks = tasks.map((item) => {
+    if (!Array.isArray(item.dependsOn) || item.dependsOn.length === 0) return item;
+    if (!item.dependsOn.includes(op.taskId)) return item;
+    return { ...item, dependsOn: item.dependsOn.filter((id) => id !== op.taskId), updatedAt: ctx.nowIso };
+  });
+
+  // 3) 移除它的全部学习时段（含已完成：用户明确要求彻底删除）
+  const sessions = (state.sessions ?? []).filter((session) => session.taskId !== op.taskId);
+
+  // 4) 正式计划里移除引用这些时段/任务的块，避免时间表继续显示已删除内容
+  const stripPlan = (plan) => {
+    if (!plan || !Array.isArray(plan.blocks)) return plan;
+    const blocks = plan.blocks.filter(
+      (block) =>
+        !(block.kind === 'study' && block.taskId === op.taskId) &&
+        !(block.refId && ownSessionIds.has(block.refId)),
+    );
+    if (blocks.length === plan.blocks.length) return plan;
+    return { ...plan, blocks };
+  };
+
+  return {
+    ok: true,
+    state: {
+      ...state,
+      tasks: cleanedTasks,
+      sessions,
+      officialPlan: stripPlan(state.officialPlan),
+      // 候选计划基于旧数据生成，已经失效：直接丢弃，避免"应用后引用不存在的任务"
+      pendingPreview: null,
+    },
+    issues: [],
+    purged: {
+      taskId: op.taskId,
+      removedSessions: ownSessions.length,
+      removedDependencies: (state.tasks ?? []).filter(
+        (item) => item.id !== op.taskId && Array.isArray(item.dependsOn) && item.dependsOn.includes(op.taskId),
+      ).length,
+    },
+  };
 }
 
 /* ------------------------------------------------------------------ *

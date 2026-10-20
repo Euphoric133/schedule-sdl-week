@@ -30,6 +30,7 @@ export const UNSCHEDULED_REASON = Object.freeze({
   NON_SPLITTABLE_NO_SLOT: 'non_splittable_no_slot', // 不可拆分任务找不到能一次放下的连续时段
   DEADLINE_PASSED: 'deadline_passed', // 截止时间已过
   DEADLINE_TOO_CLOSE: 'deadline_too_close', // 截止前剩余可用时间放不下这个任务
+  PLANNED_START_UNREACHABLE: 'planned_start_unreachable', // 计划开始时间之后没有足够可用时间
   WINDOW_TOO_NARROW: 'window_too_narrow', // 可用窗口为空或过窄
   DAILY_CAP_REACHED: 'daily_cap_reached', // 触达每日学习上限或每日片段数上限
   OVERLOADED: 'overloaded', // 总需求超过总容量（整体超载）
@@ -73,6 +74,8 @@ export const DIAGNOSTIC_CODE = Object.freeze({
   DEADLINE_LATE: 'deadline_late',
   DEPENDENCY_CYCLE: 'dependency_cycle',
   RESERVED_BLOCK_OVERLAP: 'reserved_block_overlap', // 锁定时段与固定活动重叠（数据冲突）
+  /** 任务的计划开始时间早于本次规划的搜索起点，被上移（如实告知，不静默） */
+  PLANNED_START_CLAMPED: 'planned_start_clamped',
   /** 规划开始时间相关（默认取下一个整点 / 用户指定 / 指定的时间已经过去） */
   START_TIME_DEFAULT: 'start_time_default',
   START_TIME_USER: 'start_time_user',

@@ -254,6 +254,25 @@ export function createAppState(options = {}) {
     return summarizeState(state);
   }
 
+  /**
+   * 让"自动恢复备份"与当前状态保持一致。
+   *
+   * 为什么需要：每次保存都会把**上一份**状态轮转进 backup 槽。
+   * 于是"重置系统"刚执行完时，backup 里恰好是**重置前**的业务数据；
+   * 一旦之后主数据读取失败，自动恢复会把用户以为已经清空的数据重新装回来。
+   *
+   * 这里把当前（已重置的）状态写进 backup 槽，保证恢复目标与用户看到的界面一致。
+   * 只影响这一个键，不动 preferences / notified 等其它存储。
+   */
+  function syncRecoveryBackup() {
+    if (typeof adapter?.saveBackupOnly !== 'function') return { ok: false, skipped: true };
+    try {
+      return adapter.saveBackupOnly(state) ?? { ok: true };
+    } catch (error) {
+      return { ok: false, error };
+    }
+  }
+
   return {
     adapter,
     persistenceAvailable,
@@ -270,6 +289,7 @@ export function createAppState(options = {}) {
     getNotifications: drainNotifications,
     pushNotification,
     persist,
+    syncRecoveryBackup,
     markBackupExported,
     exportBackup,
     previewImport,

@@ -158,6 +158,16 @@ export function createTaskService({ app, idFactory }) {
    * - 无历史时段且 hard=true → 物理移除。
    * 无论哪种都必须先调用 evaluateTaskImpact 并让用户确认。
    */
+  /**
+   * 彻底删除一个任务（从"已删除历史"里清除）。
+   *
+   * 与 deleteTask 的区别：这里**不会**降级成软删除，
+   * 即使它有学习记录也会真的移除，并清掉不再需要的关联数据（见 mutations.purgeTaskOp）。
+   */
+  function purgeTask(id) {
+    return applyAndCommit({ kind: 'task.purge', taskId: id }, { reason: 'task-purge' });
+  }
+
   function deleteTask(id, { hard = false } = {}) {
     const evaluated = evaluateTaskImpact(id);
     if (!evaluated.ok) return evaluated;
@@ -240,6 +250,7 @@ export function createTaskService({ app, idFactory }) {
     updateTask,
     changeTaskStatus,
     deleteTask,
+    purgeTask,
     restoreTask,
   };
 }

@@ -42,9 +42,15 @@ export function renderNotifications({ app, services, now }) {
                   ? '还没有获得浏览器通知权限，请先点「启用通知」。'
                   : result.reason === 'type-disabled'
                     ? '对应的提醒类型被关闭了，请先在下面开启。'
-                    : '测试通知发送失败。',
+                    : result.reason === 'insecure-context'
+                      ? '当前页面不是安全上下文（HTTP/localhost 以外），浏览器不允许通知。'
+                      : result.reason === 'unsupported'
+                        ? '当前环境没有可用的通知通道（Safari 需要 Service Worker，本应用未内置）。'
+                        : result.reason === 'no-channel'
+                          ? `浏览器拒绝了这条通知${result.detail ? `：${result.detail}` : '（构造通知失败）'}。`
+                          : '测试通知发送失败。',
                 'error',
-                8000,
+                9000,
               );
               return;
             }
@@ -53,6 +59,19 @@ export function renderNotifications({ app, services, now }) {
         }),
       ]),
     ]),
+  );
+
+  /**
+   * 环境说明：把"为什么可能收不到"直接写在页面上，而不是让用户猜。
+   * 这些判断来自 notificationService.describeEnvironment()（真实能力检查）。
+   */
+  const environment = services.notificationService.describeEnvironment();
+  nodes.push(
+    notice({
+      level: environment.level === 'ok' ? 'info' : environment.level === 'warning' ? 'warning' : 'danger',
+      title: environment.level === 'ok' ? '当前环境支持通知' : '当前环境的限制',
+      message: environment.text,
+    }),
   );
 
   /* ---------- 当前状态 ---------- */
