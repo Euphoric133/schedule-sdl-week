@@ -188,7 +188,11 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
        */
       if (!focusTaskId) return;
       const gardenTaskId = loadTaskMap()[focusTaskId];
-      if (gardenTaskId) autoStartFocus({ bridge, gardenTaskId });
+      if (!gardenTaskId) return;
+      // 计时器的时长 = 这个学习任务的计划时长（例如 70 分钟）
+      const task = (app.getState().tasks ?? []).find((item) => item.id === focusTaskId);
+      const minutes = Math.max(1, Math.round((task?.plannedMinutes ?? 25) - (task?.priorCompletedMinutes ?? 0)));
+      autoStartFocus({ bridge, gardenTaskId, minutes });
     } catch {
       // 联动失败不影响主流程
     }

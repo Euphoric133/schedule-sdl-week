@@ -143,10 +143,25 @@ export async function waitForBridge(frame, { timeoutMs = 8000, intervalMs = 120,
  * 主应用 → 花园：同步任务
  * ================================================================== */
 
+/**
+ * 把"计划开始时间"格式化进任务名，让花园的任务列表里**直接看得到开始时间**。
+ * 花园没有"开始时间"字段，只能借名字承载（不动它的任何功能）。
+ */
+export function formatStartLabel(task) {
+  const minutes = Number.isInteger(task?.plannedStartMinutes) ? task.plannedStartMinutes : null;
+  if (minutes === null) return '';
+  const hh = String(Math.floor(minutes / 60)).padStart(2, '0');
+  const mm = String(minutes % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
 /** 主应用任务 → 花园任务的字段映射（只带花园认识的字段） */
 export function toGardenDraft(task) {
+  const startLabel = formatStartLabel(task);
+  const baseName = String(task.title ?? '').slice(0, 40) || '未命名任务';
   return {
-    name: String(task.title ?? '').slice(0, 40) || '未命名任务',
+    // 有开始时间就在名字前加标记，例如「22:23 晚自习」
+    name: startLabel ? `${startLabel} ${baseName}`.slice(0, 40) : baseName,
     description: task.subject ? `科目：${task.subject}` : '',
     category: task.subject || '默认',
     priority: task.importance >= 4 ? 'high' : task.importance <= 2 ? 'low' : 'normal',
@@ -239,7 +254,7 @@ export async function syncTasksToGarden({ bridge, tasks, map, sleep } = {}) {
  *
  * @returns {{ok: boolean, reason?: string}}
  */
-export function autoStartFocus({ bridge, gardenTaskId, force = false, now = Date.now() } = {}) {
+export function autoStartFocus({ bridge, gardenTaskId, minutes = null, force = false, now = Date.now() } = {}) {
   if (!bridge) return { ok: false, reason: 'no-bridge' };
   if (!gardenTaskId) return { ok: false, reason: 'no-task' };
 
@@ -252,6 +267,15 @@ export function autoStartFocus({ bridge, gardenTaskId, force = false, now = Date
   }
   // 正在专注别的任务：用户自己开的，不抢
   if (running && !force) return { ok: false, reason: 'busy' };
+
+  /**
+   * 把花园的"单个专注时长"临时改成这个任务的时长（例如 70 分钟），
+   * 这样点「专注」进去的计时器就是 70 分钟，而不是默认的 25 分钟。
+   * 只改设置值，不动花园的任何逻辑。
+   */
+  if (Number.isInteger(minutes) && minutes > 0) {
+    bridge.dispatch({ type: 'settings/update', patch: { focusMinutes: Math.min(180, minutes) } });
+  }
 
   bridge.dispatch({ type: 'timer/reset' });
   bridge.dispatch({ type: 'timer/select-task', taskId: gardenTaskId });

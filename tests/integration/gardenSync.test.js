@@ -172,6 +172,28 @@ test('同步：桥不可用时返回原因，不抛错', async () => {
 
 /* ---------------- 自动开始计时 ---------------- */
 
+test('任务名：计划开始时间会显示在花园任务名里（22:23 晚自习）', async () => {
+  const { toGardenDraft, formatStartLabel } = await import('../../src/services/gardenSync.js');
+  assert.equal(formatStartLabel({ plannedStartMinutes: 1343 }), '22:23');
+  assert.equal(formatStartLabel({ plannedStartMinutes: null }), '');
+  assert.equal(toGardenDraft({ ...PLANNER_TASK, plannedStartMinutes: 1343 }).name, '22:23 数学作业');
+  assert.equal(toGardenDraft(PLANNER_TASK).name, '数学作业', '没设开始时间就不加前缀');
+});
+
+test('自动开始：按任务时长设置专注时长（70 分钟任务 = 70 分钟计时器）', () => {
+  const { bridge, calls } = makeFakeGarden();
+  autoStartFocus({ bridge, gardenTaskId: 'garden-1', minutes: 70, now: 1000 });
+
+  const settingsCall = calls.find((call) => call.type === 'settings/update');
+  assert.ok(settingsCall, '应先改专注时长');
+  assert.equal(settingsCall.patch.focusMinutes, 70);
+  assert.deepEqual(
+    calls.map((call) => call.type),
+    ['settings/update', 'timer/reset', 'timer/select-task', 'timer/start'],
+    '顺序：先改时长，再 reset → select → start',
+  );
+});
+
 test('自动开始：动作顺序必须是 reset → select-task → start', () => {
   const { bridge, calls } = makeFakeGarden();
   const result = autoStartFocus({ bridge, gardenTaskId: 'garden-1', now: 1000 });
