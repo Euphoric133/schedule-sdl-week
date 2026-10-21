@@ -355,7 +355,19 @@ function checkH6(studyBlocks, taskById, policy, violations) {
         details: { length, upper },
       });
     } else if (length < lower) {
-      const allowUndersized = policy?.allowUndersizedFinalChunk !== false && (block.undersized || block.plannedMinutes < lower);
+      /**
+       * 任务本身的总工作量就短于"最短时段"时，任何时段都必然短于该下限——
+       * 这是任务属性，不是排程违规（例如 20 分钟的任务，最短时段设为 30）。
+       * 之前这里只放行"收尾片段"，导致这类任务被校验判为冲突、计划直接生成失败，
+       * 用户看到的是"点了生成但什么都没排出来"。
+       */
+      const taskTotalMinutes =
+        (Number.isInteger(task.plannedMinutes) ? task.plannedMinutes : 0) -
+        (Number.isInteger(task.priorCompletedMinutes) ? task.priorCompletedMinutes : 0);
+      const taskShorterThanFloor = taskTotalMinutes > 0 && taskTotalMinutes < lower;
+      const allowUndersized =
+        policy?.allowUndersizedFinalChunk !== false &&
+        (block.undersized || block.plannedMinutes < lower || taskShorterThanFloor);
       if (!allowUndersized) {
         violations.push({
           constraint: CONSTRAINT.H6,
