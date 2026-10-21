@@ -5,6 +5,78 @@
 
 ---
 
+## [1.9.0] — 专注花园全屏化 + 与学习任务联动
+
+日期：2026-10-20
+
+### 一、花园改成真正的全屏（修掉"侧边栏还在"）
+
+`#/garden` 时给外壳加 `data-mode="garden"`，CSS 隐藏品牌区 / 顶栏 / 侧边栏，
+网格改为单列单行，iframe 占满整个窗口。返回靠**左上角浮动的「← 返回应用」**按钮
+（这是我们自己的元素，覆盖在 iframe 之上，**没有改动花园的任何 DOM**）。
+
+### 二、数据联动（主应用 ⇄ 花园）
+
+| 方向 | 做法 | 是否改动花园 |
+|---|---|---|
+| 主应用 → 花园（写） | 走花园自己的 `dispatch`：`task/create`、`task/update`、`timer/reset → select-task → start` | 需要一个小桥（见下） |
+| 花园 → 主应用（读） | 只读：花园在专注完成时**自己就会** `completedPomodoros + 1` 并写 session，主应用读 `focus-garden/tasks` 显示 🍅 数量 | **不需要**任何改动 |
+
+花园本身没有对外 API、也不监听 `storage`/`message` 事件，所以"写"必须有桥。
+补丁只加一行、不包裹任何现有逻辑：
+
+```js
+y.current=o;                                    // 原有
+globalThis.__focusGardenBridge={getState:()=>y.current,dispatch:f};   // 新增
+```
+
+（`y` 是花园里指向最新 state 的 ref，`f` 是它的 dispatch；两者都是原有变量。）
+
+### 三、行为
+
+1. 进入花园 → 自动把**未删除**的学习任务同步过去（新建/更新/已完成的标为 done，不删除以保住番茄记录）。
+2. 任务行新增「专注」按钮 → 打开花园并**自动开始**该任务的番茄钟：
+   `timer/reset → timer/select-task → timer/start`。
+3. **不抢**用户已经开着的计时：正在跑别的任务时不打断（`busy`）。
+4. 一个番茄转完 → 花园自己 `+1` 番茄并写 session；主应用任务行显示 `🍅 N`。
+5. 任务映射持久化在独立的 `studyPlanner:v1:gardenMap`，避免重复创建。
+
+### 四、文件
+
+| 文件 | 变更 |
+|---|---|
+| `scripts/patch-garden-wheel.mjs` | 增加 `bridge-for-planner-sync` 补丁（现共 4 处，逐条幂等） |
+| `src/services/gardenSync.js` | **新增**：只读快照、番茄数、任务映射、同步任务、自动开始、等桥 |
+| `src/ui/shell.js` | 全屏模式、返回按钮、进入花园时联动 |
+| `src/ui/components.js` | 任务行支持 🍅 计数与「专注」按钮 |
+| `src/ui/pages/tasks.js` | 接入番茄数显示与「专注」入口 |
+| `src/ui/styles/components.css` | 全屏网格、返回按钮样式 |
+| `src/main.js` | 注册 `services.gardenSync` |
+| `tests/integration/gardenSync.test.js` | **新增 13 个测试** |
+
+### 五、测试结果（真实执行）
+
+```
+$ node --test "tests/**/*.test.js"
+ℹ tests 572
+ℹ pass 572
+ℹ fail 0
+
+$ node scripts/build-standalone.mjs
+已生成 dist/standalone.html（1443 KB，内联 73 个模块）
+```
+
+联动测试用假桥验证了：字段映射、首次创建、重复同步只更新不重建、完成标 done、桥不可用降级、
+`reset→select→start` 顺序、不抢占正在跑的计时、同一任务不重复启动、番茄数读取、损坏数据降级、等桥超时。
+
+### 六、需要真机确认的部分
+
+- 花园内部计时在浏览器里的实际表现（自动开始是否立刻进入专注、转完是否 `+1`）；
+- iOS/Safari 下 iframe 的定时器节流表现；
+- 这三点自动化只能验证协议，不能替代真人操作。
+
+---
+
 ## [1.8.0] — 专注花园改为**内嵌常驻**（同源 iframe），计时器不中断
 
 日期：2026-10-20

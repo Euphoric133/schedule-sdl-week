@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 /**
- * 修复「专注花园」奖励转盘的旋转动画（对已构建的单文件应用打补丁）。
+ * 对已构建的「专注花园」单文件应用打补丁。
+ *
+ * 目前包含两组、共 4 处补丁：
+ *   A. 修复奖励转盘的旋转动画（见下）
+ *   B. 暴露一个最小的联动桥 `window.__focusGardenBridge`
+ *
+ * 都是**新增/修正最小必要代码**，不改变花园已有的任何功能与交互。
  *
  * 背景：花园是预构建的单文件应用（React 已打包），没有源码。
  * 转盘的旋转逻辑在打包结果里，因此这个脚本对 `focus-garden.html` 做**精确的、可重复的**文本替换，
@@ -55,6 +61,16 @@ const PATCHES = [
       '第二次抽奖只会在原地挪几度（看起来几乎没转）。改为从**当前角度**继续累加至少 6 圈',
     from: 'const q=px(u.targetAngle,f||K?0:6),Y=f?260:K?0:4200;',
     to: 'const q=(()=>{const a=((360-u.targetAngle%360)%360+360)%360;if(f||K)return a;const z=x+2160;return z+(((a-z%360)%360)+360)%360;})(),Y=f?260:K?0:4200;',
+  },
+  {
+    id: 'bridge-for-planner-sync',
+    // 只把 React 的 state ref 与 dispatch 暴露出去，不包裹、不拦截任何现有逻辑
+    marker: '__focusGardenBridge',
+    reason:
+      '向主应用暴露最小联动接口：getState 读取花园状态（供主应用显示番茄次数），' +
+      'dispatch 用于把主应用的学习任务同步进花园、并自动开始计时',
+    from: 'y.current=o;const S=d.warnings,b=B.useRef(!1);',
+    to: 'y.current=o;globalThis.__focusGardenBridge={getState:()=>y.current,dispatch:f};const S=d.warnings,b=B.useRef(!1);',
   },
   {
     id: 'result-after-spin',

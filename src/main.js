@@ -37,6 +37,7 @@ import { renderAppearance } from './ui/pages/appearance.js';
 import { renderNotifications } from './ui/pages/notifications.js';
 import { renderStats } from './ui/pages/stats.js';
 import { renderGarden } from './ui/pages/garden.js';
+import * as gardenSync from './services/gardenSync.js';
 import { renderActivities } from './ui/pages/activities.js';
 import { renderVersions } from './ui/pages/versions.js';
 import { openTaskForm } from './ui/forms/taskForm.js';
@@ -627,6 +628,12 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
     idFactory,
     now: () => wallTimeFromDateObject(readNow()),
   };
+
+  /**
+   * 与「专注花园」的数据联动（任务同步、自动开始计时、读取番茄数）。
+   * 纯前端 + 同源 iframe：不涉及任何网络请求。
+   */
+  services.gardenSync = gardenSync;
 
   services.taskService = createTaskService({ app, idFactory });
   services.fixedActivityService = createFixedActivityService({ app, idFactory });

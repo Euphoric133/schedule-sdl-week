@@ -115,7 +115,7 @@ export function diagList(items) {
 }
 
 /** 任务列表 */
-export function taskList(items, { renderActions } = {}) {
+export function taskList(items, { renderActions, pomodoros = null, onFocus = null } = {}) {
   if (items.length === 0) return null;
   return el(
     'ul.task-list',
@@ -146,11 +146,17 @@ export function taskList(items, { renderActions } = {}) {
             pill(`截止 ${task.deadlineDate} ${task.deadlineTime}`, 'neutral'),
             activeSessions > 0 ? pill(`待进行 ${activeSessions} 段`, 'study') : null,
             completedSessions > 0 ? pill(`已完成 ${completedSessions} 段`, 'success') : null,
+            // 花园里已经完成的番茄数（来自专注花园的真实记录，读不到时不显示）
+            pomodoros && pomodoros[task.id] > 0 ? pill(`🍅 ${pomodoros[task.id]}`, 'success') : null,
             lockedSessions > 0 ? pill(`锁定 ${lockedSessions} 段`, 'locked') : null,
           ]),
         ]),
         scheduleText ? el('div.card__hint', { text: scheduleText }) : null,
-        renderActions ? el('div.task-item__actions', {}, renderActions({ task })) : null,
+        el('div.task-item__actions', {}, [
+          // 「专注」：把这个任务同步进花园并自动开始计时
+          onFocus ? button('专注', { size: 'sm', onClick: () => onFocus(task) }) : null,
+          renderActions ? renderActions({ task }) : null,
+        ]),
       ]);
     }),
   );

@@ -3001,8 +3001,51 @@ legend {
    iframe **只创建一次**，切换页面只切 hidden —— 这样花园的计时器不会被打断。
    ========================================================================== */
 
+/* 花园模式下隐藏规划器的外壳（侧边栏 / 顶栏 / 品牌区），让花园占满整个窗口 */
+.app[data-mode='garden'] {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  grid-template-areas: 'main';
+}
+
+.app[data-mode='garden'] .app-brand,
+.app[data-mode='garden'] .app-topbar,
+.app[data-mode='garden'] .app-nav {
+  display: none;
+}
+
+/* 返回按钮：花园全屏时唯一的出口，浮在左上角，克制但清楚 */
+.garden-back {
+  position: fixed;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full, 999px);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+
+.garden-back:hover,
+.garden-back:focus-visible {
+  opacity: 1;
+  background: var(--color-surface-alt);
+}
+
 .garden-host {
   grid-area: main;
+  position: relative;
   display: flex;
   min-width: 0;
   min-height: 0;

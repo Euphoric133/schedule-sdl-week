@@ -9,6 +9,7 @@ import { append, clear, downloadText, el, startTicker, stopTicker, toast } from 
 import { ROUTES, parseHash } from './router.js';
 import { button, notice } from './components.js';
 import { hideGardenFrame, showGardenFrame } from './gardenFrame.js';
+import { autoStartFocus, loadTaskMap, syncTasksToGarden, waitForBridge } from '../services/gardenSync.js';
 
 /**
  * @param {object} options
@@ -63,7 +64,20 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
    * 专注花园的宿主容器：与 main 共用同一个网格区域，但**永远不参与重建**。
    * 花园 iframe 挂在这里，切换页面时只切 hidden，因此计时器不会被打断。
    */
-  const gardenHost = el('div.garden-host', { id: 'garden-host', hidden: true });
+  const gardenHost = el('div.garden-host', { id: 'garden-host', hidden: true }, [
+    /**
+     * 返回按钮：花园是全屏显示的，侧边栏被隐藏，所以必须有一个我们自己的出口。
+     * 它是宿主容器里的浮层（position: fixed），**不改动花园的任何 DOM**。
+     */
+    el('button.garden-back', {
+      type: 'button',
+      title: '返回应用（Esc）',
+      on: { click: () => globalThis.location.hash = '#/home' },
+    }, [
+      el('span', { text: '←' , 'aria-hidden': 'true' }),
+      el('span', { text: '返回应用' }),
+    ]),
+  ]);
   const toastHost = el('div', { id: 'toast-host', 'aria-live': 'polite', style: { position: 'fixed', right: 'var(--space-4)', bottom: 'var(--space-4)', zIndex: '50', maxWidth: '360px' } });
 
   // 布局区域：brand / topbar / nav / main（toast 与全局横幅是浮层，不参与网格）
@@ -152,6 +166,34 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
     append(banner, nodes);
   }
 
+  /**
+   * 进入花园时的联动：同步任务 → （首次进入或指定了任务时）自动开始专注。
+   *
+   * 只在这一刻做写操作，之后不再轮询写入，避免打扰用户正在进行的操作。
+   * 任何一步失败都只影响联动本身，不会影响花园或规划器正常使用。
+   */
+  async function syncGardenOnOpen(frame, focusTaskId) {
+    try {
+      const bridge = await waitForBridge(frame);
+      if (!bridge) return;
+      const state = app.getState();
+      const tasks = (state.tasks ?? []).filter((task) => task.status !== 'deleted');
+      const synced = await syncTasksToGarden({ bridge, tasks, map: loadTaskMap() });
+      if (!synced.ok) return;
+
+      /**
+       * 自动开始只发生在**明确要学某个任务**的时候（任务行点「专注」）。
+       * 单纯点侧边栏进花园时只同步任务、不启动计时——否则用户只是想看看设置，
+       * 也会被莫名其妙开一个番茄钟。
+       */
+      if (!focusTaskId) return;
+      const gardenTaskId = loadTaskMap()[focusTaskId];
+      if (gardenTaskId) autoStartFocus({ bridge, gardenTaskId });
+    } catch {
+      // 联动失败不影响主流程
+    }
+  }
+
   let currentRoute = null;
 
   function render(route = parseHash()) {
@@ -172,11 +214,15 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
      */
     const isGarden = route.path === 'garden' && !route.unknownPath;
     if (isGarden) {
-      showGardenFrame(gardenHost);
+      const shown = showGardenFrame(gardenHost);
+      // 进入花园后：把学习任务同步进去，并按需自动开始计时（详见 services/gardenSync.js）
+      syncGardenOnOpen(shown.frame, route.params?.get?.('focus') ?? null);
       main.hidden = true;
+      shell.setAttribute('data-mode', 'garden');
     } else {
       hideGardenFrame(gardenHost);
       main.hidden = false;
+      shell.removeAttribute('data-mode');
     }
 
     const page = pages[route.path];

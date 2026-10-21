@@ -137,6 +137,12 @@ export function renderTasks({ app, services, route }) {
             })
           : taskList(views, {
               renderActions: ({ task }) => actionButtons(task, { app, services }),
+              // 花园里已完成的番茄数：同源读取花园自己的记录，读不到就不显示
+              pomodoros: services.gardenSync?.pomodorosByPlannerTask?.() ?? null,
+              // 一键专注：进花园并自动开始计时（任务会先同步进花园）
+              onFocus: (task) => {
+                globalThis.location.hash = `#/garden?focus=${encodeURIComponent(task.id)}`;
+              },
             }),
     }),
   );
