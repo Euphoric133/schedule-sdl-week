@@ -5,6 +5,86 @@
 
 ---
 
+## [1.8.0] — 专注花园改为**内嵌常驻**（同源 iframe），计时器不中断
+
+日期：2026-10-20
+
+### 变更
+
+| 项目 | 之前（v1.7.1） | 现在 |
+|---|---|---|
+| 打开方式 | 点击侧边栏 → 弹出**独立窗口** | 点击侧边栏 → **在页面内直接显示**（`#/garden`） |
+| 侧边栏项 | `<button>`（开窗口） | 普通 `<a href="#/garden">` |
+| 「在新窗口打开」 | 有 | **已移除** |
+| 花园代码 | 未改（转盘补丁除外） | **仍未改**（同源 iframe，零修改） |
+
+### 为什么用 iframe 而不是"把 HTML 拼进页面"
+
+对两个应用做了实测比对，直接拼接会同时弄坏两边：
+
+| 冲突项 | 数量 |
+|---|---|
+| 花园内联 CSS | 44 KB，含 7 条 `body{}`、3 条 `input{}`、`::selection`、滚动条规则 |
+| 重名 CSS 变量 | **16 个**（`--space-1…6`、`--radius-*`、`--shadow-*`、`--font-*`、`--primary`、`--danger`、`--ghost`） |
+| 重名类名 | **66 个**（`.card`、`.btn`、`.btn--primary`、`.chart`、`.app-nav`、`.app-main`…） |
+| 全局快捷键 | 花园监听 `1/2/3` 切专注阶段，与本应用 `1–9` 切页冲突 |
+
+iframe（同源、不加 sandbox）让它保持 **0 修改**，同时外观上无缝铺满内容区。
+
+### 计时器为什么不会被打断（本次的重点）
+
+1. **iframe 只创建一次**：引用挂在宿主元素 `host.__gardenFrame` 上（不是模块级变量，
+   避免多实例/测试互相污染），之后的进入/离开只切换 `hidden`。
+2. **从不重写 `srcdoc`**：重写等于刷新页面，计时会归零。测试里专门断言了这一点。
+3. **离开页面时 iframe 仍留在 DOM 里**：花园的 `setInterval` 与计时状态继续运行。
+4. **花园自身用绝对时间戳**：状态里有 `targetAt`（结束时刻）与 `pausedAccumMs`，
+   剩余时间按 `targetAt - Date.now()` 计算 → 后台标签页被降频也不会累积误差；
+   刷新时从 `focus-garden/timer` 恢复。
+
+### 新增/修改文件
+
+| 文件 | 变更 |
+|---|---|
+| `src/ui/gardenFrame.js` | **新增**：常驻 iframe 的创建/显示/隐藏，含"只创建一次"的不变量 |
+| `src/ui/shell.js` | 新增 `#garden-host`（与 `main` 共用网格区域）；路由切换时只切 `hidden` |
+| `src/ui/pages/garden.js` | 改为空实现（内容由 iframe 提供），删除启动器页与新窗口逻辑 |
+| `src/main.js` | 删除 `openGardenWindow` |
+| `src/ui/styles/components.css` | 新增 `.garden-host` / `.garden-frame`；删除窗口式导航样式 |
+| `tests/integration/garden.test.js` | 改为内嵌语义（8 个测试） |
+| `tests/integration/endToEnd.test.js` | 花园路由改为断言"宿主可见且 iframe 已挂载" |
+
+### 测试结果（真实执行）
+
+```
+$ node --test "tests/**/*.test.js"
+ℹ tests 559
+ℹ pass 559
+ℹ fail 0
+
+$ node scripts/build-standalone.mjs
+已生成 dist/standalone.html（1427 KB，内联 72 个模块）
+```
+
+端到端验证（打桩 DOM）：
+
+```
+导航: A #/garden | 无"在新窗口打开"按钮
+宿主可见: true | main 隐藏: true | iframe: 1
+srcdoc: 459,952 字符 | sandbox: null（保证花园存储可用）
+切页 10 次后 → iframe 数 1 | 同一节点 true | srcdoc 未变 true
+离开花园 → 宿主隐藏 true | iframe 仍在 DOM true
+规划器：建任务 / 生成计划 / 应用计划 全部正常
+```
+
+### 留意
+
+花园代码里有一处演示入口（`?seed=<base64>` 或 `window.__seedFocusGarden`）会执行
+`localStorage.clear()`。同源下它会清掉本应用的数据（`studyPlanner:v1:*`）。
+当前入口由本应用控制、**从不传 `?seed=`**，所以不会触发；不要手动带该参数打开花园。
+按"零修改"的要求，这次没有改它。
+
+---
+
 ## [1.7.2] — 修复专注花园奖励转盘的旋转动画
 
 日期：2026-10-20

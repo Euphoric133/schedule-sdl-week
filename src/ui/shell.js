@@ -8,6 +8,7 @@
 import { append, clear, downloadText, el, startTicker, stopTicker, toast } from './dom.js';
 import { ROUTES, parseHash } from './router.js';
 import { button, notice } from './components.js';
+import { hideGardenFrame, showGardenFrame } from './gardenFrame.js';
 
 /**
  * @param {object} options
@@ -58,10 +59,15 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
   const banner = el('div', { id: 'global-banner', style: { margin: 'var(--space-4) var(--space-5) 0' } });
 
   const main = el('main.app-main', { id: 'main-content', tabindex: '-1' });
+  /**
+   * 专注花园的宿主容器：与 main 共用同一个网格区域，但**永远不参与重建**。
+   * 花园 iframe 挂在这里，切换页面时只切 hidden，因此计时器不会被打断。
+   */
+  const gardenHost = el('div.garden-host', { id: 'garden-host', hidden: true });
   const toastHost = el('div', { id: 'toast-host', 'aria-live': 'polite', style: { position: 'fixed', right: 'var(--space-4)', bottom: 'var(--space-4)', zIndex: '50', maxWidth: '360px' } });
 
   // 布局区域：brand / topbar / nav / main（toast 与全局横幅是浮层，不参与网格）
-  const shell = el('div.app', {}, [brand, topbar, nav, main]);
+  const shell = el('div.app', {}, [brand, topbar, nav, main, gardenHost]);
   installKeyboardShortcuts({ app, services, render: () => renderCurrent() });
   root.appendChild(shell);
   root.appendChild(banner);
@@ -78,47 +84,10 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
     fileInput.click();
   }
 
-  /**
-   * 侧边栏里有些项**不切换页面**，而是打开一个独立窗口（目前是「专注花园」）。
-   *
-   * 为什么用 button 而不是 <a href>：新窗口必须由**用户点击**直接触发，
-   * 否则会被浏览器当成弹窗拦截。如果先跳到 #/garden 再在渲染时开窗，
-   * 就已经脱离了点击上下文，必然失败。
-   */
-  const OPENS_WINDOW = new Set(['garden']);
-
   function renderNav(activePath) {
     clear(navList);
     ROUTES.forEach((route, index) => {
       const isActive = route.path === activePath;
-      if (OPENS_WINDOW.has(route.path)) {
-        navList.appendChild(
-          el('li', {}, [
-            el(
-              'button.app-nav__link.app-nav__link--window',
-              {
-                type: 'button',
-                title: `在新窗口打开（快捷键 ${index + 1}）`,
-                on: {
-                  click: () => {
-                    try {
-                      services.ui.openGardenWindow();
-                    } catch {
-                      // 打不开窗口时不要把导航搞挂：退回到说明页
-                      globalThis.location.hash = `#/${route.path}`;
-                    }
-                  },
-                },
-              },
-              [
-                el('span', { text: route.label }),
-                el('span', { class: 'app-nav__key', text: '↗', 'aria-hidden': 'true' }),
-              ],
-            ),
-          ]),
-        );
-        return;
-      }
       navList.appendChild(
         el('li', {}, [
           el(
@@ -196,6 +165,20 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
     renderNav(route.path);
     renderNavFoot();
     renderBanner();
+
+    /**
+     * 专注花园是常驻 iframe：进入时显示宿主容器、隐藏普通页面区域；
+     * 离开时反过来。**两种情况下 iframe 都不重建**，计时继续跑。
+     */
+    const isGarden = route.path === 'garden' && !route.unknownPath;
+    if (isGarden) {
+      showGardenFrame(gardenHost);
+      main.hidden = true;
+    } else {
+      hideGardenFrame(gardenHost);
+      main.hidden = false;
+    }
+
     const page = pages[route.path];
     clear(main);
     if (!page || route.unknownPath) {
@@ -210,6 +193,11 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
       return;
     }
     try {
+      if (isGarden) {
+        // 内容由常驻 iframe 承载，main 保持为空
+        stopTicker();
+        return;
+      }
       // 页面上下文：页面只能通过这些只读入口取数据，不直接访问存储。
       // `requestTick` 让"需要每秒刷新"的页面（如计时工作台）注册心跳。
       let tickRequested = false;
@@ -276,11 +264,6 @@ function installKeyboardShortcuts({ app, services, render }) {
     if (Number.isInteger(index) && index >= 1 && index <= ROUTES.length) {
       event.preventDefault();
       const target = ROUTES[index - 1];
-      // 与侧边栏保持一致：花园这类"开窗口"的页面，快捷键也直接开窗
-      if (target.path === 'garden') {
-        services.ui.openGardenWindow();
-        return;
-      }
       globalThis.location.hash = `#/${target.path}`;
       return;
     }

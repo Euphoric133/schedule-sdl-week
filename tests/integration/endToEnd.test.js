@@ -255,6 +255,14 @@ test('端到端：所有导航入口都能到达且页面渲染正常', async ()
       }
       assert.ok(hash.startsWith('#/'), `导航链接必须可用，实际 ${hash}`);
       env.go(hash);
+      // 专注花园的内容在同源 iframe 里，父文档文本为空，改为断言"宿主可见且 iframe 已挂载"
+      if (hash === '#/garden') {
+        const host = env.dom.appHost.children[0].byClass('garden-host')[0];
+        assert.ok(host, '应存在花园宿主容器');
+        assert.equal(host.hidden, false, '进入花园时宿主必须可见');
+        assert.ok(host.all().some((n) => n.tagName === 'IFRAME'), '宿主里应有花园 iframe');
+        continue;
+      }
       const text = env.texts();
       assert.ok(!/页面不存在/.test(text), `${hash} 不应显示"页面不存在"`);
       assert.ok(!/页面渲染出错/.test(text), `${hash} 渲染不应报错`);

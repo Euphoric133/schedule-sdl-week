@@ -63,99 +63,91 @@ test('侧边栏：有「专注花园」入口，且紧跟在「学习统计」�
   // 说明：它是"打开独立窗口"，但路由仍然保留，供地址栏直达启动器页
 });
 
-test('侧边栏：点击「专注花园」直接打开独立窗口，不切换页面', async () => {
-  await withUi(async ({ dom, instance, services }) => {
-    const calls = [];
-    const originalOpen = globalThis.open;
-    globalThis.open = (url, name, features) => {
-      calls.push({ url, name, features });
-      return { focus() {} };
-    };
-    try {
-      dom.location.hash = '#/home';
-      instance.shell.render();
-      const navItem = dom.appHost.children[0].byClass('app-nav__link--window')[0];
-      assert.ok(navItem, '侧边栏应有"打开窗口"式的导航项');
-      assert.equal(navItem.tagName, 'BUTTON', '必须是 button，才能由点击直接触发新窗口');
-      assert.equal(navItem.getAttribute('href'), null, '不应带有页面跳转的 href');
-
-      navItem.click();
-
-      assert.equal(calls.length, 1, '点击应调用一次 window.open');
-      assert.match(calls[0].url, /^blob:/, '应通过 Blob URL 打开（两种版本都可用）');
-      assert.match(calls[0].features, /width=\d+/, '应指定窗口尺寸');
-      assert.match(calls[0].features, /height=\d+/, '应指定窗口尺寸');
-      assert.equal(dom.location.hash, '#/home', '点击不应改变当前页面（不是页面跳转）');
-    } finally {
-      globalThis.open = originalOpen;
-    }
-  });
-});
-
-test('侧边栏：重复点击复用同一个窗口，不会开出一堆', async () => {
+test('侧边栏：「专注花园」是普通页面入口（不再开新窗口）', async () => {
   await withUi(async ({ dom, instance }) => {
-    const names = [];
+    dom.location.hash = '#/home';
+    instance.shell.render();
+
+    const gardenLink = dom.appHost.children[0].byClass('app-nav__link').find((node) => node.textContent.includes('专注花园'));
+    assert.ok(gardenLink, '侧边栏应有花园入口');
+    assert.equal(gardenLink.tagName, 'A', '应为普通链接');
+    assert.equal(gardenLink.getAttribute('href'), '#/garden');
+
+    let opened = 0;
     const originalOpen = globalThis.open;
-    globalThis.open = (url, name) => {
-      names.push(name);
-      return { focus() {} };
+    globalThis.open = () => {
+      opened += 1;
+      return null;
     };
     try {
-      instance.shell.render();
-      const navItem = dom.appHost.children[0].byClass('app-nav__link--window')[0];
-      navItem.click();
-      navItem.click();
-      assert.deepEqual(names, ['focus-garden-window', 'focus-garden-window'], '窗口名必须固定，才能复用');
+      gardenLink.click?.();
     } finally {
       globalThis.open = originalOpen;
     }
+    assert.equal(opened, 0, '点击导航不应打开新窗口');
   });
 });
 
-test('启动器页：不再内嵌 iframe，而是提供打开窗口的按钮', async () => {
+test('内嵌：进入花园时显示常驻 iframe，隐藏普通页面区域', async () => {
   await withUi(async ({ dom, instance }) => {
     dom.location.hash = '#/garden';
     instance.shell.render();
-    const main = dom.appHost.children[0].byClass('app-main')[0];
 
-    assert.equal(
-      main.all().filter((node) => node.tagName === 'IFRAME').length,
-      0,
-      '不应再把花园嵌在页面里',
-    );
+    const shell = dom.appHost.children[0];
+    const host = shell.byClass('garden-host')[0];
+    const main = shell.byClass('app-main')[0];
 
-    const buttons = main.all().filter((node) => node.tagName === 'BUTTON' && node.textContent.trim() === '打开专注花园窗口');
-    assert.ok(buttons.length >= 1, '应提供"打开专注花园窗口"按钮');
+    assert.ok(host, '应有花园宿主容器');
+    assert.equal(host.hidden, false, '进入花园时宿主必须可见');
+    assert.equal(main.hidden, true, '花园路由下普通页面区域应隐藏');
 
-    const opened = [];
-    const originalOpen = globalThis.open;
-    globalThis.open = (url) => {
-      opened.push(url);
-      return { focus() {} };
-    };
-    try {
-      buttons[0].click();
-      assert.equal(opened.length, 1, '点击按钮应打开窗口');
-    } finally {
-      globalThis.open = originalOpen;
-    }
+    const frame = host.all().find((node) => node.tagName === 'IFRAME');
+    assert.ok(frame, '宿主里应有 iframe');
+    const srcdoc = frame.getAttribute('srcdoc') ?? '';
+    assert.ok(srcdoc.length > 100_000, `srcdoc 应为完整应用，实际 ${srcdoc.length}`);
+    assert.match(srcdoc, /^<!doctype html>/i);
+    assert.ok(srcdoc.includes('id="root"'), '应包含花园的 #root 挂载点');
+    assert.equal(frame.getAttribute('title'), '专注花园', 'iframe 需要无障碍名称');
+    assert.equal(frame.getAttribute('sandbox'), null, '不加 sandbox，保证花园功能与存储不被限制');
   });
 });
 
-test('启动器页：开关被拦截时给出可执行的提示，而不是静默失败', async () => {
+test('计时不中断：切换页面后仍是同一个 iframe，srcdoc 不被重写', async () => {
   await withUi(async ({ dom, instance }) => {
-    const originalOpen = globalThis.open;
-    globalThis.open = () => null; // 模拟被拦截
-    try {
-      const result = instance.services.ui.openGardenWindow();
-      assert.equal(result.ok, false);
-      assert.equal(result.reason, 'blocked');
-      const notices = dom.document.body.all().filter((node) => node.classList?.contains('notice--danger'));
-      assert.ok(notices.length > 0, '必须给出提示');
-      assert.match(notices.map((node) => node.textContent).join(' '), /拦截|弹出窗口/);
-    } finally {
-      globalThis.open = originalOpen;
+    dom.location.hash = '#/garden';
+    instance.shell.render();
+
+    const shell = dom.appHost.children[0];
+    const host = shell.byClass('garden-host')[0];
+    const first = host.all().find((node) => node.tagName === 'IFRAME');
+    const firstSrcdoc = first.getAttribute('srcdoc');
+    assert.ok(first, '第一次进入应创建 iframe');
+
+    // 切走 → 再切回，来回多次
+    for (let i = 0; i < 3; i += 1) {
+      dom.location.hash = '#/home';
+      instance.shell.render();
+      assert.equal(host.hidden, true, '离开花园时宿主应隐藏');
+      assert.ok(host.all().some((node) => node.tagName === 'IFRAME'), '隐藏时 iframe 仍必须留在 DOM 里');
+
+      dom.location.hash = '#/garden';
+      instance.shell.render();
+      assert.equal(host.hidden, false, '回到花园时宿主应重新可见');
     }
+
+    const frames = host.all().filter((node) => node.tagName === 'IFRAME');
+    assert.equal(frames.length, 1, '任何情况下都只应有一个 iframe（不重复创建）');
+    assert.equal(frames[0], first, '必须是同一个 DOM 节点（重建会重置计时器）');
+    assert.equal(frames[0].getAttribute('srcdoc'), firstSrcdoc, 'srcdoc 不能被重写（重写等于刷新，计时归零）');
+  });
+});
+
+test('不加 sandbox：花园需要同源存储来保存专注记录', async () => {
+  await withUi(async ({ dom, instance }) => {
+    dom.location.hash = '#/garden';
+    instance.shell.render();
+    const frame = dom.appHost.children[0].byClass('garden-host')[0].all().find((n) => n.tagName === 'IFRAME');
+    assert.equal(frame.getAttribute('sandbox'), null, '有 sandbox 会限制 localStorage 或脚本，花园功能会失效');
   });
 });
 
