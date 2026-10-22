@@ -240,3 +240,48 @@ test('前置候选：已完成 / 0 剩余的任务都被排除', async () => {
     assert.equal(candidates.includes(live.task.id), true, '未完成任务仍可作为前置');
   });
 });
+
+/* ================================================================== *
+ * 四、跨午夜与面板刷新
+ * ================================================================== */
+
+test('跨午夜：没有排程时段时，记录归到前一天且 endMinutes > 1440', async () => {
+  await withApp(async ({ services, app }) => {
+    const created = services.taskService.addTask(taskInput({ title: '凌晨学习', plannedMinutes: 30 }));
+    const result = services.planService.completeTaskAtomic({
+      taskId: created.task.id,
+      actualMinutes: 40,
+      now: { date: '2025-10-17', minutes: 20 }, // 00:20 完成，实际学了 40 分钟
+    });
+    assert.equal(result.ok, true, result.issues?.map((i) => i.message).join('; '));
+
+    const session = app.getState().sessions.find((item) => item.taskId === created.task.id);
+    assert.equal(session.date, '2025-10-16', '应归到前一天');
+    assert.ok(session.endMinutes > 1440, '跨午夜时结束分钟应大于 1440');
+    assert.equal(session.endMinutes - session.startMinutes, 40);
+    assert.equal(session.actualMinutes, 40);
+    assert.equal(session.state, 'completed');
+  });
+});
+
+test('刷新：应用预览后会通知花园刷新面板（不依赖重新进入花园）', async () => {
+  await withApp(async ({ dom, instance, services }) => {
+    services.taskService.addTask(taskInput({ title: '刷新任务' }));
+
+    dom.location.hash = '#/garden';
+    instance.shell.render();
+
+    const host = dom.appHost.children[0].byClass('garden-host')[0];
+    const frame = host.all().find((node) => node.tagName === 'IFRAME');
+    let refreshes = 0;
+    // 模拟花园文档里已挂载的面板
+    frame.contentDocument = {
+      body: { __studyTimerPanel: { renderList: () => { refreshes += 1; }, renderTimer: () => {} } },
+    };
+
+    services.planService.requestPreview({ now: NOW });
+    const before = refreshes;
+    services.ui.applyPreview();
+    assert.ok(refreshes > before, '应用预览后应刷新花园面板');
+  });
+});

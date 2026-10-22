@@ -605,8 +605,23 @@ function createUiService({ services, getShell = () => null }) {
     /** 带数据变更的预览（任务表单、设置页、时段操作都走这里） */
     previewWith,
 
-    /** 应用待确认计划 */
-    applyPreview: () => services.planService.applyPreview(),
+    /**
+     * 应用待确认计划。
+     *
+     * 应用之后必须**同步刷新花园里的学习任务计时面板**：
+     * 任务可能刚被完成/取消，清单和剩余时长都变了。
+     * 之前只依赖"重新进入花园"才更新，用户会看到过期的条目。
+     */
+    applyPreview: () => {
+      const result = services.planService.applyPreview();
+      try {
+        // 任务可能刚被完成/取消：立刻刷新花园面板，别等用户重新进入花园
+        getShell()?.refreshGardenPanel?.();
+      } catch {
+        // 花园未挂载时 getShell() 可能还没有该方法：忽略
+      }
+      return result;
+    },
     /** 放弃待确认计划 */
     discardPreview: () => services.planService.discardPreview(),
     /** 撤销上一次计划变更 */

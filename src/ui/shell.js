@@ -401,7 +401,16 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
     render(currentRoute ?? parseHash());
   }
 
-  return { render, renderCurrent: shellRender, get currentRoute() { return currentRoute; }, main };
+  return {
+    render,
+    renderCurrent: shellRender,
+    /** 刷新花园里的学习任务计时面板（数据变更后调用，避免清单过期） */
+    refreshGardenPanel: () => refreshStudyTimerPanel(getGardenFrame(gardenHost)),
+    get currentRoute() {
+      return currentRoute;
+    },
+    main,
+  };
 }
 
 /**
