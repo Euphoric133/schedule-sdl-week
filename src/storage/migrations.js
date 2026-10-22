@@ -300,14 +300,19 @@ export function migrateState(raw, { skipSemanticValidation = false, allowRepair 
       message: '已把任务里用到的科目整理成统一的科目列表，之后可以在科目管理里改名或清理。',
     });
   }
-  if (filled.changed) {
-    issues.push({
-      severity: 'warning',
-      code: C.SCHEMA_SHAPE,
-      path: 'state',
-      message: '数据中缺少部分字段，已用默认值补齐（未覆盖你已有的设置）。',
-    });
-  }
+  /**
+   * 注意：这里**故意不再提示**"已用默认值补齐缺失字段"。
+   *
+   * 原因：补齐新增设置项是每次升级结构的必然结果（例如新增 latestSleepMinutes），
+   * 它不表示数据损坏，也不影响任何已有设置。把它当警告显示在界面底部，
+   * 会让每次版本升级后的首次打开都出现一条"看起来像出了问题"的提示，
+   * 而用户实际什么也不用做。
+   *
+   * 补齐行为本身**保留**（否则新字段会是 undefined）；只是不再打扰用户。
+   * 真正需要用户知道的问题（迁移失败、旧版可学习时间被扩展、语义校验修复）
+   * 仍然会照常提示。
+   */
+  void filled.changed;
 
   if (!skipSemanticValidation) {
     const validation = validateAppState(state);

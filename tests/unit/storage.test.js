@@ -357,3 +357,44 @@ test('最新版本的数据再次迁移是幂等的（不重复改字段）', ()
   assert.equal(result.ok, true);
   assert.equal(result.state.settings.latestSleepMinutes, 22 * 60, '已有值不应被重置');
 });
+
+test('补齐默认字段时不再提示用户（避免每次升级都弹"数据缺少字段"）', () => {
+  /**
+   * 背景：新增设置项（如 latestSleepMinutes）会让老数据走上"补默认值"的路径。
+   * 这属于正常的结构升级，不是数据损坏，也不影响已有设置。
+   * 曾经它会以警告形式出现在界面底部，让用户误以为出了问题。
+   *
+   * 这条测试锁定两件事：
+   * 1. 补齐行为仍然生效（否则新字段是 undefined，排程会读到空值）；
+   * 2. 不再产生这条提示。
+   */
+  const v1 = {
+    schemaVersion: 1,
+    createdAt: '2025-10-16T00:00:00.000Z',
+    updatedAt: '2025-10-16T00:00:00.000Z',
+    timeZone: null,
+    settings: { ...defaultSettings() },
+    tasks: [],
+    sessions: [],
+    fixedActivities: [],
+    restPeriods: [],
+    subjects: [],
+    officialPlan: null,
+    planHistory: [],
+    pendingPreview: null,
+    meta: { lastBackupAt: null, migrationLog: [], lastPlanMutation: null, initialWindowStart: null, planId: null },
+  };
+  // 模拟"老数据没有这个字段"
+  delete v1.settings.latestSleepMinutes;
+
+  const result = migrateState(v1);
+  assert.equal(result.ok, true, JSON.stringify(result.issues?.map((i) => i.message)));
+  assert.ok('latestSleepMinutes' in result.state.settings, '新字段必须被补齐，否则排程会读到 undefined');
+  assert.equal(result.state.settings.latestSleepMinutes, null);
+
+  const messages = (result.issues ?? []).map((issue) => issue.message);
+  assert.ok(
+    !messages.some((message) => message.includes('已用默认值补齐') || message.includes('缺少部分字段')),
+    '不应再向用户提示"数据缺少字段"',
+  );
+});
