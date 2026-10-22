@@ -656,3 +656,23 @@ export function findCyclicDependencyCandidate(taskId, candidateDepId, tasks = []
   }
   return false;
 }
+
+
+/**
+ * 可以出现在「前置任务」候选里的任务。
+ *
+ * 只有"还没做/正在做"的任务才有意义：已完成、已取消、已删除的任务
+ * 不应该再阻塞任何新任务，也不该出现在候选列表里（那是残留数据）。
+ *
+ * @param {Array<object>} tasks
+ * @param {string|null} currentTaskId 编辑时排除自己
+ * @returns {Array<object>}
+ */
+export function listDependencyCandidates(tasks, currentTaskId = null) {
+  return (tasks ?? []).filter(
+    (task) =>
+      task &&
+      task.id !== currentTaskId &&
+      (task.status === TASK_STATUS.NOT_STARTED || task.status === TASK_STATUS.IN_PROGRESS),
+  );
+}

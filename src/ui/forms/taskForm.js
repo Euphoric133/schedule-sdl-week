@@ -162,7 +162,8 @@ export function openTaskForm({ task = null, services }) {
   const dependsHost = el('div', { style: { maxHeight: '160px', overflow: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-2)' } });
   const candidates = services.taskService
     .getTasks()
-    .filter((t) => t.id !== task?.id && t.status !== TASK_STATUS.DELETED);
+    // 只保留"未开始/进行中"的任务：已完成/已取消/已删除都不再作为前置候选
+    .filter((t) => listDependencyCandidates([t], task?.id).length > 0);
   if (candidates.length === 0) {
     append(dependsHost, [el('div.form-field__hint', { text: '当前没有其它可用于依赖的任务。' })]);
   } else {

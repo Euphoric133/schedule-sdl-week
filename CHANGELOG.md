@@ -5,6 +5,62 @@
 
 ---
 
+## [1.17.0] — 已完成任务保留在时间表；前置任务候选与依赖清理
+
+日期：2026-10-20
+
+### 一、已完成任务为什么之前会"消失"
+
+两个原因叠加：
+
+1. `shouldShowStudyCard()` 对 `status === COMPLETED` 直接返回 `false` —— 卡片被过滤掉；
+2. `deriveStatus()` 先看 `session.state`，而完成任务时 `reconcileTaskSessions()` 会把未完成时段取消，
+   所以即使显示，状态也会变成"已取消"。
+
+### 二、现在的规则
+
+- **任务状态优先于时段状态**：`deriveStatus({ taskStatus, ... })` 最前面判断
+  `COMPLETED → 'completed'`、`CANCELLED/DELETED → 'cancelled'`；
+- **已完成任务继续显示**，`shouldShowStudyCard()` 不再过滤它；
+- **同一任务只显示一张"已完成"卡片**：新增纯函数
+  `selectCompletedDisplayBlockIds({ plan, state })`，按（日期、开始时间）取最早的一块，
+  日视图 / 周视图 / 首页共用同一份选择结果（避免一个 2 小时任务被拆成多段后显示成 8 小时）；
+- 已取消 / 已删除任务仍然不显示（不回归）；
+- 视觉：`day-card--completed`（左侧完成色、降低对比度、标题删除线、hover 恢复），
+  紧凑卡片（≤30 分钟）也会显示"已完成"标记；已完成卡片不再有「完成」按钮，保留「详情」「删除任务」。
+
+### 三、前置任务：清除已完成/已取消/已删除
+
+- 新增 `listDependencyCandidates(tasks, currentTaskId)`：只返回 `not_started` / `in_progress`，并排除自己；
+- 任务表单改用该函数，候选里不再出现历史任务；
+- `taskStatusOp()` 在**同一事务**里把该任务从其它任务的 `dependsOn` 中移除
+  （只有 `to === COMPLETED` 时清理；取消/删除不清理），随后照常 `reconcileTaskSessions()`；
+  整体校验失败则整体不生效。
+
+### 四、测试与构建
+
+```
+$ node --test "tests/**/*.test.js"
+ℹ tests 647
+ℹ pass 647
+ℹ fail 0
+
+$ node scripts/build-standalone.mjs
+已生成 dist/standalone.html（1502 KB，内联 75 个模块）
+```
+
+新增 `tests/integration/completedTask.test.js`（7 个）：状态优先级、卡片显隐、只保留最早一块、
+完成任务后卡片仍在、依赖候选过滤、完成清理依赖（同一事务）、取消不误删依赖。
+看板实测：7 张卡片中 1 张标为已完成并含"已完成"文案。
+
+### 五、旧断言调整（逐条说明）
+
+| 测试 | 旧断言 | 新断言 | 原因 |
+|---|---|---|---|
+| `round2` 「任务完成后从七天计划消失」 | 完成后卡片数 = 0 | 卡片仍存在且 `status === 'completed'` | 规则变更：本轮要求保留并显示"已完成" |
+
+---
+
 ## [1.16.0] — 计时盘从 0% 起、页面只占内容区、随机指针、完成发机会
 
 日期：2026-10-20

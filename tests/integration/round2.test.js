@@ -134,7 +134,7 @@ test('删除：数据不一致的历史任务也能删除（不会因校验被�
   assert.equal(result.ok, true, `坏数据也必须能删除：${result.issues?.map((i) => i.message).join('; ')}`);
 });
 
-test('完成：任务标记完成后，从七天计划的所有日期列中消失，历史记录保留', async () => {
+test('完成：任务标记完成后仍保留在时间表里并显示"已完成"，且只保留最早一块，历史记录保留', async () => {
   const env = plannedEnv();
   const taskId = env.task.id;
   const before = boardCardsFor(env, ['2025-10-16', '2025-10-17', '2025-10-18', '2025-10-19', '2025-10-20', '2025-10-21', '2025-10-22']);
@@ -160,11 +160,11 @@ test('完成：任务标记完成后，从七天计划的所有日期列中消�
   assert.equal(env.services.planService.applyPreview().ok, true);
 
   const after = boardCardsFor(env, preview.preview.candidate.days.map((day) => day.date));
-  assert.equal(
-    after.filter((card) => card.taskId === taskId).length,
-    0,
-    '任务完成后不应再出现在任何日期列里',
-  );
+  const remaining = after.filter((card) => card.taskId === taskId);
+  // 规则变更（v1.17）：已完成任务保留在时间表里，显示"已完成"，但只保留最早的一块
+  assert.ok(remaining.length >= 1, '任务完成后应仍能看到它（显示为已完成）');
+  assert.ok(remaining.every((card) => card.status === 'completed'), '卡片状态必须是已完成');
+  assert.ok(remaining.every((card) => card.taskStatus === 'completed'));
 
   const state = env.app.getState();
   assert.equal(state.tasks.find((t) => t.id === taskId).status, TASK_STATUS.COMPLETED);

@@ -257,7 +257,18 @@ function updateTaskOp(state, op, ctx) {
    */
   const withTask = {
     ...state,
-    tasks: state.tasks.map((item) => (item.id === next.id ? next : item)),
+    tasks: state.tasks.map((item) => {
+      if (item.id === next.id) return next;
+      /**
+       * 任务完成后再也不需要"等它"，因此把它从别人的 dependsOn 里移除。
+       * 只清引用，不删任务、不删历史；与状态变更在同一个事务里完成，
+       * 一旦整体校验失败就整体不生效。
+       */
+      if (op.to === TASK_STATUS.COMPLETED && Array.isArray(item.dependsOn) && item.dependsOn.includes(next.id)) {
+        return { ...item, dependsOn: item.dependsOn.filter((id) => id !== next.id) };
+      }
+      return item;
+    }),
   };
   const reconciled = reconcileTaskSessions(withTask, next.id, { nowIso: ctx.nowIso });
 
@@ -283,7 +294,18 @@ function taskStatusOp(state, op, ctx) {
    */
   const withTask = {
     ...state,
-    tasks: state.tasks.map((item) => (item.id === next.id ? next : item)),
+    tasks: state.tasks.map((item) => {
+      if (item.id === next.id) return next;
+      /**
+       * 任务完成后再也不需要"等它"，因此把它从别人的 dependsOn 里移除。
+       * 只清引用，不删任务、不删历史；与状态变更在同一个事务里完成，
+       * 一旦整体校验失败就整体不生效。
+       */
+      if (op.to === TASK_STATUS.COMPLETED && Array.isArray(item.dependsOn) && item.dependsOn.includes(next.id)) {
+        return { ...item, dependsOn: item.dependsOn.filter((id) => id !== next.id) };
+      }
+      return item;
+    }),
   };
   const reconciled = reconcileTaskSessions(withTask, next.id, { nowIso: ctx.nowIso });
 

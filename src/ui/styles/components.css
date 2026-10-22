@@ -3066,3 +3066,28 @@ legend {
   border: 0;
   background: var(--color-surface);
 }
+
+/* 已完成的卡片：保留在时间表里，但降低对比度并给出明确的完成视觉 */
+.day-card--completed {
+  border-left-color: var(--color-success, #2f6f4f);
+  background: var(--color-surface-alt);
+  opacity: 0.78;
+}
+
+.day-card--completed .day-card__title {
+  text-decoration: line-through;
+  text-decoration-color: var(--color-text-faint);
+  text-decoration-thickness: 1px;
+  color: var(--color-text-muted);
+}
+
+.day-card--completed:hover,
+.day-card--completed:focus-within {
+  opacity: 1;
+}
+
+.day-card--completed .day-tag--completed {
+  background: var(--color-success-soft, #eef5f0);
+  color: var(--color-success, #2f6f4f);
+  border-color: var(--color-success-border, #c8ddd1);
+}

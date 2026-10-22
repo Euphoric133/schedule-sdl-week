@@ -71,6 +71,8 @@ export function buildBoardColumns({ dates, state, plan, services, today, nowMinu
 export function buildDayCards({ date, state, plan, services, today, nowMinutes }) {
   const taskById = new Map((state.tasks ?? []).map((task) => [task.id, task]));
   const sessionById = new Map((state.sessions ?? []).map((session) => [session.id, session]));
+  // 已完成任务只保留最早的一块
+  const completedVisibleBlocks = selectCompletedDisplayBlockIds({ plan, state });
 
   /* ---- 学习任务 ---- */
   const studyCards = (plan?.blocks ?? [])
@@ -86,14 +88,21 @@ export function buildDayCards({ date, state, plan, services, today, nowMinutes }
         startMinutes: block.startMinutes,
         endMinutes: block.endMinutes,
         minutes: block.endMinutes - block.startMinutes,
-        status: deriveStatus({ session, block, date, today, nowMinutes }),
+        status: deriveStatus({
+          taskStatus: task?.status ?? null,
+          session,
+          block,
+          date,
+          today,
+          nowMinutes,
+        }),
         sessionId: block.refId ?? null,
         taskId: block.taskId ?? null,
         taskStatus: task?.status ?? null,
         locked: Boolean(block.locked),
       };
     })
-    .filter((item) => shouldShowStudyCard(item, taskById));
+    .filter((item) => shouldShowStudyCard(item, taskById, completedVisibleBlocks));
 
   /* ---- 固定任务（按重复规则实时展开，跨周依然存在） ---- */
   const fixedCards = services.fixedActivityService.forDate(date).map((activity) => ({
@@ -135,16 +144,64 @@ export function buildDayCards({ date, state, plan, services, today, nowMinutes }
  * 判断依据是**任务状态**（单一事实来源），而不是"剩余工作量"之类的派生值，
  * 因此跨多天的同一个任务会一次性从所有日期的格子里消失。
  */
-export function shouldShowStudyCard(card, taskById) {
+/**
+ * 是否在时间表里显示这张学习卡片。
+ *
+ * 规则（本轮变更）：
+ * - 已取消 / 已删除的任务：不显示；
+ * - **已完成的任务：继续显示**（卡片状态为"已完成"），但同一任务只保留一张，
+ *   由 `selectCompletedDisplayBlockIds()` 选出"最早的那一块"；
+ * - 其它情况：保持原有"已取消时段不显示"的规则。
+ *
+ * @param {object} card
+ * @param {Map<string, object>} taskById
+ * @param {Set<string>|null} [completedVisibleBlocks] 已完成任务允许显示的块 id
+ */
+export function shouldShowStudyCard(card, taskById, completedVisibleBlocks = null) {
+  const task = card.taskId ? taskById.get(card.taskId) : null;
+  const status = task?.status ?? null;
+
+  if (status === TASK_STATUS.CANCELLED || status === TASK_STATUS.DELETED) return false;
+
+  if (status === TASK_STATUS.COMPLETED) {
+    // 只显示"被选中的那一块"（最早），避免一个任务在多天各显示一张已完成
+    return completedVisibleBlocks ? completedVisibleBlocks.has(card.id) : true;
+  }
+
   if (card.sessionId) {
-    // 已取消的时段不再占用日程
+    // 已取消的时段不再占用日程（任务本身没完成时）
     if (card.status === 'cancelled') return false;
   }
-  const task = card.taskId ? taskById.get(card.taskId) : null;
-  if (task && (task.status === TASK_STATUS.COMPLETED || task.status === TASK_STATUS.CANCELLED || task.status === TASK_STATUS.DELETED)) {
-    return false;
-  }
   return true;
+}
+
+/**
+ * 选出一个已完成任务在时间表里代表它的那个块。
+ *
+ * 规则：按（日期、开始时间）取**最早的一块**；同一任务只保留一张"已完成"卡片，
+ * 避免一个 2 小时任务被拆成多段后，时间表看起来像完成了 8 小时。
+ *
+ * @param {{plan: object, state: object}} input
+ * @returns {Set<string>} 允许显示的块 id
+ */
+export function selectCompletedDisplayBlockIds({ plan, state }) {
+  const taskById = new Map((state?.tasks ?? []).map((task) => [task.id, task]));
+  const firstByTask = new Map();
+
+  for (const block of plan?.blocks ?? []) {
+    if (block.kind !== 'study' || !block.taskId) continue;
+    const task = taskById.get(block.taskId);
+    if (!task || task.status !== TASK_STATUS.COMPLETED) continue;
+
+    const current = firstByTask.get(block.taskId);
+    const isEarlier =
+      !current ||
+      block.date < current.date ||
+      (block.date === current.date && block.startMinutes < current.startMinutes);
+    if (isEarlier) firstByTask.set(block.taskId, block);
+  }
+
+  return new Set([...firstByTask.values()].map((block) => block.id));
 }
 
 /**
@@ -169,8 +226,15 @@ export function compareCards(a, b) {
 
 const KIND_ORDER = { study: 0, fixed: 1, rest: 2 };
 
-/** 卡片状态：已完成 / 进行中 / 已锁定 / 已过期 / 待进行 */
-export function deriveStatus({ session, block, date, today, nowMinutes }) {
+/**
+ * 卡片状态：已完成 / 进行中 / 已锁定 / 已过期 / 待进行
+ *
+ * **任务状态优先于时段状态**：任务本身已完成时，即使它的时段被 reconcile 取消了，
+ * 卡片也必须显示"已完成"，而不是"已取消"（否则看起来像任务没了）。
+ */
+export function deriveStatus({ taskStatus = null, session, block, date, today, nowMinutes }) {
+  if (taskStatus === TASK_STATUS.COMPLETED) return 'completed';
+  if (taskStatus === TASK_STATUS.CANCELLED || taskStatus === TASK_STATUS.DELETED) return 'cancelled';
   if (session?.state === SESSION_STATE.COMPLETED) return 'completed';
   if (session?.state === SESSION_STATE.IN_PROGRESS) return 'in_progress';
   if (session?.state === SESSION_STATE.CANCELLED) return 'cancelled';
@@ -305,7 +369,12 @@ function renderCard({ card, services, onOpenStudy, onCompleteStudy, onDeleteTask
       minutes !== null && !compact ? el('span.day-card__minutes', { text: formatDuration(minutes) }) : null,
     ]),
     el('div.day-card__title', { title: card.title, text: card.title }),
-    compact ? null : el('div.day-card__meta', {}, tags),
+    // 紧凑卡片（≤30 分钟）也要能看到完成标记，不能把标签一起藏掉
+    isStudy && card.status === 'completed' && compact
+      ? el('div.day-card__meta', {}, [el('span.day-tag.day-tag--completed', { text: '已完成' })])
+      : compact
+        ? null
+        : el('div.day-card__meta', {}, tags),
     compact ? null : el('div.day-card__actions', {}, actions),
   ].filter(Boolean);
 
@@ -315,6 +384,7 @@ function renderCard({ card, services, onOpenStudy, onCompleteStudy, onDeleteTask
       class: [
         'day-card',
         `day-card--${isStudy ? 'study' : isRest ? 'rest' : 'fixed'}`,
+        isStudy && card.status === 'completed' ? 'day-card--completed' : null,
         compact ? 'is-compact' : null,
       ]
         .filter(Boolean)
