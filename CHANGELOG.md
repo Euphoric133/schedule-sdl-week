@@ -5,6 +5,45 @@
 
 ---
 
+## [1.18.2] — 转盘指针去掉抽动，保持定住
+
+日期：2026-10-20
+
+### 变更
+
+抽奖旋转期间，指针原本会叠加 `wheel-pointer--spinning` 的 `pointer-tick` 抖动动画
+（每 0.14 秒左右摆 ±7°）。现在**去掉抖动**：
+
+- `className:M?"wheel-pointer wheel-pointer--spinning":"wheel-pointer"` → `className:"wheel-pointer"`；
+- 删除无用的 `@keyframes pointer-tick`，把 `.wheel-pointer--spinning` 置为 `animation:none`。
+
+指针现在只是**跟着转盘一起转、然后停住**，不再自己抖动。
+
+### 没有改动
+
+- 指针方向仍然是**朝下**；
+- 旋转圈数、4.2 秒缓出、结果卡片延迟显示、抽奖概率与奖励权重全部不变；
+- 抽奖算法与 `targetAngle` 持久化不变。
+
+### 测试与构建
+
+```
+$ node --test "tests/**/*.test.js"
+ℹ tests 656
+ℹ pass 656
+ℹ fail 0
+
+$ node scripts/build-standalone.mjs
+已生成 dist/standalone.html（1517 KB，内联 76 个模块）
+
+$ node scripts/patch-garden-wheel.mjs --check
+专注花园转盘：补丁已应用
+```
+
+断言更新：不再要求保留抖动类，改为断言 `className:"wheel-pointer"`、无 `wheel-pointer--spinning`、无 `pointer-tick`。
+
+---
+
 ## [1.18.1] — 修复「新建任务」点不开（漏导入 listDependencyCandidates）
 
 日期：2026-10-20

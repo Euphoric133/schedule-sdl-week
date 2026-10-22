@@ -240,8 +240,10 @@ test('转盘：指针朝下（底边在上、顶点指向轮盘中心）', async
     false,
     '不应再保留朝上的旧 path',
   );
-  // 指针的其它属性必须保持不变
-  assert.match(html, /className:M\?"wheel-pointer wheel-pointer--spinning":"wheel-pointer"/, '旋转时的指针 tick 动画应保留');
+  // 指针必须"定住"：不再有旋转期间的抖动
+  assert.match(html, /className:"wheel-pointer"/, '指针应固定不动（不再有 spinning 抖动类）');
+  assert.equal(/wheel-pointer wheel-pointer--spinning/.test(html), false, '不应再出现抖动类');
+  assert.equal(/pointer-tick/.test(html), false, '抖动关键帧应已删除');
   assert.match(html, /fill:"var\(--warm\)"/, '指针颜色不变');
 });
 

@@ -124,6 +124,21 @@ const PATCHES = [
     to: 's.jsx(In,{id:"spin-rule-input-settings",label:"每完成几次专注获得一次抽奖机会",value:i.spins.ruleEvery,min:1,max:100,hint:"1–100 的整数；两个入口共用同一份规则。",onCommit:C=>u({type:"spin/rule",ruleEvery:C})})',
   },
 
+  {
+    id: 'wheel-pointer-no-tick',
+    marker: 'className:"wheel-pointer"',
+    reason: '指针不再抖动：去掉旋转期间的 wheel-pointer--spinning 抖动类，指针保持定住不动',
+    from: 'className:M?"wheel-pointer wheel-pointer--spinning":"wheel-pointer"',
+    to: 'className:"wheel-pointer"',
+  },
+  {
+    id: 'wheel-pointer-drop-tick-keyframes',
+    marker: '.wheel-pointer--spinning{animation:none}',
+    reason: '删掉已无用的 pointer-tick 抖动关键帧，避免样式里留下死动画',
+    from: '.wheel-pointer--spinning{animation:pointer-tick .14s linear infinite}@keyframes pointer-tick{0%,to{transform:rotate(0)}50%{transform:rotate(-7deg)}}',
+    to: '.wheel-pointer--spinning{animation:none}',
+  },
+
 ];
 
 async function main() {
