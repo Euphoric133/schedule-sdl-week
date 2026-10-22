@@ -9,7 +9,8 @@ import { append, clear, downloadText, el, startTicker, stopTicker, toast } from 
 import { ROUTES, parseHash } from './router.js';
 import { button, notice } from './components.js';
 import { hideGardenFrame, showGardenFrame } from './gardenFrame.js';
-import { autoStartFocus, loadTaskMap, syncTasksToGarden, waitForBridge } from '../services/gardenSync.js';
+import { autoStartFocus, listStudyTasks, loadTaskMap, syncTasksToGarden, waitForBridge } from '../services/gardenSync.js';
+import { mountStudyTimerPanel, refreshStudyTimerPanel } from './gardenPanel.js';
 
 /**
  * @param {object} options
@@ -172,6 +173,49 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
    * 只在这一刻做写操作，之后不再轮询写入，避免打扰用户正在进行的操作。
    * 任何一步失败都只影响联动本身，不会影响花园或规划器正常使用。
    */
+  /**
+   * 等花园 iframe 的文档就绪后注入计时面板，并把主应用数据暴露给它。
+   * 面板与花园是同一文档（同源 iframe），所以可以直接用 parent 上的 API。
+   */
+  function mountPanelWhenReady(frame) {
+    if (!frame) return;
+    let tries = 0;
+    const attempt = () => {
+      tries += 1;
+      if (mountStudyTimerPanel(frame)) {
+        refreshStudyTimerPanel(frame);
+        return;
+      }
+      if (tries < 40) globalThis.setTimeout(attempt, 250);
+    };
+    attempt();
+  }
+
+  /**
+   * 花园面板可用的最小 API（只暴露"读清单"和"完成一个学习任务"）。
+   * 放在全局是为了跨 iframe 边界调用；数据仍然只在主应用里。
+   */
+  globalThis.__plannerGardenApi = {
+    listStudyTasks() {
+      const state = app.getState();
+      return listStudyTasks({ tasks: state.tasks ?? [], sessions: state.sessions ?? [], map: loadTaskMap() });
+    },
+    /**
+     * 一个番茄结束（自然结束或用户提前结束）：把对应学习任务标记为完成。
+     * 走的是主应用已有的状态迁移，失败时不影响花园。
+     */
+    completeStudyTask({ plannerId }) {
+      try {
+        const result = services.taskService.changeTaskStatus(plannerId, 'completed');
+        if (result?.ok === false) return { ok: false, message: result.message };
+        renderCurrent();
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, message: error?.message ?? '未知错误' };
+      }
+    },
+  };
+
   async function syncGardenOnOpen(frame, focusTaskId) {
     try {
       const bridge = await waitForBridge(frame);
@@ -219,6 +263,8 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
     const isGarden = route.path === 'garden' && !route.unknownPath;
     if (isGarden) {
       const shown = showGardenFrame(gardenHost);
+      // 花园里的「学习任务计时」分区：等 iframe 文档就绪后注入（同一文档、独立浮层）
+      mountPanelWhenReady(shown.frame);
       // 进入花园后：把学习任务同步进去，并按需自动开始计时（详见 services/gardenSync.js）
       syncGardenOnOpen(shown.frame, route.params?.get?.('focus') ?? null);
       main.hidden = true;

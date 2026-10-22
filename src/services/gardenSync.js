@@ -295,3 +295,41 @@ export function readGardenTimer(bridge) {
     plannedSeconds: timer.plannedSeconds ?? 0,
   };
 }
+
+
+/* ================================================================== *
+ * 花园内「学习任务计时」分区用的数据
+ * ================================================================== */
+
+/**
+ * 给花园里的计时分区列出可计时的学习任务。
+ *
+ * 数据来源：主应用的未完成任务 + 它们的计划时段（取最近的一段作为"开始时间"与"时长"）。
+ * 没有排进计划的用任务本身的预计时长兜底，保证照样能计时。
+ *
+ * @returns {Array<{plannerId: string, gardenId: string|null, title: string, startMinutes: number|null, minutes: number}>}
+ */
+export function listStudyTasks({ tasks, sessions, map } = {}) {
+  const mapping = map ?? loadTaskMap();
+  const active = (tasks ?? []).filter((task) => task.status === 'not_started' || task.status === 'in_progress');
+  const byTask = new Map();
+  for (const session of sessions ?? []) {
+    if (session.state !== 'flexible' && session.state !== 'in_progress') continue;
+    const list = byTask.get(session.taskId) ?? [];
+    list.push(session);
+    byTask.set(session.taskId, list);
+  }
+
+  return active.map((task) => {
+    const list = (byTask.get(task.id) ?? []).slice().sort((a, b) => (a.date === b.date ? a.startMinutes - b.startMinutes : a.date < b.date ? -1 : 1));
+    const next = list[0] ?? null;
+    const remaining = Math.max(0, (task.plannedMinutes ?? 0) - (task.priorCompletedMinutes ?? 0));
+    return {
+      plannerId: task.id,
+      gardenId: mapping[task.id] ?? null,
+      title: task.title,
+      startMinutes: next ? next.startMinutes : null,
+      minutes: next ? next.endMinutes - next.startMinutes : Math.max(1, remaining || 25),
+    };
+  });
+}
