@@ -643,7 +643,25 @@ export function upstreamDiagnostics(status, data) {
  * 工具
  * ------------------------------------------------------------------ */
 
+/**
+ * 环境变量的唯一读取入口。
+ *
+ * 为什么要支持"显式传入的环境对象"：
+ * - Netlify：变量在 process.env 上；
+ * - Cloudflare Worker：变量通过 fetch(request, env) 的 env 参数注入，
+ *   **不存在 process.env**。
+ *
+ * 让 readEnv 优先读 ENV_OVERRIDE，同一份业务代码就能在两个平台上跑，
+ * 不需要维护两套逻辑（两套逻辑必然漂移）。
+ */
+let ENV_OVERRIDE = null;
+
+export function setEnvOverride(env) {
+  ENV_OVERRIDE = env && typeof env === 'object' ? env : null;
+}
+
 function readEnv(name) {
+  if (ENV_OVERRIDE && typeof ENV_OVERRIDE[name] === 'string') return ENV_OVERRIDE[name].trim();
   const env = globalThis.process?.env ?? {};
   const value = env[name];
   return typeof value === 'string' ? value.trim() : '';

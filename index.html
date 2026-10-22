@@ -28,6 +28,20 @@
       </div>
     </noscript>
 
+    <!--
+      AI 中继地址（部署配置，不属于业务代码）。
+
+      留空或删掉这一行 = 使用同源的 /.netlify/functions/ai-chat（Netlify 部署）。
+      中继搬到 Cloudflare Worker 时，把地址填在这里，例如：
+        window.__AI_ENDPOINT__ = 'https://schedule-ai-chat.<你的子域>.workers.dev';
+
+      放在模块脚本之前：src/main.js 是 type="module"，会被延迟执行，
+      因此这里的赋值一定先于应用启动，不存在时序竞争。
+    -->
+    <script>
+      window.__AI_ENDPOINT__ = '';
+    </script>
+
     <script type="module" src="./src/main.js"></script>
   </body>
 </html>

@@ -1,0 +1,24 @@
+# Cloudflare Worker 配置：Gemini 中继（计划助手）。
+#
+# 部署：在仓库根目录执行
+#   npx wrangler deploy
+#
+# 首次使用需要登录：npx wrangler login
+# 变量请用 `npx wrangler secret put GEMINI_API_KEY` 或后台 Settings 添加，
+# **不要把密钥写进这个文件**（它会被提交到 Git）。
+
+name = "schedule-ai-chat"
+main = "cloudflare/ai-chat-worker.js"
+compatibility_date = "2026-10-01"
+
+# 变量放在 [vars] 里会被明文上传，因此只放非敏感项。
+# 密钥（GEMINI_API_KEY）必须用 secret 或后台设置。
+[vars]
+# 允许调用本 Worker 的站点来源，逗号分隔。
+# 这是跨域场景下的主要防线：不填的话，只有 localhost 能调通。
+ALLOWED_ORIGINS = "https://powerschedule.netlify.app"
+GEMINI_MODEL = "gemini-3.5-flash"
+
+[observability]
+# 打开日志，便于排查 503 / 404 之类的上游问题（Cloudflare 后台可查）
+enabled = true

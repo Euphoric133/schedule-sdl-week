@@ -12,8 +12,27 @@
  * 它不读全局状态、不依赖 DOM，便于在 Node 测试里直接调用。
  */
 
-/** 默认中继地址。可以用 options.endpoint 覆盖（便于测试或换部署路径）。 */
-export const DEFAULT_ENDPOINT = '/.netlify/functions/ai-chat';
+/**
+ * 中继地址的解析顺序（从高到低）：
+ *
+ * 1. `window.__AI_ENDPOINT__` —— 部署时由 index.html 注入；
+ * 2. 同源的 `/.netlify/functions/ai-chat`（Netlify 部署的默认值）。
+ *
+ * 为什么要做成可配置：中继可能运行在 Netlify（同源，无 CORS）
+ * 或 Cloudflare Worker（跨域，需要 CORS）。写死其中一个，
+ * 换平台就得改代码——而地址属于部署配置，不该混进业务代码。
+ */
+export const NETLIFY_ENDPOINT = '/.netlify/functions/ai-chat';
+
+export function resolveEndpoint(explicit) {
+  if (explicit) return explicit;
+  const injected = globalThis.__AI_ENDPOINT__;
+  if (typeof injected === 'string' && injected.trim()) return injected.trim();
+  return NETLIFY_ENDPOINT;
+}
+
+/** 兼容旧名：默认中继地址（同源 Netlify 函数） */
+export const DEFAULT_ENDPOINT = NETLIFY_ENDPOINT;
 
 /** 与服务端 LIMITS 保持一致的对话上限，超出时由调用方裁剪最旧的消息 */
 export const MAX_MESSAGES = 12;
@@ -125,7 +144,7 @@ export function buildScheduleContext(state, now) {
  * @returns {Promise<{ok: true, reply: string, model: string} | {ok: false, code: string, message: string, retryable: boolean, retryAfterSeconds?: number}>}
  */
 export async function sendMessage(input, options = {}) {
-  const endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
+  const endpoint = resolveEndpoint(options.endpoint);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const doFetch = options.fetch ?? globalThis.fetch;
 
@@ -268,7 +287,7 @@ export function splitReply(reply) {
  * @returns {Promise<{ok: true, reply: string, proposals: object[], model: string} | {ok: false, code: string, message: string}>}
  */
 export async function sendStructuredRescue(input, options = {}) {
-  const endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
+  const endpoint = resolveEndpoint(options.endpoint);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const doFetch = options.fetch ?? globalThis.fetch;
   if (typeof doFetch !== 'function') {
