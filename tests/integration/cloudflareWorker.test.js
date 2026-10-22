@@ -158,3 +158,62 @@ test('Worker 源码不含 Netlify 专属头（平台差异确实被替换）', a
   assert.ok(source.includes('cf-connecting-ip'));
   assert.ok(source.includes('access-control-allow-origin'), '必须处理 CORS');
 });
+
+/* ------------------------------------------------------------------ *
+ * region_blocked 自动重试（Cloudflare 出口 IP 轮转导致的偶发失败）
+ * ------------------------------------------------------------------ */
+
+test('第一次 region_blocked、第二次成功 → 自动重试后返回成功', async () => {
+  let calls = 0;
+  const restore = stubFetch(async () => {
+    calls += 1;
+    if (calls === 1) {
+      return new Response(JSON.stringify({ error: { status: 'FAILED_PRECONDITION', message: 'User location is not supported for the API use.' } }), { status: 400 });
+    }
+    // 成功时用 generateContent 的形态：第一次 400 会触发接口回退，之后的成功响应走这条路径
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '收到' }] } }] }), { status: 200 });
+  });
+  try {
+    const { call } = await loadWorker({ GEMINI_API_KEY: 'k', ALLOWED_ORIGINS: ORIGIN });
+    const payload = await (await call(makeRequest())).json();
+    assert.equal(payload.ok, true, '重试一次后应成功');
+    assert.equal(payload.reply, '收到');
+    assert.ok(calls >= 2, '应发生重试');
+  } finally {
+    restore();
+  }
+});
+
+test('两次都是 region_blocked → 如实返回失败，并标记已重试', async () => {
+  let calls = 0;
+  const restore = stubFetch(async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ error: { status: 'FAILED_PRECONDITION', message: 'User location is not supported for the API use.' } }), { status: 400 });
+  });
+  try {
+    const { call } = await loadWorker({ GEMINI_API_KEY: 'k', ALLOWED_ORIGINS: ORIGIN });
+    const payload = await (await call(makeRequest())).json();
+    assert.equal(payload.ok, false);
+    assert.equal(payload.code, 'region_blocked');
+    assert.equal(payload.retriedRegion, true, '应标记为"重试后仍失败"，便于区分偶发与持续');
+    assert.ok(calls <= 4, '不应对同一个错误无限重试');
+  } finally {
+    restore();
+  }
+});
+
+test('其它错误类型不触发地区重试（避免无谓放大）', async () => {
+  let calls = 0;
+  const restore = stubFetch(async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ error: { status: 'UNAUTHENTICATED', message: 'bad key' } }), { status: 401 });
+  });
+  try {
+    const { call } = await loadWorker({ GEMINI_API_KEY: 'k', ALLOWED_ORIGINS: ORIGIN });
+    const payload = await (await call(makeRequest())).json();
+    assert.equal(payload.code, 'auth_failed');
+    assert.equal(calls, 1, '鉴权失败不该重试');
+  } finally {
+    restore();
+  }
+});

@@ -221,6 +221,8 @@ async function handle(req) {
       message: upstream.message,
       model,
       ...(upstream.fallbackTried ? { fallbackTried: upstream.fallbackTried, fallbackCode: upstream.fallbackCode } : {}),
+      // 地区重试的标记必须透传：否则调用方无法区分"偶发一次"与"重试后仍然失败"
+      ...(upstream.retriedRegion ? { retriedRegion: true } : {}),
     };
     // 排查用：只有显式设置 AI_DEBUG_ERRORS=1 时才附带上游诊断信息。
     // upstreamStatus 是上游真实状态码（3xx/4xx/5xx），不是归一后的 502。
@@ -467,7 +469,24 @@ function withContext(systemInstruction, contextText) {
 export async function callGemini({ apiKey, model, messages, contextText = '', fallbackModel = null }) {
   const system = withContext(SYSTEM_INSTRUCTION, contextText);
 
-  const first = await callOneModel({ apiKey, model, system, messages });
+  let first = await callOneModel({ apiKey, model, system, messages });
+
+  /**
+   * region_blocked 自动重试（仅 Cloudflare）。
+   *
+   * 背景（实测）：Cloudflare Workers 的出口 IP 是轮转的，其中一部分落在
+   * Google 判定为"不支持地区"的节点上，于是同一份代码会时而成功、时而 403。
+   * 连着测 5 次出现过 1 次 region_blocked 与 4 次 quota_exceeded 混合的情况。
+   *
+   * 这里做一次短延迟重试：新的请求有机会被调度到另一个出口。
+   * 只重试一次，避免放大问题；仍失败则如实返回。
+   */
+  let regionRetried = false;
+  if (!first.ok && first.code === 'region_blocked') {
+    regionRetried = true;
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    first = await callOneModel({ apiKey, model, system, messages });
+  }
 
   /**
    * 自动回退到备用模型。
@@ -488,10 +507,15 @@ export async function callGemini({ apiKey, model, messages, contextText = '', fa
     }
     // 两个都失败：返回主模型的错误（它是用户配置的那个，更该被看见），
     // 但把真实的原始诊断保留下来，方便判断是不是两个都过载了。
-    return { ...first, fallbackTried: fallbackModel, fallbackCode: second.code };
+    return {
+      ...first,
+      fallbackTried: fallbackModel,
+      fallbackCode: second.code,
+      ...(regionRetried ? { retriedRegion: true } : {}),
+    };
   }
 
-  return first;
+  return regionRetried ? { ...first, retriedRegion: true } : first;
 }
 
 /**
