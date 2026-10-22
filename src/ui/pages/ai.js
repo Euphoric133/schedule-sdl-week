@@ -110,9 +110,15 @@ export function renderAi({ app, services, now, renderPage }) {
 
     try {
       const input = store.buildRescueInput();
-      const ai = await services.aiClient.sendMessage({
-        messages: [{ role: 'user', content: text }],
+      /**
+       * 走结构化通道：服务端用 responseSchema 把 taskId 限定为合法 ref 枚举，
+       * 从生成阶段就杜绝"引用了不存在的任务"（实测该故障会以两种形态出现：
+       * 抄错字符串 id、凭空发明编号）。
+       */
+      const ai = await services.aiClient.sendStructuredRescue({
+        message: text,
         context: input.context,
+        taskRefs: input.context.validTaskRefs ?? input.context.tasks.map((task) => task.ref),
       });
 
       if (!ai.ok) {
@@ -121,11 +127,10 @@ export function renderAi({ app, services, now, renderPage }) {
         return;
       }
 
-      const parsedProposals = parseProposalsFromReply(ai.reply);
       const prepared = store.prepareRescuePreview({
         ok: true,
-        reply: parsedProposals.reply,
-        proposals: parsedProposals.proposals,
+        reply: ai.reply,
+        proposals: ai.proposals,
       });
 
       /**

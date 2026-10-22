@@ -161,6 +161,20 @@ async function handle(req) {
   const body = await readJson(req);
   if (!body.ok) return json(400, { ok: false, code: 'bad_request', message: body.message });
 
+  /**
+   * 结构化提议模式（计划急救使用）。
+   *
+   * 为什么单独一条路径：普通聊天只要文字，而急救需要**机器可执行的提议**。
+   * 实测 gemini-3.5-flash-lite 在纯提示词约束下会写出不存在的任务编号
+   * （只有 1 个任务却给 taskId:"2"），且同一输入两次行为不一致。
+   *
+   * 把 taskId 写成 responseSchema 的 enum 之后，非法值在**生成阶段**就不可能产生，
+   * 约束从"要求模型遵守"变成"结构上无法违反"。程序侧校验仍然保留，作为纵深防御。
+   */
+  if (body.value?.structured === true) {
+    return handleStructuredRescue({ apiKey, value: body.value });
+  }
+
   const parsed = parseMessages(body.value);
   if (!parsed.ok) return json(400, { ok: false, code: 'bad_request', message: parsed.message });
 
@@ -711,3 +725,129 @@ async function listModels(apiKey) {
     allModels: models.map((m) => m.name),
   });
 }
+
+
+/* ------------------------------------------------------------------ *
+ * 结构化提议（计划急救）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 用 responseSchema 强制模型输出合法的 { reply, proposals }。
+ *
+ * schema 是**按请求动态生成**的：taskId 的 enum 直接来自本次上下文里的 ref 列表，
+ * 因此模型只能引用真实存在的任务，写不出 "2" 这种不存在的编号。
+ *
+ * @param {{apiKey: string, value: object}} input
+ */
+async function handleStructuredRescue({ apiKey, value }) {
+  const message = typeof value.message === 'string' ? value.message.trim() : '';
+  if (!message) return json(400, { ok: false, code: 'bad_request', message: '缺少 message。' });
+
+  const refs = Array.isArray(value.taskRefs) ? value.taskRefs.map(String) : [];
+  if (refs.length === 0) {
+    // 没有可引用的任务时不允许 defer_task，只允许 lock_date
+    refs.push('__none__');
+  }
+  const model = typeof value.model === 'string' && value.model.trim() ? value.model.trim() : readEnv('GEMINI_MODEL') || DEFAULT_MODEL;
+  const fallbackModel = readEnv('GEMINI_MODEL_FALLBACK') || DEFAULT_FALLBACK_MODEL;
+  const contextText = value.context ? JSON.stringify(value.context).slice(0, 8000) : '';
+
+  const schema = buildProposalSchema(refs);
+  const system = withContext(STRUCTURED_SYSTEM_INSTRUCTION, contextText);
+
+  const attempt = async (targetModel) => {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(targetModel)}:generateContent`;
+    const payload = {
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: message }] }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: schema,
+        maxOutputTokens: LIMITS.maxOutputTokens,
+        temperature: 0.4,
+      },
+    };
+    return postJson(url, apiKey, payload);
+  };
+
+  let result = await attempt(model);
+  // 与普通路径一致：只在"过载"时换备用模型
+  if (!result.ok && result.status >= 500 && fallbackModel !== model) {
+    const second = await attempt(fallbackModel);
+    if (second.ok) result = second;
+    else return json(502, { ok: false, code: 'upstream_down', message: '助手服务暂时不可用，请稍后再试。' });
+  }
+  if (!result.ok) {
+    const mapped = mapUpstreamError(result.status, result.data, 'structured_failed');
+    const payload = { ok: false, code: mapped.code, message: mapped.message, model };
+    if (readEnv('AI_DEBUG_ERRORS') === '1') payload.diagnostics = upstreamDiagnostics(result.status, result.data);
+    return json(mapped.status, payload);
+  }
+
+  const text = extractGenerateContentText(result.data);
+  let parsed = null;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = null;
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    return json(502, { ok: false, code: 'invalid_json', message: 'AI 返回的内容不是合法 JSON，请再试一次。', model });
+  }
+
+  return json(200, {
+    ok: true,
+    model,
+    structured: {
+      reply: typeof parsed.reply === 'string' ? parsed.reply.slice(0, 2000) : '',
+      proposals: Array.isArray(parsed.proposals) ? parsed.proposals.slice(0, 8) : [],
+    },
+  });
+}
+
+/**
+ * 生成提议的 JSON Schema。
+ *
+ * 关键点：`taskId` 的 enum 就是本次合法的 ref 集合。
+ * lock_date 的 date 无法枚举，交由程序侧校验（不能锁过去/超出窗口）。
+ */
+export function buildProposalSchema(refs) {
+  return {
+    type: 'object',
+    properties: {
+      reply: { type: 'string', description: '给学生的中文分析与取舍说明，两三句话' },
+      proposals: {
+        type: 'array',
+        description: '可执行的调整建议；没有就返回空数组',
+        items: {
+          type: 'object',
+          properties: {
+            kind: { type: 'string', enum: ['defer_task', 'lock_date'] },
+            taskId: { type: 'string', enum: [...refs] },
+            minutes: { type: 'integer' },
+            date: { type: 'string' },
+            reason: { type: 'string' },
+          },
+          required: ['kind', 'reason'],
+          propertyOrdering: ['kind', 'taskId', 'minutes', 'date', 'reason'],
+        },
+      },
+    },
+    required: ['reply', 'proposals'],
+    propertyOrdering: ['reply', 'proposals'],
+  };
+}
+
+const STRUCTURED_SYSTEM_INSTRUCTION = [
+  '你是学生学习规划助手的「计划急救」模块。',
+  '',
+  '规则：',
+  '- reply 用简体中文写两三句话：分析冲突、比较取舍。不要列清单，不要复述任务原文。',
+  '- proposals 给出可执行的结构化调整；没有明确改动就给空数组。',
+  '- kind 只能是 defer_task（减少某任务今天的剩余工作量）或 lock_date（锁定某天不再排学习）。',
+  '- defer_task 的 taskId **只能填任务列表里 ref 字段的数字**（schema 已限定取值）；',
+  '  minutes 是"要推迟掉的分钟数"，必须大于 0 且不超过该任务的 remainingMinutes。',
+  '- lock_date 的 date 用 YYYY-MM-DD，不能是过去或超出规划窗口的日期。',
+  '- 不要修改截止时间、不要删除任务、不要移动已排好的时段。',
+  '- 只依据给定数据，不要编造任务或时长。',
+].join('\n');

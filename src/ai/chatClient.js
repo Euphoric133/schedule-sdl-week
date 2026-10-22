@@ -256,3 +256,64 @@ export function splitReply(reply) {
     return { text: reply.replace(match[0], '').trim(), proposals: [] };
   }
 }
+
+
+/**
+ * 结构化提议请求（计划急救专用）。
+ *
+ * 与 sendMessage 的区别：服务端用 responseSchema 约束输出，
+ * taskId 只能取自 taskRefs，因此不会出现"引用了不存在的任务"。
+ *
+ * @param {{message: string, context: object, taskRefs: Array<number|string>}} input
+ * @returns {Promise<{ok: true, reply: string, proposals: object[], model: string} | {ok: false, code: string, message: string}>}
+ */
+export async function sendStructuredRescue(input, options = {}) {
+  const endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const doFetch = options.fetch ?? globalThis.fetch;
+  if (typeof doFetch !== 'function') {
+    return { ok: false, code: 'no_fetch', message: '当前环境无法发起网络请求。' };
+  }
+
+  const body = {
+    structured: true,
+    message: String(input.message ?? '').slice(0, MAX_CHARS),
+    context: input.context ?? null,
+    taskRefs: Array.isArray(input.taskRefs) ? input.taskRefs : [],
+  };
+
+  let response;
+  try {
+    response = await withTimeoutSignal(doFetch, endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }, timeoutMs);
+  } catch (err) {
+    if (err?.name === 'AbortError' || err?.code === 'timeout') {
+      return { ok: false, code: 'timeout', message: '助手响应有点慢，已经超时。可以再试一次。' };
+    }
+    return { ok: false, code: 'network', message: '连不上助手服务，请检查网络或稍后再试。' };
+  }
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (response.ok && payload?.ok && payload.structured) {
+    return {
+      ok: true,
+      reply: payload.structured.reply ?? '',
+      proposals: Array.isArray(payload.structured.proposals) ? payload.structured.proposals : [],
+      model: payload.model ?? '',
+    };
+  }
+  return {
+    ok: false,
+    code: payload?.code ?? `http_${response.status}`,
+    message: payload?.message ?? '助手暂时不可用，请稍后再试。',
+  };
+}

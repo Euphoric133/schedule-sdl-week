@@ -658,3 +658,80 @@ test('备用模型与主模型相同时不重复请求', async () => {
     }
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * 结构化提议模式（responseSchema 限定 taskId 取值）
+ * ------------------------------------------------------------------ */
+
+test('buildProposalSchema：taskId 的 enum 就是本次合法 ref 集合', async () => {
+  const { buildProposalSchema } = await import('../../netlify/functions/ai-chat.mjs');
+  const schema = buildProposalSchema(['1', '2']);
+  const item = schema.properties.proposals.items;
+  assert.deepEqual(item.properties.taskId.enum, ['1', '2'], '非法 ref 必须在 schema 层就不可能出现');
+  assert.deepEqual(item.properties.kind.enum, ['defer_task', 'lock_date']);
+  assert.ok(schema.required.includes('reply'));
+  assert.ok(schema.required.includes('proposals'));
+});
+
+test('结构化模式：没有可引用任务时 enum 退化为占位值（仍不允许编造）', async () => {
+  await withEnv({ GEMINI_API_KEY: 'test-key' }, async () => {
+    let sentBody = null;
+    const restore = stubFetch(async (url, init) => {
+      sentBody = JSON.parse(init.body);
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ reply: '建议锁定明天', proposals: [] }) }] } }] }), { status: 200 });
+    });
+    try {
+      const response = await handler(makeRequest({ body: { structured: true, message: '你好', context: {}, taskRefs: [] } }));
+      assert.equal(response.status, 200);
+      const enumValues = sentBody.generationConfig.responseSchema.properties.proposals.items.properties.taskId.enum;
+      assert.deepEqual(enumValues, ['__none__']);
+      assert.equal(sentBody.generationConfig.responseMimeType, 'application/json');
+    } finally {
+      restore();
+    }
+  });
+});
+
+test('结构化模式：返回解析后的 structured 对象', async () => {
+  await withEnv({ GEMINI_API_KEY: 'test-key' }, async () => {
+    const restore = stubFetch(async () =>
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: JSON.stringify({ reply: '建议少做 30 分钟', proposals: [{ kind: 'defer_task', taskId: '1', minutes: 30, reason: '时间不够' }] }) }] } }],
+        }),
+        { status: 200 },
+      ),
+    );
+    try {
+      const payload = await (await handler(makeRequest({ body: { structured: true, message: '数学超时', context: {}, taskRefs: ['1'] } }))).json();
+      assert.equal(payload.ok, true);
+      assert.equal(payload.structured.reply, '建议少做 30 分钟');
+      assert.equal(payload.structured.proposals.length, 1);
+      assert.equal(payload.structured.proposals[0].taskId, '1');
+    } finally {
+      restore();
+    }
+  });
+});
+
+test('结构化模式：模型返回非法 JSON 时如实报错，不猜测', async () => {
+  await withEnv({ GEMINI_API_KEY: 'test-key' }, async () => {
+    const restore = stubFetch(async () =>
+      new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '这不是 JSON' }] } }] }), { status: 200 }),
+    );
+    try {
+      const payload = await (await handler(makeRequest({ body: { structured: true, message: 'x', context: {}, taskRefs: ['1'] } }))).json();
+      assert.equal(payload.ok, false);
+      assert.equal(payload.code, 'invalid_json');
+    } finally {
+      restore();
+    }
+  });
+});
+
+test('结构化模式：缺少 message 时拒绝', async () => {
+  await withEnv({ GEMINI_API_KEY: 'test-key' }, async () => {
+    const response = await handler(makeRequest({ body: { structured: true, message: '  ' } }));
+    assert.equal(response.status, 400);
+  });
+});

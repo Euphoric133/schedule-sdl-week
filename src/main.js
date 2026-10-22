@@ -50,7 +50,7 @@ import { defaultPreferences } from './services/preferences.js';
 import { openSessionDetail } from './ui/forms/sessionDetail.js';
 import { mountAiAssistant } from './ai/assistantWidget.js';
 import { createAiFeatureService } from './services/aiFeatureService.js';
-import { sendMessage as sendAiMessage } from './ai/chatClient.js';
+import { sendMessage as sendAiMessage, sendStructuredRescue as sendAiStructuredRescue } from './ai/chatClient.js';
 import { renderAi } from './ui/pages/ai.js';
 
 const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -717,7 +717,7 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
   services.focusService = createFocusService({ app, idFactory, now: services.now });
   // 供 ui 服务写入审计字段（createdAt / updatedAt）使用；引擎与 domain 仍然只接受显式传入的时间
   services.clockIso = nowIso;
-  services.aiClient = { sendMessage: sendAiMessage };
+  services.aiClient = { sendMessage: sendAiMessage, sendStructuredRescue: sendAiStructuredRescue };
   services.aiFeatureService = createAiFeatureService({
     app,
     planService: services.planService,
