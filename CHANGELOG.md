@@ -5,6 +5,76 @@
 
 ---
 
+## [1.16.0] — 计时盘从 0% 起、页面只占内容区、随机指针、完成发机会
+
+日期：2026-10-20
+
+### 一、计时盘起点：真实根因与修复
+
+**根因**：为了让空闲状态"看起来不空"，之前用 `MIN_PROGRESS = 0.035` 画了一小段进度弧，
+再加上根 `<svg>` 上的 CSS `rotate(-90deg)`（`transform-origin` 未显式指定），
+两个因素叠加，视觉上就像"从 10% 左右开始"。
+
+**修复**（不做固定角度补偿）：
+
+1. `MIN_PROGRESS` 归零，`drawableProgress(0) === 0`，0% 时**不画进度弧**；
+2. 旋转从根 `<svg>` 移到内部 `<g transform="rotate(-90 150 150)">`，圆心显式写进变换里；
+3. 12 点钟方向单独放一个 `r=2.5` 的**起点圆点**，且**不放进旋转的 `<g>`**，否则会被转到右边；
+4. 进度圆保持 `strokeDasharray = 2π×144`、`strokeDashoffset = C×(1−progress)`。
+
+新增断言：`drawableProgress(0) === 0`、`ringDashOffset(0) === C`、25/50/75/100% 严格线性、
+DOM 中必须有 `rotate(-90 150 150)` 的 `<g>`、根 svg 不再被 CSS 旋转、起点圆点在 (150,6)。
+
+### 二、计时页布局：保留侧边栏
+
+`.st-host` 从 `position: fixed; inset: 0` 改为 `top/right/bottom: 0; left: var(--nav-width, 232px)`，
+窄屏（≤720px）才铺满；内部 `.st-inner` 限宽 1180px、居中、使用花园的间距 token。
+
+- 打开时给侧边栏入口加 `aria-current="page"`，并清掉花园其它导航项的高亮；
+- 点击花园其它导航项、`hashchange`、或「返回花园」都会关闭计时页；
+- 样式全部改用 `var(--surface)`、`var(--border)`、`var(--text-muted)`、`var(--accent-soft)` 等 token，
+  去掉 `#fff`、`#f7f5f0`、`#4a7c59` 这类硬编码；
+- 时间字号提升到 `clamp(38px, 5.4vw, 52px)`、`tabular-nums`、字距略收紧。
+
+### 三、转盘指针：扇区内随机落点
+
+新增 `q1r(n, k, random)`：在中奖扇区的 5%–95% 之间取随机位置，
+抽奖时用**同一个随机源** `d` 生成 `targetAngle` 并持久化（刷新后按该角度恢复，不重新随机）。
+
+- 指针方向仍是**朝下**；
+- 旋转圈数、4.2 秒缓出、tick 动画、结果卡片延迟都不变；
+- 断言：落点永远在 `[start, end)` 内；随机 0 / 0.5 / 0.999 得到不同角度；不再出现 `targetAngle:q1(...)`。
+
+### 四、完成学习任务 → 发放 1 次转盘机会
+
+- 新增补丁 `spin/grant`：只 `grantedCount + 1`，**不碰** `progressCount` / `usedCount` / `pendingSpin`；
+- 新增 `grantStudyTaskSpin({ bridge, plannerId })`：用 `studyPlanner:v1:studyTaskSpinGrants`
+  记录已发放的任务 id，**同一任务只发一次**；桥不可用时返回 `{ok:false, reason:'no-bridge'}` 且不写记录；
+- `completeStudyTask({ ..., grantSpin: true })` 在成功完成时调用它；`already-done` 不会再发。
+
+### 五、测试与构建
+
+```
+$ node --test "tests/**/*.test.js"
+ℹ tests 640
+ℹ pass 640
+ℹ fail 0
+
+$ node scripts/build-standalone.mjs
+已生成 dist/standalone.html（1497 KB，内联 75 个模块）
+
+$ node scripts/patch-garden-wheel.mjs --check
+专注花园转盘：补丁已应用
+```
+
+### 六、还没做
+
+- **转盘规则改成数字输入**（当前仍是固定选项 `[1,2,3,4,5,10]`）；
+- **背景音与完成提示音**（花园的是打包内部实现，需要另做一套 Web Audio 引擎）；
+- 浏览器视觉核对（深色主题、窄屏、与原生番茄钟并排对比）。
+
+---
+
 ## [1.15.0] — 学习任务计时：番茄钟同款圆形计时盘 + 双模式
 
 日期：2026-10-20

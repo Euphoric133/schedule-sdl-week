@@ -101,6 +101,28 @@ const PATCHES = [
     to: '[1,2,3,4,5,10].map(C=>s.jsxs("option",{value:C,children:["每 ",C," 个番茄"]},C))',
   },
 
+  {
+    id: 'spin-grant-action',
+    marker: 'case"spin/grant"',
+    reason: '新增"直接发放一次转盘机会"的 reducer 分支：只加 grantedCount，不动进度与已用次数',
+    from: 'case"spin/rule":',
+    to: 'case"spin/grant":{const g=Math.max(1,Math.floor(u.amount??1));return{...i,spins:{...i.spins,grantedCount:i.spins.grantedCount+g}};}case"spin/rule":',
+  },
+  {
+    id: 'spin-target-random-offset',
+    marker: 'function q1r(',
+    reason: '指针不再固定停在扇区正中，而是在中奖扇区内部随机落点（5%–95%），结果与指针仍然一致',
+    from: 'function px(i,u=6){',
+    to: 'function q1r(i,u,d=Math.random){const o=360/Math.max(1,i);return u*o+o*(0.05+0.9*d());}function px(i,u=6){',
+  },
+  {
+    id: 'spin-use-random-target',
+    marker: 'targetAngle:q1r(v.length,y,d)',
+    reason: '抽奖时用同一个随机源生成扇区内的随机落点，写进 targetAngle 并持久化',
+    from: 'targetAngle:q1(v.length,y)',
+    to: 'targetAngle:q1r(v.length,y,d)',
+  },
+
 ];
 
 async function main() {

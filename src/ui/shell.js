@@ -221,6 +221,7 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
           plannerId,
           gardenId,
           actualMinutes,
+          grantSpin: true,
         });
         renderCurrent();
         return result;

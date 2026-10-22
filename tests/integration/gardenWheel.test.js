@@ -252,3 +252,40 @@ test('转盘：抽奖规则支持每 1 个番茄获得一次机会', async () =>
   assert.equal((html.match(/\[2,3,4,5,10\]\.map/g) ?? []).length, 0, '不应再有排除 1 的旧选项表');
   assert.match(html, /Ge\(i\.ruleEvery,1,100/, '数据层必须允许最小 1');
 });
+
+
+/* ================================================================== *
+ * 六、随机指针与发放机会（v1.16）
+ * ================================================================== */
+
+test('随机指针：落点在中奖扇区内部，且不再固定停在正中', async () => {
+  const html = await loadEmbedded();
+  const m = html.match(/function q1r\(i,u,d=Math\.random\)\{[^}]*\}/);
+  assert.ok(m, '应存在 q1r（扇区内随机落点）');
+  const q1r = new Function(`${m[0]}; return q1r;`)();
+
+  for (const n of [2, 5, 8, 12]) {
+    const b = 360 / n;
+    for (let k = 0; k < n; k += 1) {
+      for (const r of [0, 0.5, 0.999]) {
+        const angle = q1r(n, k, () => r);
+        assert.ok(angle >= k * b - 1e-9 && angle < (k + 1) * b, `n=${n} k=${k} r=${r} 落点跑出了扇区`);
+      }
+      // 同一扇区内，不同随机值必须得到不同角度（不是固定中心）
+      assert.notEqual(q1r(n, k, () => 0), q1r(n, k, () => 0.999));
+    }
+  }
+});
+
+test('随机指针：抽奖使用同一个随机源生成落点并持久化', async () => {
+  const html = await loadEmbedded();
+  assert.match(html, /targetAngle:q1r\(v\.length,y,d\)/, '应使用随机落点');
+  assert.equal(/targetAngle:q1\(v\.length,y\)/.test(html), false, '不应再固定对准扇区中心');
+});
+
+test('发放机会：新增 spin/grant 分支，且只增加 grantedCount', async () => {
+  const html = await loadEmbedded();
+  assert.match(html, /case"spin\/grant":\{[^}]*grantedCount:i\.spins\.grantedCount\+g/, '应有 spin/grant');
+  assert.equal(/case"spin\/grant":\{[^}]*progressCount/.test(html), false, '不得改动 progressCount');
+  assert.equal(/case"spin\/grant":\{[^}]*usedCount/.test(html), false, '不得改动 usedCount');
+});

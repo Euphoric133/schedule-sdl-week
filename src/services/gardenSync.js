@@ -24,6 +24,8 @@ const GARDEN_KEYS = {
 
 /** 主应用侧记录"任务映射"的键（独立命名空间，不混进业务状态） */
 const MAP_KEY = 'studyPlanner:v1:gardenMap';
+/** 已发放过"完成学习任务 → 1 次转盘机会"的任务 id（保证同一个任务只发一次） */
+const SPIN_GRANT_KEY = 'studyPlanner:v1:studyTaskSpinGrants';
 
 /* ================================================================== *
  * 读取花园数据（不依赖桥，直接读同源 localStorage）
@@ -375,7 +377,7 @@ export function listStudyTasks({ tasks, sessions, map } = {}) {
  *
  * @returns {{ok: boolean, reason?: string, pomodoros?: number}}
  */
-export function completeStudyTask({ bridge, taskService, plannerId, gardenId, actualMinutes = null } = {}) {
+export function completeStudyTask({ bridge, taskService, plannerId, gardenId, actualMinutes = null, grantSpin = false } = {}) {
   if (!plannerId) return { ok: false, reason: 'no-planner-task' };
 
   if (taskService?.changeTaskStatus) {
@@ -391,7 +393,7 @@ export function completeStudyTask({ bridge, taskService, plannerId, gardenId, ac
   const gardenTask = (state.tasks ?? []).find((task) => task.id === gardenId);
   if (!gardenTask) return { ok: true, reason: 'no-garden-task', pomodoros: null };
 
-  // 已经完成过的任务不再重复加番茄（幂等的关键）
+  // 已经完成过的任务不再重复加番茄（幂等的关键），也不再重复发转盘机会
   if (gardenTask.status === 'done') {
     return { ok: true, reason: 'already-done', pomodoros: gardenTask.completedPomodoros ?? 0 };
   }
@@ -404,5 +406,53 @@ export function completeStudyTask({ bridge, taskService, plannerId, gardenId, ac
   });
 
   void actualMinutes;
+  // 完成这一次任务 → 额外发放 1 次转盘机会（幂等，内部有持久化去重）
+  if (grantSpin) {
+    grantStudyTaskSpin({ bridge, plannerId });
+  }
   return { ok: true, pomodoros };
+}
+
+
+/* ================================================================== *
+ * 完成学习任务 → 发放 1 次转盘机会（与"每 N 个番茄"并存）
+ * ================================================================== */
+
+/** 读取已发放过的任务 id 集合 */
+export function loadSpinGrants() {
+  const stored = readJson(SPIN_GRANT_KEY);
+  if (!Array.isArray(stored)) return [];
+  return stored.filter((id) => typeof id === 'string' && id);
+}
+
+function saveSpinGrants(ids) {
+  try {
+    globalThis.localStorage?.setItem(SPIN_GRANT_KEY, JSON.stringify(ids.slice(-2000)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 完成一个学习任务时，直接发放 1 次转盘机会。
+ *
+ * 设计约束（按需求）：
+ * - 只增加 `grantedCount`（可用机会 = grantedCount − usedCount），
+ *   **不碰** `progressCount`，因此不影响"每 N 个番茄"的累计；
+ * - 同一个 `plannerId` 只发一次（持久化集合记录），重复确认/刷新重试都不会加；
+ * - 桥不可用时返回结构化失败，且**不写入**发放记录（否则机会就永久丢了）。
+ *
+ * @returns {{ok: boolean, already?: boolean, reason?: string}}
+ */
+export function grantStudyTaskSpin({ bridge, plannerId } = {}) {
+  if (!plannerId) return { ok: false, reason: 'no-planner-task' };
+  if (!bridge) return { ok: false, reason: 'no-bridge' };
+
+  const granted = loadSpinGrants();
+  if (granted.includes(plannerId)) return { ok: true, already: true };
+
+  bridge.dispatch({ type: 'spin/grant', amount: 1 });
+  saveSpinGrants([...granted, plannerId]);
+  return { ok: true };
 }

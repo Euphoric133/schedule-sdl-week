@@ -202,10 +202,16 @@ test('计时盘：注入 300×300 的 SVG、两个半径 144、线宽 12 的圆�
     const svg = nodes.find((node) => String(node.tagName).toLowerCase() === 'svg');
     assert.ok(svg, '应存在计时盘 SVG');
     assert.equal(svg.getAttribute('viewBox'), '0 0 300 300');
-    assert.match(String(svg.style?.transform ?? ''), /rotate\(-90deg\)/, '应从 12 点方向起始');
+    // 旋转必须写在内部 <g> 上、并显式给出圆心，不能是对根 svg 的来源不明 CSS 旋转
+    const rotor = nodes.find((node) => String(node.tagName).toLowerCase() === 'g');
+    assert.ok(rotor, '应有承载旋转的 <g>');
+    assert.equal(rotor.getAttribute('transform'), 'rotate(-90 150 150)', '旋转必须围绕圆心 (150,150)');
+    assert.equal(String(svg.style?.transform ?? ''), '', '根 svg 不应再被 CSS 旋转');
 
-    const circles = nodes.filter((node) => String(node.tagName).toLowerCase() === 'circle');
-    assert.equal(circles.length, 2, '轨道 + 进度两个圆');
+    const allCircles = nodes.filter((node) => String(node.tagName).toLowerCase() === 'circle');
+    const circles = allCircles.filter((node) => node.getAttribute('r') === '144');
+    assert.equal(circles.length, 2, '轨道 + 进度两个主圆');
+    assert.equal(allCircles.length, 3, '另外还有 12 点钟的起点圆点');
     for (const circle of circles) {
       assert.equal(circle.getAttribute('r'), '144');
       assert.equal(circle.getAttribute('stroke-width'), '12');
@@ -215,10 +221,16 @@ test('计时盘：注入 300×300 的 SVG、两个半径 144、线宽 12 的圆�
     const progressCircle = circles[1];
     assert.equal(Number(progressCircle.getAttribute('stroke-dasharray')), RING_CIRCUMFERENCE);
     assert.equal(progressCircle.getAttribute('stroke-linecap'), 'round');
-    assert.ok(
-      Math.abs(Number(progressCircle.getAttribute('stroke-dashoffset')) - ringDashOffset(drawableProgress(0))) < 0.01,
-      '空闲时使用最小圆弧',
+    assert.equal(
+      Number(progressCircle.getAttribute('stroke-dashoffset')),
+      ringDashOffset(0),
+      '空闲时弧长为 0（不再画 3.5% 的小弧）',
     );
+    // 12 点钟方向的起点圆点（不在旋转的 <g> 里）
+    const startDot = nodes.find((node) => String(node.className).includes('st-ring__start'));
+    assert.ok(startDot, '必须有 0% 起点圆点');
+    assert.equal(startDot.getAttribute('cx'), '150');
+    assert.equal(startDot.getAttribute('cy'), '6');
 
     // 两种模式按钮都在，且有无障碍名称
     const modeButtons = nodes.filter((node) => String(node.className).split(' ').includes('st-mode'));

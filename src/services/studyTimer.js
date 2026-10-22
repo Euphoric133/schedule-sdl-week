@@ -29,8 +29,8 @@ export const TIMER_MODE = Object.freeze({
 /** 计时盘几何：与花园番茄钟一致（viewBox 300×300、半径 144） */
 export const RING_RADIUS = 144;
 export const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
-/** 空闲时至少画出这么多弧度，避免看起来像没渲染 */
-export const MIN_PROGRESS = 0.035;
+/** 0% 用起点圆点标记，不再画最小圆弧（那会让人以为起点偏移了） */
+export const MIN_PROGRESS = 0;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -133,9 +133,13 @@ export function ringDashOffset(progress) {
   return RING_CIRCUMFERENCE * (1 - clamp(progress, 0, 1));
 }
 
-/** 实际绘制用的进度（空闲时保底 3.5%） */
+/**
+ * 实际绘制用的进度。
+ * 现在**不再**为 0% 画一段最小圆弧——起点由 12 点钟的圆点标记，
+ * 进度弧严格从 0 开始生长（之前那 3.5% 会让人误以为起点偏移到 10% 左右）。
+ */
 export function drawableProgress(progress) {
-  return Math.max(clamp(progress, 0, 1), MIN_PROGRESS);
+  return clamp(progress, 0, 1);
 }
 
 /**

@@ -300,3 +300,88 @@ test('等桥：桥出现后立即返回；超时返回 null', async () => {
   const missing = await waitForBridge({ contentWindow: {} }, { timeoutMs: 0, intervalMs: 1, sleep: noSleep });
   assert.equal(missing, null, '超时应返回 null 而不是抛错');
 });
+
+/* ================================================================== *
+ * 完成学习任务 → 发放转盘机会
+ * ================================================================== */
+
+function installGrantStorage() {
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: (key) => store.delete(key),
+  };
+  return store;
+}
+
+test('发放机会：第一次完成 +1，同一任务重复完成不再加', async () => {
+  installGrantStorage();
+  try {
+    const { grantStudyTaskSpin } = await import('../../src/services/gardenSync.js');
+    const calls = [];
+    const bridge = { getState: () => ({ tasks: [], timer: {} }), dispatch: (action) => calls.push(action) };
+
+    const first = grantStudyTaskSpin({ bridge, plannerId: 't1' });
+    assert.equal(first.ok, true);
+    assert.equal(calls.filter((call) => call.type === 'spin/grant').length, 1);
+
+    const second = grantStudyTaskSpin({ bridge, plannerId: 't1' });
+    assert.equal(second.ok, true);
+    assert.equal(second.already, true, '同一任务只发一次');
+    assert.equal(calls.filter((call) => call.type === 'spin/grant').length, 1);
+
+    const other = grantStudyTaskSpin({ bridge, plannerId: 't2' });
+    assert.equal(other.ok, true);
+    assert.equal(calls.filter((call) => call.type === 'spin/grant').length, 2, '不同任务各发一次');
+  } finally {
+    delete globalThis.localStorage;
+  }
+});
+
+test('发放机会：桥不可用返回结构化失败，且不写发放记录', async () => {
+  installGrantStorage();
+  try {
+    const { grantStudyTaskSpin, loadSpinGrants } = await import('../../src/services/gardenSync.js');
+    const result = grantStudyTaskSpin({ bridge: null, plannerId: 't1' });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'no-bridge');
+    assert.deepEqual(loadSpinGrants(), [], '失败时不能记成"已发放"，否则机会永久丢失');
+  } finally {
+    delete globalThis.localStorage;
+  }
+});
+
+test('发放机会：完成回写带 grantSpin 时，同一个任务只发一次', async () => {
+  installGrantStorage();
+  try {
+    const { completeStudyTask } = await import('../../src/services/gardenSync.js');
+    const calls = [];
+    const state = { tasks: [{ id: 'g1', status: 'active', completedPomodoros: 0 }], timer: {} };
+    const bridge = {
+      getState: () => state,
+      dispatch: (action) => {
+        calls.push(action);
+        if (action.type === 'task/update') {
+          state.tasks = state.tasks.map((task) => (task.id === action.id ? { ...task, ...action.patch } : task));
+        }
+      },
+    };
+    const taskService = {
+      status: 'not_started',
+      changeTaskStatus(id, to) {
+        if (this.status === to) return { ok: false, code: 'already_completed' };
+        this.status = to;
+        return { ok: true };
+      },
+    };
+
+    completeStudyTask({ bridge, taskService, plannerId: 't1', gardenId: 'g1', grantSpin: true });
+    assert.equal(calls.filter((call) => call.type === 'spin/grant').length, 1);
+
+    completeStudyTask({ bridge, taskService, plannerId: 't1', gardenId: 'g1', grantSpin: true });
+    assert.equal(calls.filter((call) => call.type === 'spin/grant').length, 1, '重复完成不得再发');
+  } finally {
+    delete globalThis.localStorage;
+  }
+});

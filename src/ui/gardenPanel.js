@@ -67,41 +67,55 @@ export function schedulePhaseOf(task, now) {
 const STYLE_ID = '__study-timer-style';
 const CSS = `
 .st-ring{position:relative;width:min(280px,70vw);aspect-ratio:1;margin:0 auto;display:grid;place-items:center}
-.st-ring__svg{position:absolute;inset:0;width:100%;height:100%}
+@media (max-width:720px){.st-ring{width:min(240px,70vw)}}
+.st-ring__svg{position:absolute;inset:0;width:100%;height:100%;display:block;
+  overflow:visible;shape-rendering:geometricPrecision}
+.st-ring__start{opacity:.9}
 .st-ring__track{opacity:.9}
 .st-ring__progress{transition:stroke-dashoffset 220ms linear;filter:drop-shadow(0 0 10px var(--ring-progress, var(--accent, #4a7c59)))}
 .st-ring__center{position:relative;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px}
-.st-ring__phase{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#6b7a72}
+.st-ring__phase{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted,#6b7a72)}
 .st-ring__time{font-family:var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-variant-numeric:tabular-nums;font-size:clamp(30px,5vw,40px);font-weight:650;letter-spacing:.5px}
+  font-variant-numeric:tabular-nums;font-size:clamp(38px,5.4vw,52px);font-weight:600;letter-spacing:-.01em}
 .st-ring__hint{font-size:11.5px;color:#6b7a72;max-width:180px}
 .st-ring__chip{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font-size:11.5px;color:#4a7c59;background:#eef5f0;border-radius:999px;padding:2px 10px}
-.st-ring__percent{text-align:center;color:#5c6b63;font-size:12.5px;margin:8px 0 2px}
+  font-size:11.5px;color:var(--accent,#4a7c59);background:var(--surface-sunken,#eef5f0);
+  border-radius:999px;padding:2px 10px}
+.st-ring__percent{text-align:center;color:var(--text-muted,#5c6b63);font-size:12.5px;margin:10px 0 2px}
 .st-modes{display:flex;gap:8px;justify-content:center;margin:10px 0 2px}
-.st-mode{padding:6px 14px;border-radius:999px;border:1px solid #d7ded9;background:#f6f8f6;
-  color:#4a5a51;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
-.st-mode--active{background:#4a7c59;border-color:#4a7c59;color:#fff}
+.st-mode{padding:6px 14px;border-radius:999px;border:1px solid var(--border,#d7ded9);
+  background:var(--surface,#f6f8f6);color:var(--text-muted,#4a5a51);
+  font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.st-mode--active{background:var(--accent-soft,#eef5f0);border-color:var(--accent,#4a7c59);color:var(--accent,#4a7c59)}
 @media (prefers-reduced-motion: reduce){.st-ring__progress{transition:none;filter:none}}
 
-.st-host{position:fixed;inset:0;z-index:9000;display:none;flex-direction:column;
-  background:#f7f5f0;color:#22302a;font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
-.st-host[data-open="true"]{display:flex}
-.st-head{display:flex;align-items:center;gap:12px;padding:16px 24px;border-bottom:1px solid #e3e0d8;background:#fff}
-.st-head h2{margin:0;font-size:17px}
-.st-back{margin-left:auto;padding:7px 14px;border-radius:999px;border:1px solid #d7d3c8;
-  background:#fff;color:#22302a;font:inherit;font-weight:600;cursor:pointer}
-.st-body{flex:1;overflow:auto;padding:24px;display:grid;gap:20px;
+.st-host{position:fixed;top:0;right:0;bottom:0;left:var(--nav-width,232px);z-index:40;
+  display:none;overflow:auto;background:var(--bg,#f7f5f0);color:var(--text,#22302a);
+  font:14px/1.6 var(--font-sans,-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif)}
+.st-host[data-open="true"]{display:block}
+@media (max-width:720px){.st-host{left:0}}
+.st-inner{max-width:1180px;margin:0 auto;padding:var(--space-6,24px)}
+.st-head{display:flex;align-items:flex-start;gap:12px;padding:0 0 var(--space-4,16px)}
+.st-head h2{margin:0;font-size:22px;font-weight:650}
+.st-back{margin-left:auto;padding:7px 14px;border-radius:var(--radius-md,10px);
+  border:1px solid var(--border,#d7d3c8);background:var(--surface,#fff);
+  color:var(--text,#22302a);font:inherit;font-weight:600;cursor:pointer}
+.st-body{display:grid;gap:var(--space-5,20px);
   grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);align-items:start}
 @media (max-width:820px){.st-body{grid-template-columns:1fr;padding:16px}}
-.st-card{background:#fff;border:1px solid #e3e0d8;border-radius:16px;padding:16px}
+.st-card{background:var(--surface,#fff);border:1px solid var(--border,#e3e0d8);
+  border-radius:var(--radius-lg,16px);box-shadow:var(--shadow-xs,0 1px 2px rgba(0,0,0,.04));
+  padding:var(--space-4,16px)}
 .st-card h3{margin:0 0 10px;font-size:14px;color:#5c6b63}
-.st-row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-top:1px solid #f0eee8}
+.st-row{display:flex;align-items:center;gap:10px;padding:9px 4px;
+  border-top:1px solid var(--border,#f0eee8)}
+.st-row:hover{background:var(--surface-sunken,rgba(0,0,0,.02))}
 .st-row:first-of-type{border-top:0}
 .st-row__main{flex:1;min-width:0}
 .st-row__name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .st-row__meta{color:#6b7a72;font-size:12px}
-.st-btn{padding:7px 14px;border-radius:10px;border:1px solid #4a7c59;background:#4a7c59;
+.st-btn{padding:7px 14px;border-radius:var(--radius-md,10px);
+  border:1px solid var(--accent,#4a7c59);background:var(--accent,#4a7c59);
   color:#fff;font:inherit;font-weight:600;cursor:pointer}
 .st-btn--ghost{background:#f6f8f6;color:#4a5a51;border-color:#d7ded9}
 .st-btn--warn{background:#fdf1ed;color:#a4442a;border-color:#e2b7a8}
@@ -173,15 +187,25 @@ export function mountStudyTimerPanel(frame) {
   host.setAttribute('data-study-timer', 'page');
   host.setAttribute('data-open', 'false');
 
+  const inner = doc.createElement('div');
+  inner.className = 'st-inner';
+
   const head = doc.createElement('div');
   head.className = 'st-head';
+  const headText = doc.createElement('div');
   const h2 = doc.createElement('h2');
   h2.textContent = '学习任务计时';
+  const subtitle = doc.createElement('p');
+  subtitle.className = 'st-sub';
+  subtitle.style.margin = '4px 0 0';
+  subtitle.style.textAlign = 'left';
+  subtitle.textContent = '按任务剩余时长专注，完成后自动同步到规划器。';
+  headText.append(h2, subtitle);
   const back = doc.createElement('button');
   back.type = 'button';
   back.className = 'st-back';
   back.textContent = '← 返回花园';
-  head.append(h2, back);
+  head.append(headText, back);
 
   const body = doc.createElement('div');
   body.className = 'st-body';
@@ -206,7 +230,6 @@ export function mountStudyTimerPanel(frame) {
   svg.setAttribute('role', 'timer');
   svg.setAttribute('aria-label', '学习任务计时');
   svg.setAttribute('class', 'st-ring__svg');
-  svg.style.transform = 'rotate(-90deg)';
 
   const track = doc.createElementNS ? doc.createElementNS(svgNS, 'circle') : doc.createElement('circle');
   track.setAttribute('cx', '150');
@@ -229,7 +252,21 @@ export function mountStudyTimerPanel(frame) {
   progressCircle.setAttribute('stroke-dashoffset', String(ringDashOffset(drawableProgress(0))));
   progressCircle.setAttribute('class', 'st-ring__progress');
 
-  svg.append(track, progressCircle);
+  // 旋转放在 SVG 内部的 <g> 上，并把圆心写进 rotate 的第二个参数里，
+  // 避免"对根 svg 做 CSS 旋转但 transform-origin 不明"导致的起点偏移。
+  const rotor = doc.createElementNS ? doc.createElementNS(svgNS, 'g') : doc.createElement('g');
+  rotor.setAttribute('transform', 'rotate(-90 150 150)');
+  rotor.append(track, progressCircle);
+
+  // 0% 标记：12 点钟方向的起点圆点（**不放进旋转的 <g>**，否则会被转到右边）
+  const startDot = doc.createElementNS ? doc.createElementNS(svgNS, 'circle') : doc.createElement('circle');
+  startDot.setAttribute('cx', '150');
+  startDot.setAttribute('cy', '6');
+  startDot.setAttribute('r', '2.5');
+  startDot.setAttribute('fill', 'var(--ring-progress, var(--accent, #4a7c59))');
+  startDot.setAttribute('class', 'st-ring__start');
+
+  svg.append(rotor, startDot);
 
   const center = doc.createElement('div');
   center.className = 'st-ring__center';
@@ -298,7 +335,8 @@ export function mountStudyTimerPanel(frame) {
   actions.append(startBtn, pauseBtn, finishBtn, abandonBtn);
   timerCard.append(stage, percentLine, modeRow, flag, actions);
   body.append(listCard, timerCard);
-  host.append(head, body);
+  inner.append(head, body);
+  host.append(inner);
   doc.body.append(host);
 
   /* ---------- 行为 ---------- */
@@ -337,7 +375,7 @@ export function mountStudyTimerPanel(frame) {
       hint.textContent = state.pendingTask ? '准备好后点击开始' : '从左侧选一个任务开始';
       chip.style.display = 'none';
       percentLine.textContent = planned > 0 ? `计划 ${planned} 分钟` : '';
-      progressCircle.setAttribute('stroke-dashoffset', String(ringDashOffset(drawableProgress(0))));
+      progressCircle.setAttribute('stroke-dashoffset', String(ringDashOffset(0)));
       flag.style.display = 'none';
       startBtn.disabled = !state.pendingTask;
       pauseBtn.disabled = true;
@@ -519,15 +557,38 @@ export function mountStudyTimerPanel(frame) {
     startFor(due);
   }
 
-  navButton.addEventListener('click', () => {
-    const open = host.getAttribute('data-open') === 'true';
-    host.setAttribute('data-open', open ? 'false' : 'true');
-    if (!open) {
+  /** 打开/关闭计时页，并同步侧边栏的 aria-current 与其它导航项的激活态 */
+  function setOpen(open) {
+    host.setAttribute('data-open', open ? 'true' : 'false');
+    if (open) {
+      navButton.setAttribute('aria-current', 'page');
+      // 关掉花园自己导航项的高亮，避免两个"当前页"
+      for (const item of navList.querySelectorAll('.nav-item')) {
+        if (item !== navButton) item.removeAttribute('aria-current');
+      }
       renderList();
       renderTimer();
+    } else {
+      navButton.removeAttribute('aria-current');
     }
+  }
+
+  navButton.addEventListener('click', () => {
+    setOpen(host.getAttribute('data-open') !== 'true');
   });
-  back.addEventListener('click', () => host.setAttribute('data-open', 'false'));
+
+  // 点花园侧边栏的其它导航项 → 先关掉计时页，让花园正常切页
+  navList.addEventListener('click', (event) => {
+    const target = event.target;
+    if (target === navButton || navButton.contains?.(target)) return;
+    setOpen(false);
+  });
+
+  // 花园路由变化（hashchange）时也关掉，避免盖住新页面
+  const onHashChange = () => setOpen(false);
+  globalThis.addEventListener?.('hashchange', onHashChange);
+
+  back.addEventListener('click', () => setOpen(false));
 
   startBtn.addEventListener('click', () => {
     if (state.pendingTask && !state.timer) startFor(state.pendingTask);
@@ -571,11 +632,8 @@ export function mountStudyTimerPanel(frame) {
     state,
     renderList,
     renderTimer,
-    open: () => {
-      host.setAttribute('data-open', 'true');
-      renderList();
-      renderTimer();
-    },
+    open: () => setOpen(true),
+    close: () => setOpen(false),
   };
   return true;
 }

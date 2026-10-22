@@ -43,10 +43,17 @@ test('圆环几何：半径 144、周长 2πr，偏移量随进度递减', () =>
   assert.ok(Math.abs(ringDashOffset(MIN_PROGRESS) - RING_CIRCUMFERENCE * (1 - MIN_PROGRESS)) < 0.01);
 });
 
-test('T-01 空闲时使用最小圆弧（3.5%），不会看起来像没渲染', () => {
-  assert.equal(drawableProgress(0), MIN_PROGRESS);
-  assert.ok(Math.abs(ringDashOffset(drawableProgress(0)) - RING_CIRCUMFERENCE * 0.965) < 0.01);
+test('T-01 0% 时不画进度弧（起点由 12 点钟的圆点标记）', () => {
+  assert.equal(drawableProgress(0), 0, '0% 不应有任何进度弧');
+  assert.equal(ringDashOffset(0), RING_CIRCUMFERENCE, '偏移等于整圈 → 弧长为 0');
   assert.equal(formatStudyClock(7200), '2:00:00');
+});
+
+test('T-01b 25/50/75/100% 的偏移严格线性', () => {
+  const C = RING_CIRCUMFERENCE;
+  for (const ratio of [0.25, 0.5, 0.75, 1]) {
+    assert.ok(Math.abs(ringDashOffset(ratio) - C * (1 - ratio)) < 0.01, `${ratio * 100}% 的弧长不对`);
+  }
 });
 
 /* ---------------- 倒计时 ---------------- */
