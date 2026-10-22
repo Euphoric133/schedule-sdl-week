@@ -5,6 +5,80 @@
 
 ---
 
+## [1.21.0] — 统一「完成任务」链路：记录时段 / 标记完成 / 清理依赖
+
+日期：2026-10-20
+
+### 一、三个问题的真实根因
+
+1. **计划页点「完成」只完成了时段**：`completeSession()` 只提交
+   `session.complete`，任务状态仍是 `not_started`/`in_progress`。
+   于是它继续出现在「前置任务」候选里，花园清单也继续显示
+   （剩余 0 被 `Math.max(1, remaining)` 兜成"未排时间 · 1 分钟"）。
+2. **花园计时完成不写学习记录**：`completeStudyTask()` 只调用
+   `changeTaskStatus(..., 'completed')`，`actualMinutes` 被 `void` 丢弃。
+   统计只统计 `state === 'completed'` 的时段，所以花园计时不进统计。
+3. **0 剩余的历史脏数据**：状态还是 active，但剩余工作量为 0，
+   候选与清单都只用状态过滤，没有看剩余量。
+
+### 二、统一链路
+
+新增 `planService.completeTaskAtomic({ taskId, sessionId, actualMinutes, completedAt })`：
+
+1. 先完成时段（有可用时段就复用；没有就 `session.add` 补一条合法的 completed 记录）；
+2. 再 `task.status → completed`（`reconcile` 取消剩余未完成时段，并清理其它任务的 `dependsOn`）；
+3. `applyDraftOps` + 一次 `app.commit`，**原子**；任一步失败整体不生效；
+4. 已完成的任务直接返回 `{ ok: true, already: true }`（幂等）。
+
+`buildCompletionOps()` 负责组装变更序列，并把实际分钟数钳制在
+`[1, min(剩余, SESSION_MAX_MINUTES)]`，跨午夜时用前一天 + `endMinutes > 1440` 表示。
+
+### 三、两条调用路径
+
+| 入口 | 方式 |
+|---|---|
+| 计划页卡片「完成」 | `previewWith([session.complete, task.status])` —— 仍走预览/确认，顺序是先时段后任务 |
+| 花园计时完成/提前完成 | `completeTaskAtomic()` 原子提交（不需二次确认），随后刷新面板与页面 |
+
+`gardenPanel` 现在把 `sessionId`、`actualMinutes`、`completedAt` 一并传给主应用。
+
+### 四、过滤 0 剩余
+
+- `listStudyTasks()`：只列出状态有效**且剩余 > 0** 的任务，返回 `sessionId`（最早可完成时段）；
+- `listDependencyCandidates()`：支持传入 `listTaskViews()` 的视图，同时按状态与 `remainingMinutes > 0` 过滤；
+- 任务表单改用视图过滤。
+
+### 五、测试与构建
+
+```
+$ node --test "tests/**/*.test.js"
+ℹ tests 685
+ℹ pass 685
+ℹ fail 0
+
+$ node scripts/build-standalone.mjs
+已生成 dist/standalone.html（1550 KB，内联 76 个模块）
+```
+
+新增 `tests/integration/taskCompletion.test.js`（6 个）：一次提交四件事、无排程任务补记录、
+幂等、统计可见、花园清单过滤 + `sessionId`、前置候选排除已完成/0 剩余。
+
+端到端实测：
+
+```
+计划页完成 → 任务 completed，完成记录 35 分
+花园完成   → 任务 completed，完成记录 18 分，当日统计 actual=18，番茄 +1，转盘发放 1 次
+重复完成   → 完成记录仍 1 条，番茄仍 1，不再发机会
+```
+
+### 六、已知限制
+
+- 跨午夜只在"没有排程时段"时按前一天 + `endMinutes > 1440` 记录；有排程时沿用原时段日期；
+- 计划页「完成」的确认文案已改为"完成任务「X」并记录本次学习"，但**没有**单独的"只完成这一段"入口
+  （需要的话我可以加到卡片详情里）。
+
+---
+
 ## [1.20.0] — 文字安全层：修掉溢出的真正根因
 
 日期：2026-10-20

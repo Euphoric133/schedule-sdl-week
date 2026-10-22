@@ -221,18 +221,22 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
      * 一个番茄结束（自然到点或用户提前结束）：
      * 主应用任务标记完成 + 花园任务 +1 番茄。幂等，重复调用不会重复加。
      */
-    completeStudyTask({ plannerId, gardenId, actualMinutes }) {
+    completeStudyTask({ plannerId, gardenId, sessionId = null, actualMinutes = null, completedAt = null }) {
       const frame = getGardenFrame(gardenHost);
       try {
         const result = completeStudyTask({
           bridge: getGardenBridge(frame),
           taskService: services.taskService,
+          completeTask: (payload) => services.ui.completeTaskFromTimer(payload),
           plannerId,
           gardenId,
+          sessionId,
           actualMinutes,
+          completedAt,
           grantSpin: true,
         });
         renderCurrent();
+        refreshStudyTimerPanel(frame);
         return result;
       } catch (error) {
         return { ok: false, reason: 'error', message: error?.message ?? '未知错误' };

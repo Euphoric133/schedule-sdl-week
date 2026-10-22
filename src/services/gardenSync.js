@@ -335,7 +335,13 @@ export function listStudyTasks({ tasks, sessions, map } = {}) {
     }
   }
 
-  const list = active.map((task) => {
+  const usable = active.filter((task) => {
+    const remaining =
+      (task.plannedMinutes ?? 0) - (task.priorCompletedMinutes ?? 0) - (completedByTask.get(task.id) ?? 0);
+    return remaining > 0; // 剩余 0 的任务不再进入计时清单（否则会显示"未排时间 · 1 分钟"）
+  });
+
+  const list = usable.map((task) => {
     /**
      * 计时时长 = **任务自身剩余工作量**：
      * plannedMinutes − priorCompletedMinutes − 已完成时段的分钟数。
@@ -351,6 +357,8 @@ export function listStudyTasks({ tasks, sessions, map } = {}) {
       gardenId: mapping[task.id] ?? null,
       title: task.title,
       startMinutes: next ? next.startMinutes : null,
+      // 最早的可完成时段：花园完成时优先复用这段真实记录
+      sessionId: next ? next.id : null,
       minutes: Math.max(1, remaining),
       importance: task.importance ?? 0,
     };
@@ -377,10 +385,31 @@ export function listStudyTasks({ tasks, sessions, map } = {}) {
  *
  * @returns {{ok: boolean, reason?: string, pomodoros?: number}}
  */
-export function completeStudyTask({ bridge, taskService, plannerId, gardenId, actualMinutes = null, grantSpin = false } = {}) {
+export function completeStudyTask({
+  bridge,
+  taskService = null,
+  completeTask = null,
+  plannerId,
+  gardenId,
+  sessionId = null,
+  actualMinutes = null,
+  completedAt = null,
+  grantSpin = false,
+} = {}) {
   if (!plannerId) return { ok: false, reason: 'no-planner-task' };
 
-  if (taskService?.changeTaskStatus) {
+  /**
+   * 统一完成链路：记录实际学习时段 + 标记任务完成 + 取消剩余时段 + 清理依赖，
+   * 由 `planService.completeTaskAtomic()` 原子提交。
+   *
+   * 老调用方（测试）可能只传 taskService，这里保留兼容分支。
+   */
+  if (typeof completeTask === 'function') {
+    const result = completeTask({ taskId: plannerId, sessionId, actualMinutes, completedAt });
+    if (result?.ok === false) {
+      return { ok: false, reason: 'planner-failed', message: result.issues?.[0]?.message ?? null };
+    }
+  } else if (taskService?.changeTaskStatus) {
     const result = taskService.changeTaskStatus(plannerId, 'completed');
     if (result?.ok === false && result?.code !== 'already_completed') {
       return { ok: false, reason: 'planner-failed', message: result.message ?? null };
@@ -405,7 +434,6 @@ export function completeStudyTask({ bridge, taskService, plannerId, gardenId, ac
     patch: { status: 'done', completedPomodoros: pomodoros },
   });
 
-  void actualMinutes;
   // 完成这一次任务 → 额外发放 1 次转盘机会（幂等，内部有持久化去重）
   if (grantSpin) {
     grantStudyTaskSpin({ bridge, plannerId });

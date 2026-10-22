@@ -26,10 +26,11 @@ import {
   validatePlan,
 } from '../domain/plan.js';
 import { BLOCK_KIND, groupBlocksByDate } from '../domain/calendarBlock.js';
-import { SESSION_STATE, isLockedForScheduling } from '../domain/session.js';
+import { SESSION_MAX_MINUTES, SESSION_STATE, isLockedForScheduling } from '../domain/session.js';
 import { PLAN_HISTORY_LIMIT } from '../domain/schemas.js';
 import { VALIDATION_CODES as C, error, result } from '../domain/validation.js';
 import { addDays, wallTimeFromDateObject, weekday } from '../domain/time.js';
+import { TASK_STATUS } from '../domain/task.js';
 import { computeSchedulerInputHash, run as runScheduler } from '../engine/scheduler.js';
 import { applyDraftOps, describeDraftOps, evaluateCleanupImpact } from '../domain/mutations.js';
 import { diffPlans } from '../engine/diff.js';
@@ -595,6 +596,34 @@ export function createPlanService({ app, idFactory }) {
    * - 只清理"已取消且从未开始过"的时段与超出保留上限的旧快照；
    * - 已完成的学习记录与当前正式计划永远不在清理范围内。
    */
+  /**
+   * 完成一个学习任务（统一链路）。
+   *
+   * 计划页的「完成」按钮与花园计时完成都走这里，保证三件事一起发生：
+   *   1. 记录实际学习时段（没有排程时补一条 completed 记录）；
+   *   2. 把任务标记为 completed（reconcile 会取消剩余未完成时段）；
+   *   3. 清理其它任务 dependsOn 里对它的引用（由 task.status 变更内部完成）。
+   *
+   * **原子**：先应用全部变更，再一次性提交；任何一步失败则整体不生效。
+   *
+   * @param {{taskId: string, sessionId?: string|null, actualMinutes?: number|null, now?: {date: string, minutes: number}}} input
+   */
+  function completeTaskAtomic(input = {}) {
+    const state = app.getState();
+    const task = (state.tasks ?? []).find((item) => item.id === input.taskId);
+    if (!task) return { ok: false, issues: [{ code: 'V001', path: 'taskId', message: '任务不存在。' }] };
+    if (task.status === TASK_STATUS.COMPLETED) return { ok: true, already: true };
+
+    const now = input.now ?? wallTimeFromDateObject(new Date(app.clock()));
+    const ops = buildCompletionOps(state, { ...input, now });
+    const applied = applyDraftOps(state, ops, { idFactory, nowIso: nowIso() });
+    if (!applied.ok) return { ok: false, issues: applied.issues ?? [] };
+
+    const committed = app.commit(() => applied.state, { reason: 'task-complete' });
+    if (!committed.ok) return { ok: false, error: committed.error, issues: [] };
+    return { ok: true, ops, plan: getOfficialPlan() };
+  }
+
   function applyCleanup(ops) {
     const state = app.getState();
     const applied = applyDraftOps(state, ops, { idFactory, nowIso: nowIso() });
@@ -901,6 +930,7 @@ export function createPlanService({ app, idFactory }) {
     applyPreview,
     discardPreview,
     applyCleanup,
+    completeTaskAtomic,
     cleanupImpact,
     currentRisks,
     getOfficialPlan,
@@ -917,4 +947,72 @@ export function createPlanService({ app, idFactory }) {
     /** 供测试与 UI 复用的空校验结果 */
     emptyResult: () => result([]),
   };
+}
+
+
+/**
+ * 组装"完成一个学习任务"所需的变更序列。
+ *
+ * 顺序很重要：**先完成时段，再把任务标记完成**。
+ * 反过来的话，`task.status → completed` 会触发 reconcile 取消未完成时段，
+ * 刚刚那段就会先被取消，完成记录丢失。
+ *
+ * @param {object} state
+ * @param {{taskId: string, sessionId?: string|null, actualMinutes?: number|null, now?: {date: string, minutes: number}}} input
+ * @returns {Array<object>} 变更列表
+ */
+export function buildCompletionOps(state, input) {
+  const task = (state.tasks ?? []).find((item) => item.id === input.taskId);
+  const sessions = state.sessions ?? [];
+  const now = input.now ?? wallTimeFromDateObject(new Date());
+  const ops = [];
+
+  // 1) 优先复用已有的未完成时段
+  const candidate =
+    (input.sessionId ? sessions.find((item) => item.id === input.sessionId) : null) ??
+    sessions
+      .filter((item) => item.taskId === input.taskId && (item.state === SESSION_STATE.FLEXIBLE || item.state === SESSION_STATE.IN_PROGRESS))
+      .sort((a, b) => (a.date === b.date ? a.startMinutes - b.startMinutes : a.date < b.date ? -1 : 1))[0] ??
+    null;
+
+  const plannedRemaining = Math.max(0, (task?.plannedMinutes ?? 0) - (task?.priorCompletedMinutes ?? 0));
+  const completedMinutes = sessions
+    .filter((item) => item.taskId === input.taskId && item.state === SESSION_STATE.COMPLETED)
+    .reduce((sum, item) => sum + (Number.isFinite(item.actualMinutes) ? item.actualMinutes : 0), 0);
+  const remaining = Math.max(0, plannedRemaining - completedMinutes);
+
+  const requested = Number.isFinite(input.actualMinutes) ? Math.round(input.actualMinutes) : null;
+  const actual = Math.min(
+    SESSION_MAX_MINUTES,
+    Math.max(1, requested ?? (candidate ? candidate.endMinutes - candidate.startMinutes : remaining || 1)),
+  );
+
+  if (candidate) {
+    ops.push({ kind: 'session.complete', sessionId: candidate.id, actualMinutes: actual });
+  } else if (remaining > 0 || actual > 0) {
+    // 2) 没有任何排程时段：补一条合法的已完成记录，否则统计里看不到这次学习
+    const span = Math.min(SESSION_MAX_MINUTES, Math.max(1, actual));
+    const startRaw = now.minutes - span;
+    const crossesMidnight = startRaw < 0;
+    const startMinutes = crossesMidnight ? 1440 + startRaw : startRaw;
+    const date = crossesMidnight ? addDays(now.date, -1) : now.date;
+    ops.push({
+      kind: 'session.add',
+      session: {
+        taskId: input.taskId,
+        date,
+        startMinutes,
+        endMinutes: startMinutes + span,
+        actualMinutes: span,
+        state: SESSION_STATE.COMPLETED,
+        locked: false,
+        source: 'user_create',
+        completedAt: input.completedAt ?? null,
+      },
+    });
+  }
+
+  // 3) 最后再标记任务完成（reconcile 会取消其余未完成时段，并清理 dependsOn）
+  ops.push({ kind: 'task.status', taskId: input.taskId, to: TASK_STATUS.COMPLETED });
+  return ops;
 }

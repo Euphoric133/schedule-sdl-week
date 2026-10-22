@@ -669,10 +669,13 @@ export function findCyclicDependencyCandidate(taskId, candidateDepId, tasks = []
  * @returns {Array<object>}
  */
 export function listDependencyCandidates(tasks, currentTaskId = null) {
-  return (tasks ?? []).filter(
-    (task) =>
-      task &&
-      task.id !== currentTaskId &&
-      (task.status === TASK_STATUS.NOT_STARTED || task.status === TASK_STATUS.IN_PROGRESS),
-  );
+  return (tasks ?? []).filter((entry) => {
+    // 支持两种入参：任务数组，或 taskService.listTaskViews() 的视图（带 remainingMinutes）
+    const task = entry?.task ?? entry;
+    if (!task || task.id === currentTaskId) return false;
+    if (task.status !== TASK_STATUS.NOT_STARTED && task.status !== TASK_STATUS.IN_PROGRESS) return false;
+    // 剩余工作量为 0 的历史脏数据也不能再作为前置（它已经没什么可等的了）
+    if (Number.isFinite(entry?.remainingMinutes)) return entry.remainingMinutes > 0;
+    return true;
+  }).map((entry) => entry?.task ?? entry);
 }

@@ -571,6 +571,7 @@ export function mountStudyTimerPanel(frame) {
       { ...task, mode: state.prefs.mode ?? TIMER_MODE.COUNTDOWN },
       nowMs(),
     );
+    state.timer.sessionId = task.sessionId ?? null;
     // 由用户点击触发，符合浏览器自动播放策略；失败也只是没声音
     if (state.prefs.ambient && state.prefs.ambient !== AMBIENT_TRACKS.OFF) {
       audio.startAmbient(state.prefs.ambient, state.prefs.ambientVolume);
@@ -612,7 +613,9 @@ export function mountStudyTimerPanel(frame) {
     api()?.completeStudyTask?.({
       plannerId: timer.plannerId,
       gardenId: timer.gardenId,
+      sessionId: timer.sessionId ?? null,
       actualMinutes: used,
+      completedAt: new Date().toISOString(),
     });
     renderList();
   }

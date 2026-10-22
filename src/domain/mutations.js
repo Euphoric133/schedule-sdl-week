@@ -20,7 +20,7 @@ import {
   transitionTaskStatus,
   validateTask,
 } from '../domain/task.js';
-import { SESSION_STATE } from '../domain/session.js';
+import { SESSION_STATE, createSession } from '../domain/session.js';
 import {
   FIXED_ACTIVITY_TYPE,
   RECURRENCE_KIND,
@@ -61,6 +61,8 @@ export function applyDraftOp(state, op, ctx) {
       return sessionCancelOp(state, op, ctx);
     case 'session.complete':
       return sessionCompleteOp(state, op, ctx);
+    case 'session.add':
+      return sessionAddOp(state, op, ctx);
     case 'session.pause':
       return sessionPauseOp(state, op, ctx);
     case 'session.extend':
@@ -481,6 +483,26 @@ function sessionCancelOp(state, op, ctx) {
     },
     issues: [],
   };
+}
+
+/**
+ * 新增一条学习时段。
+ *
+ * 用途：用户直接计时完成一个**没有排程**的任务时，需要一条合法的已完成记录，
+ * 否则统计里看不到这次学习。走领域模型 `createSession`，保证字段与校验一致。
+ */
+function sessionAddOp(state, op, ctx) {
+  const task = (state.tasks ?? []).find((item) => item.id === op.session?.taskId);
+  if (!task) {
+    return { ok: false, state, issues: [error(C.REQUIRED, 'session.taskId', '任务不存在，无法补记学习时段。', {})] };
+  }
+  let created;
+  try {
+    created = createSession(op.session, ctx);
+  } catch (err) {
+    return { ok: false, state, issues: [error(C.TYPE, 'session', err.message, {})] };
+  }
+  return { ok: true, state: { ...state, sessions: [...(state.sessions ?? []), created] }, issues: [] };
 }
 
 function sessionCompleteOp(state, op, ctx) {

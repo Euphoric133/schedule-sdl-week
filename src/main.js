@@ -459,11 +459,42 @@ function createUiService({ services, getShell = () => null }) {
      * 把一段学习标记为已完成（走"候选计划 → 预览 → 确认"的既有流程，
      * 这样任务状态与计划时段的一致性由同一条路径保证）。
      */
+    /**
+     * 计划页卡片上的「完成」= **完成整个任务**（不是只结束这一段）。
+     *
+     * 一次提交两条变更，顺序是"先完成时段，再完成任务"：
+     * 反过来的话，任务完成会先取消未完成时段，刚记的完成记录就丢了。
+     * 仍然走预览/确认链路，用户能看到影响面。
+     */
     completeSession(card) {
-      return this.previewWith(
-        [{ kind: 'session.complete', sessionId: card.sessionId, actualMinutes: card.minutes }],
-        { changeSummary: '记录一段已完成的学习', trigger: 'plan-board' },
-      );
+      const ops = [
+        ...(card.sessionId
+          ? [{ kind: 'session.complete', sessionId: card.sessionId, actualMinutes: card.minutes }]
+          : []),
+        { kind: 'task.status', taskId: card.taskId, to: 'completed' },
+      ];
+      return this.previewWith(ops, {
+        changeSummary: `完成任务「${card.title}」并记录本次学习`,
+        trigger: 'plan-board',
+      });
+    },
+
+    /**
+     * 花园计时完成（原子，不经预览）：记录实际学习时段 + 完成任务。
+     * 供 `services.gardenSync.completeStudyTask` 调用。
+     */
+    completeTaskFromTimer({ taskId, sessionId = null, actualMinutes = null, completedAt = null } = {}) {
+      const result = services.planService.completeTaskAtomic({
+        taskId,
+        sessionId,
+        actualMinutes,
+        completedAt,
+      });
+      if (result.ok) {
+        const instance = getShell();
+        if (instance?.renderCurrent) instance.renderCurrent();
+      }
+      return result;
     },
 
     /**

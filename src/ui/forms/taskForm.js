@@ -166,10 +166,8 @@ export function openTaskForm({ task = null, services }) {
   inputs.splittable = splittable;
 
   const dependsHost = el('div', { style: { maxHeight: '160px', overflow: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-2)' } });
-  const candidates = services.taskService
-    .getTasks()
-    // 只保留"未开始/进行中"的任务：已完成/已取消/已删除都不再作为前置候选
-    .filter((t) => listDependencyCandidates([t], task?.id).length > 0);
+  // 用视图（带 remainingMinutes）过滤：状态有效 **且** 还有剩余工作量
+  const candidates = listDependencyCandidates(services.taskService.listTaskViews(), task?.id ?? null);
   if (candidates.length === 0) {
     append(dependsHost, [el('div.form-field__hint', { text: '当前没有其它可用于依赖的任务。' })]);
   } else {
