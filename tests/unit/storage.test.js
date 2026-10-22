@@ -30,7 +30,7 @@ import {
   serializeBackup,
   suggestBackupFilename,
 } from '../../src/storage/backup.js';
-import { CURRENT_SCHEMA_VERSION } from '../../src/domain/schemas.js';
+import { CURRENT_SCHEMA_VERSION, defaultSettings } from '../../src/domain/schemas.js';
 import { VALIDATION_CODES } from '../../src/domain/validation.js';
 import { FIXED_NOW_ISO } from '../helpers/clock.js';
 import { makeState, makeTask, testContext } from '../helpers/fixtures.js';
@@ -170,8 +170,12 @@ test('迁移：语义校验失败时返回 ok=false 并带上具体问题（调�
   assert.ok(result.issues.some((i) => i.code === VALIDATION_CODES.ENTITY_DUPLICATE_ID));
 });
 
-test('迁移步骤表：当前版本尚无历史迁移（不预先虚构旧版本）', () => {
-  assert.deepEqual(Object.keys(MIGRATIONS), []);
+test('迁移步骤表：从 v1 到当前版本的每一步都必须有可执行的迁移函数', () => {
+  // 这条测试的用意没变：不允许出现"版本号跳了、迁移却没写"的漏洞——
+  // 那会让旧数据在新代码上直接读不出来。
+  for (let version = 1; version < CURRENT_SCHEMA_VERSION; version += 1) {
+    assert.equal(typeof MIGRATIONS[version], 'function', `缺少 v${version} → v${version + 1} 的迁移步骤`);
+  }
 });
 
 test('localStorage 适配器：不可用时 isAvailable 为 false 且给出明确错误码', () => {
@@ -312,4 +316,44 @@ test('备份提醒：从未导出与超期两种情况都要提醒', () => {
   const stale = backupReminder({ ...makeState(), meta: { lastBackupAt: '2025-09-01T10:00:00+08:00' } }, FIXED_NOW_ISO);
   assert.equal(stale.shouldRemind, true);
   assert.match(stale.reason, /距离上次导出备份已/);
+});
+
+test('v1 → v2 迁移：补上 latestSleepMinutes，且不改变任何已有设置', () => {
+  const v1 = {
+    schemaVersion: 1,
+    createdAt: '2025-10-16T00:00:00.000Z',
+    updatedAt: '2025-10-16T00:00:00.000Z',
+    timeZone: null,
+    settings: {
+      ...defaultSettings(),
+      latestSleepMinutes: undefined,
+      // 用户特意调过的值，迁移后必须原样保留
+      baseContinuousMinutes: 45,
+      dailyStudyCapMinutes: 180,
+    },
+    tasks: [],
+    sessions: [],
+    fixedActivities: [],
+    restPeriods: [],
+    subjects: [],
+    officialPlan: null,
+    planHistory: [],
+    pendingPreview: null,
+    meta: { lastBackupAt: null, migrationLog: [], lastPlanMutation: null, initialWindowStart: '2025-10-16', planId: null },
+  };
+  delete v1.settings.latestSleepMinutes;
+
+  const result = migrateState(v1);
+  assert.equal(result.ok, true, JSON.stringify(result.issues?.map((i) => i.message)));
+  assert.equal(result.state.schemaVersion, 2);
+  assert.equal(result.state.settings.latestSleepMinutes, null, '默认必须是 null：凭空给个时刻会改变老用户现有计划');
+  assert.equal(result.state.settings.baseContinuousMinutes, 45, '用户自定义设置不能被迁移覆盖');
+  assert.equal(result.state.settings.dailyStudyCapMinutes, 180);
+});
+
+test('最新版本的数据再次迁移是幂等的（不重复改字段）', () => {
+  const state = { ...makeState(), schemaVersion: CURRENT_SCHEMA_VERSION, settings: { ...defaultSettings(), latestSleepMinutes: 22 * 60 } };
+  const result = migrateState(state);
+  assert.equal(result.ok, true);
+  assert.equal(result.state.settings.latestSleepMinutes, 22 * 60, '已有值不应被重置');
 });

@@ -10,6 +10,7 @@
  */
 
 import test from 'node:test';
+import { CURRENT_SCHEMA_VERSION } from '../../src/domain/schemas.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -230,6 +231,6 @@ test('单文件版本：内联脚本能在最小 DOM 环境中启动并渲染应
   const stored = storageMap.get('studyPlanner:v1:state');
   assert.ok(stored, '首次启动应把初始状态写入 localStorage');
   const parsed = JSON.parse(stored);
-  assert.equal(parsed.schemaVersion, 1);
+  assert.equal(parsed.schemaVersion, CURRENT_SCHEMA_VERSION, '落盘版本必须等于当前结构版本');
   assert.deepEqual(parsed.tasks, [], '初始状态不得包含虚构任务');
 });

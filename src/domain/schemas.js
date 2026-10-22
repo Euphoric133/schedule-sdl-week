@@ -25,8 +25,14 @@ import { checkTaskDependencies } from './graph.js';
 import { DEFAULT_DAY_BOUNDARY_HOUR, MINUTES_PER_DAY, weekday } from './time.js';
 import { PLAN_STATUS, validatePlan } from './plan.js';
 
-/** 当前结构版本 */
-export const CURRENT_SCHEMA_VERSION = 1;
+/**
+ * 当前结构版本。
+ *
+ * v2：新增 settings.latestSleepMinutes（最晚睡觉时间，硬性约束）。
+ *     为什么必须升版本：v1 的数据里没有这个字段，必须由迁移补上默认值，
+ *     否则"旧数据 + 新代码"会让排程读到 undefined，行为不可预测。
+ */
+export const CURRENT_SCHEMA_VERSION = 2;
 
 /** 计划历史保留数量上限（撤销链长度） */
 export const PLAN_HISTORY_LIMIT = 20;
@@ -83,6 +89,18 @@ export function defaultSettings() {
      * （历史上曾有"每天 7 小时"的默认上限，已彻底移除，不得再引入。）
      */
     dailyStudyCapMinutes: null,
+    /**
+     * 最晚睡觉时间（分钟，0–1440）；null = 不限制。
+     *
+     * 这是**硬约束**：排程不会把学习安排在这个时刻之后。
+     * 用它可以表达"今晚 10:30 必须睡觉"这类现实要求，
+     * 而不必每天手动建一条"睡眠"固定日程。
+     *
+     * 注意它与 studyWindows 的关系：两者都会削减可用时间。
+     * 如果 studyWindows 已经写到 23:00、而这里是 22:30，
+     * 实际可学时间就是到 22:30 为止——取更早的那个。
+     */
+    latestSleepMinutes: null,
     /**
      * 是否自动生成计划预览。
      * true（默认，也是应用一直以来的行为）= 改动后立即生成候选预览，不再询问；
@@ -262,6 +280,27 @@ export function validateSettings(settings, path = 'settings') {
   if (settings.dailyStudyCapMinutes !== null && settings.dailyStudyCapMinutes !== undefined) {
     if (!Number.isInteger(settings.dailyStudyCapMinutes) || settings.dailyStudyCapMinutes < 15 || settings.dailyStudyCapMinutes > MINUTES_PER_DAY) {
       issues.push(error(C.RANGE, `${path}.dailyStudyCapMinutes`, `每日学习上限必须是 15 – ${MINUTES_PER_DAY} 的整数分钟，或留空表示不限。`, {}));
+    }
+  }
+
+  /**
+   * 最晚睡觉时间（可空）。
+   *
+   * 它是硬约束，填错会让整个排程算错，所以这里做强校验：
+   * 只接受 null 或 1–1440 的整数分钟；0 与越界值一律报错，
+   * 而不是"悄悄当成不限制"——那会让用户以为设了限制、实际没生效。
+   */
+  if (settings.latestSleepMinutes !== null && settings.latestSleepMinutes !== undefined) {
+    const value = settings.latestSleepMinutes;
+    if (!Number.isInteger(value) || value < 1 || value > MINUTES_PER_DAY) {
+      issues.push(
+        error(
+          C.RANGE,
+          `${path}.latestSleepMinutes`,
+          `最晚睡觉时间必须是 1 – ${MINUTES_PER_DAY} 的整数分钟（例如 22:30 填 1350），或留空表示不限制。`,
+          { actual: value },
+        ),
+      );
     }
   }
 

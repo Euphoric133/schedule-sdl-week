@@ -349,3 +349,51 @@ test('mergeSpans（来自 domain）与 capacity 的口径一致', () => {
   ]);
   assert.deepEqual(merged, [{ date: '2025-10-16', startMinutes: 960, endMinutes: 1080 }]);
 });
+
+/* ------------------------------------------------------------------ *
+ * 最晚睡觉时间：硬约束
+ * ------------------------------------------------------------------ */
+
+test('latestSleepMinutes：把当天窗口右端截断，容量随之减少', () => {
+  const studyWindows = { 1: [{ startMinutes: 19 * 60, endMinutes: 23 * 60 }] };
+  const baseline = computeDayCapacity({ date: '2025-10-27', studyWindows });
+  const limited = computeDayCapacity({
+    date: '2025-10-27',
+    studyWindows,
+    latestSleepMinutes: 22 * 60 + 30,
+  });
+
+  assert.equal(baseline.windowMinutes, 4 * 60);
+  assert.equal(limited.windowMinutes, 3 * 60 + 30, '19:00–22:30 只剩 210 分钟');
+  assert.ok(limited.schedulableMinutes < baseline.schedulableMinutes);
+  assert.equal(limited.windows[0].endMinutes, 22 * 60 + 30);
+});
+
+test('latestSleepMinutes：晚于窗口结束时不产生影响', () => {
+  const studyWindows = { 1: [{ startMinutes: 19 * 60, endMinutes: 22 * 60 }] };
+  const limited = computeDayCapacity({ date: '2025-10-27', studyWindows, latestSleepMinutes: 23 * 60 });
+  assert.equal(limited.windowMinutes, 3 * 60);
+});
+
+test('latestSleepMinutes：早于窗口开始 → 当天完全没有可用时间', () => {
+  const studyWindows = { 1: [{ startMinutes: 19 * 60, endMinutes: 23 * 60 }] };
+  const limited = computeDayCapacity({ date: '2025-10-27', studyWindows, latestSleepMinutes: 18 * 60 });
+  assert.equal(limited.windowMinutes, 0);
+  assert.equal(limited.schedulableMinutes, 0);
+});
+
+test('latestSleepMinutes：非法值（null / 0 / 超范围）等于不限制', () => {
+  const studyWindows = { 1: [{ startMinutes: 19 * 60, endMinutes: 23 * 60 }] };
+  for (const bad of [null, undefined, 0, -5, 2000, 1.5]) {
+    const day = computeDayCapacity({ date: '2025-10-27', studyWindows, latestSleepMinutes: bad });
+    assert.equal(day.windowMinutes, 4 * 60, `非法值 ${bad} 不应改变容量`);
+  }
+});
+
+test('latestSleepMinutes：不把睡眠时间当成"占用块"插入（窗口右端截止，而非扣除一段）', () => {
+  const studyWindows = { 1: [{ startMinutes: 19 * 60, endMinutes: 23 * 60 }] };
+  const limited = computeDayCapacity({ date: '2025-10-27', studyWindows, latestSleepMinutes: 22 * 60 });
+  // 关键：freeWindows 只有一段（19:00–22:00），不是"19:00–22:00 + 被扣掉的 22:00–23:00"
+  assert.equal(limited.freeWindows.length, 1);
+  assert.equal(limited.fixedSpans.length, 0, '睡眠时间是约束，不是固定活动');
+});

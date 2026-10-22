@@ -129,6 +129,20 @@ export function buildPolicy(settings = {}) {
      */
     bufferRatio: 0,
 
+    /**
+     * 最晚睡觉时间（分钟）；null = 不限制。
+     *
+     * 这是**硬约束**，不是软偏好：容量计算会把每天的可学习窗口截断到
+     * min(窗口结束, 本值) 之前。因此排出来的计划里不会出现"22:30 之后还在学"。
+     *
+     * 只在 0–1440 之间的整数才生效；其它值（含 null）一律按"不限制"处理，
+     * 避免设置里填了脏数据就让整个排程算错。
+     */
+    latestSleepMinutes:
+      Number.isInteger(settings.latestSleepMinutes) && settings.latestSleepMinutes > 0 && settings.latestSleepMinutes <= 1440
+        ? settings.latestSleepMinutes
+        : null,
+
     /** 业务日边界小时 */
     dayBoundaryHour: Number.isInteger(settings.dayBoundaryHour) ? settings.dayBoundaryHour : 4,
 

@@ -36,6 +36,7 @@ export function simulateEarliestCompletion({
   fixedSpans = [],
   reservedSpans = [],
   bufferRatio = 0.1,
+  policy = null,
 }) {
   if (remainingMinutes <= 0) return null;
 
@@ -46,6 +47,9 @@ export function simulateEarliestCompletion({
     fixedSpans,
     reservedSpans,
     bufferRatio,
+    // 风险模拟必须用同一套睡觉时间约束，否则会出现
+    // "风险面板说来得及、排程却排不下"的自相矛盾
+    latestSleepMinutes: policy?.latestSleepMinutes ?? null,
   });
 
   let left = remainingMinutes;
@@ -114,6 +118,9 @@ export function assessDeadlineRisk({ task, remainingMinutes, taskBlocks = [], no
     fixedSpans: policy.fixedSpans ?? [],
     reservedSpans: policy.reservedSpans ?? [],
     bufferRatio: policy.bufferRatio,
+    // 传入完整策略：simulateEarliestCompletion 需要 latestSleepMinutes，
+    // 否则风险面板会按"可以学到窗口结束"来估算，比实际乐观
+    policy,
   });
 
   const reference = plannedFinish ?? earliestCompletion;

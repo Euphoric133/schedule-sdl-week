@@ -684,3 +684,57 @@ test('维护类信息：每个未安排任务都能解释"为什么"和"怎么�
     assert.ok(Array.isArray(item.suggestions) && item.suggestions.length > 0, '必须给出可执行建议');
   }
 });
+
+/* ------------------------------------------------------------------ *
+ * 最晚睡觉时间：排出来的计划里不允许出现晚于该时刻的学习时段
+ * ------------------------------------------------------------------ */
+
+test('设置最晚睡觉时间后，计划中所有学习时段都在该时刻之前结束', () => {
+  const everyDay = [{ startMinutes: 19 * 60, endMinutes: 23 * 60 }];
+  const ctx = engineContext({
+    settings: {
+      studyWindows: { 1: everyDay, 2: everyDay, 3: everyDay, 4: everyDay, 5: everyDay, 6: everyDay, 7: everyDay },
+      latestSleepMinutes: 22 * 60 + 30,
+    },
+  });
+  // 任务量足够大，确保排程会用满可用时间
+  ctx.addTask({ title: '任务A', plannedMinutes: 120, deadlineDate: '2025-10-30' });
+  ctx.addTask({ title: '任务B', plannedMinutes: 120, deadlineDate: '2025-10-30' });
+
+  const result = ctx.run();
+  assert.equal(result.ok, true);
+
+  const studyBlocks = result.plan.blocks.filter((block) => block.kind === 'study');
+  assert.ok(studyBlocks.length > 0, '应至少排出一些学习时段');
+  for (const block of studyBlocks) {
+    assert.ok(
+      block.endMinutes <= 22 * 60 + 30,
+      `学习时段 ${block.date} 结束于 ${block.endMinutes} 分钟，晚于最晚睡觉时间`,
+    );
+  }
+});
+
+test('不设置最晚睡觉时间时，同一天的容量大于设置后的容量（约束确实来自设置）', () => {
+  /**
+   * 为什么不直接断言"能排到 23:00"：
+   * 排程还受"单段最长 60 分钟""尾段过小不放"等规则影响，
+   * 任务量不够时本就会提前收工，那样断言会误报。
+   *
+   * 更可靠的证法是固定其他一切、只改这一项，比较同一天的**容量**：
+   * 若容量下降，说明限制确实生效了。
+   */
+  const everyDay = [{ startMinutes: 19 * 60, endMinutes: 23 * 60 }];
+  const windows = { 1: everyDay, 2: everyDay, 3: everyDay, 4: everyDay, 5: everyDay, 6: everyDay, 7: everyDay };
+
+  const baseline = engineContext({ settings: { studyWindows: windows, latestSleepMinutes: null } });
+  baseline.addTask({ title: '任务A', plannedMinutes: 180, deadlineDate: '2025-10-30' });
+  const freeDay = baseline.run().plan.days.find((day) => day.windowMinutes >= 240);
+
+  const limited = engineContext({ settings: { studyWindows: windows, latestSleepMinutes: 22 * 60 + 30 } });
+  limited.addTask({ title: '任务A', plannedMinutes: 180, deadlineDate: '2025-10-30' });
+  const cappedDay = limited.run().plan.days.find((day) => day.date === freeDay.date);
+
+  assert.ok(freeDay.schedulableMinutes > cappedDay.schedulableMinutes, '设置睡觉时间后同日容量必须下降');
+  assert.ok(cappedDay.windowMinutes <= 210, `窗口应被截到 210 分钟以内，实际 ${cappedDay.windowMinutes}`);
+});
+

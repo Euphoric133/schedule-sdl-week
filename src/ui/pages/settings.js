@@ -60,6 +60,9 @@ export function renderSettings({ app, services }) {
   // —— 科目管理（统一字典：新增 / 改名 / 删除） ——
   nodes.push(renderSubjectManager({ services }));
 
+  // —— 最晚睡觉时间（硬约束） ——
+  nodes.push(renderSleepSetting({ settings, services }));
+
   // —— 排程参数总览 ——
   nodes.push(
     card({
@@ -490,4 +493,77 @@ function formatBytes(bytes) {
 function toHHmm(minutes) {
   const wrapped = ((minutes % 1440) + 1440) % 1440;
   return `${String(Math.floor(wrapped / 60)).padStart(2, '0')}:${String(wrapped % 60).padStart(2, '0')}`;
+}
+
+
+/**
+ * 「最晚睡觉时间」设置项。
+ *
+ * 为什么要单独做成可编辑控件而不是只放进 JSON 编辑器：
+ * 这是学生每天都会用到的现实约束（"今晚 10:30 必须睡"），
+ * 藏进高级 JSON 里等于没有。而且它直接影响排程结果，
+ * 值填错会让"明明有 2 小时却排不进去"，必须让用户能一眼看到当前值。
+ */
+function renderSleepSetting({ settings, services }) {
+  const current = settings.latestSleepMinutes;
+  const input = el('input.input', {
+    type: 'time',
+    'aria-label': '最晚睡觉时间',
+    value: Number.isInteger(current) ? toHHmm(current) : '',
+  });
+  const status = el('div.card__hint', {
+    text: Number.isInteger(current)
+      ? `当前：${toHHmm(current)} 之后不再安排学习（硬性约束）。`
+      : '当前未设置：排程只受可学习时间窗口限制。',
+  });
+
+  const save = button('保存并重新规划', {
+    variant: 'primary',
+    onClick: () => {
+      const raw = input.value.trim();
+      let next = null;
+      if (raw) {
+        const match = /^(\d{2}):(\d{2})$/.exec(raw);
+        if (!match) {
+          toast('时间格式应为 HH:mm。', 'error');
+          return;
+        }
+        const minutes = Number(match[1]) * 60 + Number(match[2]);
+        if (minutes < 1 || minutes > 1440) {
+          toast('时间必须在 00:01 – 24:00 之间。', 'error');
+          return;
+        }
+        next = minutes;
+      }
+      const result = services.ui.previewWith([{ kind: 'settings.update', settings: { latestSleepMinutes: next } }], {
+        changeSummary: next === null ? '清除最晚睡觉时间' : `最晚睡觉时间设为 ${raw}`,
+      });
+      if (!result || result.ok === false) {
+        toast(result?.message ?? '保存失败，请检查输入。', 'error');
+      }
+    },
+  });
+
+  const clear = button('清除限制', {
+    onClick: () => {
+      const result = services.ui.previewWith([{ kind: 'settings.update', settings: { latestSleepMinutes: null } }], {
+        changeSummary: '清除最晚睡觉时间',
+      });
+      if (!result || result.ok === false) {
+        toast(result?.message ?? '保存失败。', 'error');
+      }
+    },
+  });
+
+  return card({
+    title: '最晚睡觉时间',
+    hint: '硬性约束：排程不会把学习安排在这个时刻之后',
+    body: el('div', {}, [
+      el('div.btn-row', {}, [input, save, clear]),
+      status,
+      el('div.card__hint', {
+        text: '它与「可学习时间窗口」取更早的那个。例如窗口写到 23:00、这里填 22:30，实际只能学到 22:30。',
+      }),
+    ]),
+  });
 }

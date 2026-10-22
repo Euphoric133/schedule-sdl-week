@@ -122,12 +122,22 @@ export function computeWindowCapacity({
   searchStart = null,
   /** 当前时间 { date, minutes }：任何早于它的日期一律不产生可用容量（不排过去）。 */
   now = null,
+  /**
+   * 最晚睡觉时间（分钟）；null/undefined = 不限制。
+   *
+   * 语义是"从**当天开始**算起的第 N 分钟之后不许学"，因此 22:30 = 1350。
+   * 注意不要和跨午夜混淆：睡觉时间填 01:00 表示"凌晨 1 点睡"，
+   * 这里按 24 小时制的分钟数理解（60），即 01:00 之后不排——与直觉一致。
+   */
+  latestSleepMinutes = null,
 }) {
   const days = [];
   for (let date = windowStart; date <= windowEnd; date = addDays(date, 1)) {
     // 过去的日期不产生新容量：过去只能有历史，不能再被安排
     if (now && date < now.date) {
-      days.push(computeDayCapacity({ date, studyWindows, fixedSpans, reservedSpans, bufferRatio, earliestStartMinutes: 1440 }));
+      days.push(
+        computeDayCapacity({ date, studyWindows, fixedSpans, reservedSpans, bufferRatio, earliestStartMinutes: 1440, latestSleepMinutes }),
+      );
       continue;
     }
     const earliestStartMinutes =
@@ -136,13 +146,21 @@ export function computeWindowCapacity({
         : now && now.date === date
           ? 0
           : 0;
-    days.push(computeDayCapacity({ date, studyWindows, fixedSpans, reservedSpans, bufferRatio, earliestStartMinutes }));
+    days.push(computeDayCapacity({ date, studyWindows, fixedSpans, reservedSpans, bufferRatio, earliestStartMinutes, latestSleepMinutes }));
   }
   return days;
 }
 
 /** 单日容量明细 */
-export function computeDayCapacity({ date, studyWindows, fixedSpans = [], reservedSpans = [], bufferRatio = 0, earliestStartMinutes = 0 }) {
+export function computeDayCapacity({
+  date,
+  studyWindows,
+  fixedSpans = [],
+  reservedSpans = [],
+  bufferRatio = 0,
+  earliestStartMinutes = 0,
+  latestSleepMinutes = null,
+}) {
   const rawWindows = normalizeStudyWindows(date, studyWindows);
   /**
    * 把允许窗口裁剪到"最早可以开始的时间"之后。
@@ -158,12 +176,29 @@ export function computeDayCapacity({ date, studyWindows, fixedSpans = [], reserv
         }))
         .filter((window) => window.endMinutes > window.startMinutes)
     : rawWindows;
+  /**
+   * 最晚睡觉时间：把窗口的右端截到该时刻之前。
+   *
+   * 放在"合并固定活动"之前，而不是当成一条假的固定活动：
+   * - 它是**约束**，不是一段"被占用的时间"，不该出现在时间轴上被当成睡眠块；
+   * - 用户可能已经把睡眠建成固定活动，两者叠加不应重复扣减。
+   *
+   * 与 earliestStartMinutes 对称：一个砍左边、一个砍右边，
+   * 两边都处理完，后面的容量公式不需要任何改动。
+   */
+  const sleepLimitedWindows =
+    Number.isInteger(latestSleepMinutes) && latestSleepMinutes > 0 && latestSleepMinutes <= MINUTES_PER_DAY
+      ? windows
+          .map((window) => ({ ...window, endMinutes: Math.min(window.endMinutes, latestSleepMinutes) }))
+          .filter((window) => window.endMinutes > window.startMinutes)
+      : windows;
+
   const fixedMerged = mergeDaySpans(fixedSpans, date);
   const reservedMerged = mergeDaySpans(reservedSpans, date);
   const occupied = mergeDaySpans([...fixedMerged, ...reservedMerged], date);
 
-  const freeWindows = subtractSpans(windows, occupied);
-  const windowMinutes = sumLength(windows);
+  const freeWindows = subtractSpans(sleepLimitedWindows, occupied);
+  const windowMinutes = sumLength(sleepLimitedWindows);
   const fixedMinutes = sumLength(fixedMerged);
   const reservedMinutes = sumLength(reservedMerged);
   const netCapacityMinutes = sumLength(freeWindows);
@@ -171,7 +206,7 @@ export function computeDayCapacity({ date, studyWindows, fixedSpans = [], reserv
 
   return {
     date,
-    windows,
+    windows: sleepLimitedWindows,
     freeWindows,
     fixedSpans: fixedMerged,
     reservedSpans: reservedMerged,

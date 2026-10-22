@@ -49,6 +49,9 @@ import { createEmptyState } from './domain/schemas.js';
 import { defaultPreferences } from './services/preferences.js';
 import { openSessionDetail } from './ui/forms/sessionDetail.js';
 import { mountAiAssistant } from './ai/assistantWidget.js';
+import { createAiFeatureService } from './services/aiFeatureService.js';
+import { sendMessage as sendAiMessage } from './ai/chatClient.js';
+import { renderAi } from './ui/pages/ai.js';
 
 const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
@@ -714,6 +717,12 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
   services.focusService = createFocusService({ app, idFactory, now: services.now });
   // 供 ui 服务写入审计字段（createdAt / updatedAt）使用；引擎与 domain 仍然只接受显式传入的时间
   services.clockIso = nowIso;
+  services.aiClient = { sendMessage: sendAiMessage };
+  services.aiFeatureService = createAiFeatureService({
+    app,
+    planService: services.planService,
+    now: () => services.now(),
+  });
   services.ui = createUiService({ services, getShell: () => shell });
 
   const todayWall = services.now();
@@ -733,6 +742,7 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
     appearance: renderAppearance,
     notifications: renderNotifications,
     stats: renderStats,
+    ai: renderAi,
     garden: renderGarden,
   };
 

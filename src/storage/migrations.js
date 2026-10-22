@@ -24,7 +24,19 @@ import { VALIDATION_CODES as C, error, mergeResults, result } from '../domain/va
  *   2: (state) => ({ ...state, schemaVersion: 3, settings: { ...state.settings, newField: 默认值 } }),
  */
 export const MIGRATIONS = Object.freeze({
-  // 1: (state) => ({ ...state, schemaVersion: 2, ... })   ← 当结构升级到 v2 时在此添加
+  /**
+   * v1 → v2：补上 settings.latestSleepMinutes。
+   *
+   * 为什么默认是 null 而不是某个具体时刻：
+   * 老用户从未表达过"几点必须睡"，凭空给一个 23:00 会**改变他们现有计划**——
+   * 原本能排到 23:30 的任务可能突然排不下，用户会以为程序坏了。
+   * 所以迁移只补字段、不改变任何已有行为；用户想用时自己去设置里填。
+   */
+  1: (state) => {
+    const settings = state.settings && typeof state.settings === 'object' ? state.settings : {};
+    if ('latestSleepMinutes' in settings) return { ...state, schemaVersion: 2 };
+    return { ...state, schemaVersion: 2, settings: { ...settings, latestSleepMinutes: null } };
+  },
 });
 
 /**

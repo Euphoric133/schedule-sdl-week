@@ -11,6 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { CURRENT_SCHEMA_VERSION } from '../../src/domain/schemas.js';
 import { createAppState } from '../../src/services/appState.js';
 import { createMemoryAdapter } from '../../src/storage/memoryAdapter.js';
 import { STORAGE_ERROR_CODES } from '../../src/storage/storagePort.js';
@@ -30,7 +31,7 @@ test('首次加载：创建空状态并立即落盘（刷新后不会连空状�
 
   const raw = adapter.readRaw();
   assert.ok(raw, '首次加载应把空状态写入存储');
-  assert.equal(raw.schemaVersion, 1);
+  assert.equal(raw.schemaVersion, CURRENT_SCHEMA_VERSION);
 });
 
 test('保存成功后可以重新加载（模拟刷新页面，对应验收场景 14）', () => {

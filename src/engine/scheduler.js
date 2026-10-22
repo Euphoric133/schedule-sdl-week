@@ -210,6 +210,8 @@ export function run(input) {
     bufferRatio: policy.bufferRatio,
     searchStart: searchStart.start,
     now,
+    // 最晚睡觉时间：硬约束，容量只到该时刻为止
+    latestSleepMinutes: policy.latestSleepMinutes,
   });
 
   const totalSchedulable = capacityDays.reduce((sum, day) => sum + day.schedulableMinutes, 0);

@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CURRENT_SCHEMA_VERSION } from '../../src/domain/schemas.js';
 
 const projectRoot = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 
@@ -426,7 +427,7 @@ test('界面启动：加载 src/main.js 能渲染外壳，并逐条渲染六个�
   assert.ok(stored, '首次启动应把初始状态写入 localStorage');
   const parsed = JSON.parse(stored);
   assert.deepEqual(parsed.tasks, [], '初始状态不得包含任何虚构任务');
-  assert.equal(parsed.schemaVersion, 1);
+  assert.equal(parsed.schemaVersion, CURRENT_SCHEMA_VERSION, '落盘版本必须等于当前结构版本');
 
   // 逐条路由渲染（覆盖六个页面 + 未知路由 + 带参数的 week 路由）
   const routes = [
@@ -437,6 +438,7 @@ test('界面启动：加载 src/main.js 能渲染外壳，并逐条渲染六个�
     '#/day?date=2025-10-18',
     '#/tasks',
     '#/activities',
+    '#/ai',
     '#/preview',
     '#/versions',
     '#/settings',

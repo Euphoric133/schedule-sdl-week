@@ -3869,3 +3869,142 @@ dialog {
     transition: none;
   }
 }
+
+/* ==========================================================================
+   AI 助手页（计划急救 + 时间校准）
+   原则：AI 的内容与程序的内容视觉上分开，用户要能分清哪句来自模型、哪个数字来自计算。
+   ========================================================================== */
+
+.ai-report {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+.ai-report:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.ai-fact-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  font-size: var(--font-size-sm);
+}
+
+.ai-fact__label {
+  color: var(--color-text-muted);
+  flex: none;
+}
+
+.ai-fact__value {
+  font-weight: 560;
+}
+
+.ai-loading {
+  padding: var(--space-3) 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* AI 的分析：左侧竖线标记，与程序的提示块区分开 */
+.ai-reply {
+  border-left: 3px solid var(--color-primary);
+  padding: var(--space-2) 0 var(--space-2) var(--space-4);
+}
+
+.ai-reply__label {
+  display: block;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-primary);
+  margin-bottom: 4px;
+}
+
+.ai-reply__text {
+  /* 模型输出可能很长，必须能换行且不撑破容器 */
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+}
+
+.ai-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-5);
+  list-style: disc;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+.ai-hint {
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}
+
+.ai-cal-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ai-cal-row:last-child {
+  border-bottom: 0;
+}
+
+.ai-cal-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-cal-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.ai-cal-meta {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.ai-cal-delta {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .ai-cal-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .ai-cal-delta {
+    align-self: flex-start;
+  }
+}

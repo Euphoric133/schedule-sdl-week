@@ -32,6 +32,60 @@ const DEFAULT_TIMEOUT_MS = 25_000;
  * @param {{date: string}} now 当前墙上时间
  * @returns {string}
  */
+/**
+ * 结构化日程上下文：给 AI 一份**带 id 的**任务清单。
+ *
+ * 为什么必须带 id：功能一的提议要求写 taskId，程序据此校验"这个任务真的存在"。
+ * 如果只给标题，AI 只能凭标题编一个 id，校验一定失败——那等于功能不可用。
+ * 因此上下文里同时给 title（给人看/AI 理解）和 id（给程序用）。
+ *
+ * 返回的是**对象**而不是纯文本：服务端会把它序列化后拼进系统侧，
+ * 前端只负责选出必要字段，不决定最终文本形态。
+ *
+ * @param {object} state
+ * @param {{date: string}} now
+ * @returns {object|null} null 表示没有可提供的上下文
+ */
+export function buildStructuredContext(state, now) {
+  const tasks = Array.isArray(state?.tasks) ? state.tasks : [];
+  const sessions = Array.isArray(state?.sessions) ? state.sessions : [];
+  const active = tasks.filter((task) => task.status === 'not_started' || task.status === 'in_progress');
+  if (active.length === 0) return null;
+
+  const entry = {
+    date: now?.date ?? null,
+    latestSleepMinutes: Number.isInteger(state?.settings?.latestSleepMinutes) ? state.settings.latestSleepMinutes : null,
+    tasks: [],
+    todaySessions: [],
+  };
+
+  const sorted = [...active].sort((a, b) =>
+    `${a.deadlineDate}${a.deadlineTime}`.localeCompare(`${b.deadlineDate}${b.deadlineTime}`),
+  );
+  for (const task of sorted.slice(0, 8)) {
+    const done = sessions
+      .filter((session) => session.taskId === task.id && session.state === 'completed')
+      .reduce((sum, session) => sum + (session.actualMinutes ?? session.plannedMinutes ?? 0), 0);
+    entry.tasks.push({
+      id: task.id,
+      title: task.title,
+      subject: task.subject,
+      plannedMinutes: task.plannedMinutes,
+      remainingMinutes: Math.max(0, (task.plannedMinutes ?? 0) - done),
+      deadline: `${task.deadlineDate} ${task.deadlineTime}`,
+      importance: task.importance,
+    });
+  }
+
+  entry.todaySessions = sessions
+    .filter((session) => session.date === entry.date)
+    .sort((a, b) => a.startMinutes - b.startMinutes)
+    .slice(0, 12)
+    .map((session) => ({ taskId: session.taskId, start: session.startMinutes, end: session.endMinutes, state: session.state }));
+
+  return entry;
+}
+
 export function buildScheduleContext(state, now) {
   const tasks = Array.isArray(state?.tasks) ? state.tasks : [];
   const sessions = Array.isArray(state?.sessions) ? state.sessions : [];
@@ -81,7 +135,8 @@ export async function sendMessage(input, options = {}) {
 
   const body = {
     messages: normalizeMessages(input.messages ?? []),
-    context: String(input.context ?? '').slice(0, 4000),
+    // context 可以是纯文本，也可以是结构化对象（含任务 id）
+    context: input.context ?? '',
   };
   if (body.messages.length === 0) {
     return { ok: false, code: 'empty', message: '请先输入你想问的问题。', retryable: false };
