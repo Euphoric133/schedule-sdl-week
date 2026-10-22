@@ -14,29 +14,34 @@
  */
 
 import {
+  RING_CIRCUMFERENCE,
+  RING_RADIUS,
+  TIMER_MODE,
   TIMER_STATUS,
   advanceTimer,
-  elapsedSeconds,
+  computeDisplaySeconds,
+  computeElapsedSeconds,
+  computeProgress,
+  drawableProgress,
+  formatStudyClock,
   loadTimer,
+  loadPrefs,
+  overrunSeconds,
   pauseTimer,
-  remainingSeconds,
   resumeTimer,
+  ringDashOffset,
+  savePrefs,
   saveTimer,
   startTimer,
+  switchMode,
 } from '../services/studyTimer.js';
 
 const PANEL_KEY = '__studyTimerPanel';
 const AUTO_CHECK_MS = 15_000;
 
-/** 秒 → mm:ss / h:mm:ss */
+/** 秒 → mm:ss / h:mm:ss（与计时盘使用同一实现） */
 export function formatRemaining(totalSeconds) {
-  const safe = Math.max(0, Math.round(totalSeconds));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const seconds = safe % 60;
-  const mm = String(minutes).padStart(2, '0');
-  const ss = String(seconds).padStart(2, '0');
-  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+  return formatStudyClock(totalSeconds);
 }
 
 /** 分钟数 → HH:mm */
@@ -61,6 +66,24 @@ export function schedulePhaseOf(task, now) {
 
 const STYLE_ID = '__study-timer-style';
 const CSS = `
+.st-ring{position:relative;width:min(280px,70vw);aspect-ratio:1;margin:0 auto;display:grid;place-items:center}
+.st-ring__svg{position:absolute;inset:0;width:100%;height:100%}
+.st-ring__track{opacity:.9}
+.st-ring__progress{transition:stroke-dashoffset 220ms linear;filter:drop-shadow(0 0 10px var(--ring-progress, var(--accent, #4a7c59)))}
+.st-ring__center{position:relative;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px}
+.st-ring__phase{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#6b7a72}
+.st-ring__time{font-family:var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-variant-numeric:tabular-nums;font-size:clamp(30px,5vw,40px);font-weight:650;letter-spacing:.5px}
+.st-ring__hint{font-size:11.5px;color:#6b7a72;max-width:180px}
+.st-ring__chip{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:11.5px;color:#4a7c59;background:#eef5f0;border-radius:999px;padding:2px 10px}
+.st-ring__percent{text-align:center;color:#5c6b63;font-size:12.5px;margin:8px 0 2px}
+.st-modes{display:flex;gap:8px;justify-content:center;margin:10px 0 2px}
+.st-mode{padding:6px 14px;border-radius:999px;border:1px solid #d7ded9;background:#f6f8f6;
+  color:#4a5a51;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.st-mode--active{background:#4a7c59;border-color:#4a7c59;color:#fff}
+@media (prefers-reduced-motion: reduce){.st-ring__progress{transition:none;filter:none}}
+
 .st-host{position:fixed;inset:0;z-index:9000;display:none;flex-direction:column;
   background:#f7f5f0;color:#22302a;font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
 .st-host[data-open="true"]{display:flex}
@@ -122,6 +145,8 @@ export function mountStudyTimerPanel(frame) {
 
   const state = {
     timer: loadTimer(),
+    prefs: loadPrefs(),
+    pendingTask: null,
     tick: null,
     auto: null,
     confirmArmed: false,
@@ -170,17 +195,90 @@ export function mountStudyTimerPanel(frame) {
 
   const timerCard = doc.createElement('div');
   timerCard.className = 'st-card';
+
+  /* ---------- 圆形计时盘（对齐花园番茄钟几何） ---------- */
+  const stage = doc.createElement('div');
+  stage.className = 'st-ring';
+  const svgNS = 'http://www.w3.org/2000/svg';
+
+  const svg = doc.createElementNS ? doc.createElementNS(svgNS, 'svg') : doc.createElement('svg');
+  svg.setAttribute('viewBox', '0 0 300 300');
+  svg.setAttribute('role', 'timer');
+  svg.setAttribute('aria-label', '学习任务计时');
+  svg.setAttribute('class', 'st-ring__svg');
+  svg.style.transform = 'rotate(-90deg)';
+
+  const track = doc.createElementNS ? doc.createElementNS(svgNS, 'circle') : doc.createElement('circle');
+  track.setAttribute('cx', '150');
+  track.setAttribute('cy', '150');
+  track.setAttribute('r', String(RING_RADIUS));
+  track.setAttribute('fill', 'none');
+  track.setAttribute('stroke', 'var(--ring-track, rgba(0,0,0,.08))');
+  track.setAttribute('stroke-width', '12');
+  track.setAttribute('class', 'st-ring__track');
+
+  const progressCircle = doc.createElementNS ? doc.createElementNS(svgNS, 'circle') : doc.createElement('circle');
+  progressCircle.setAttribute('cx', '150');
+  progressCircle.setAttribute('cy', '150');
+  progressCircle.setAttribute('r', String(RING_RADIUS));
+  progressCircle.setAttribute('fill', 'none');
+  progressCircle.setAttribute('stroke', 'var(--ring-progress, var(--accent, #4a7c59))');
+  progressCircle.setAttribute('stroke-width', '12');
+  progressCircle.setAttribute('stroke-linecap', 'round');
+  progressCircle.setAttribute('stroke-dasharray', String(RING_CIRCUMFERENCE));
+  progressCircle.setAttribute('stroke-dashoffset', String(ringDashOffset(drawableProgress(0))));
+  progressCircle.setAttribute('class', 'st-ring__progress');
+
+  svg.append(track, progressCircle);
+
+  const center = doc.createElement('div');
+  center.className = 'st-ring__center';
+  const phase = doc.createElement('div');
+  phase.className = 'st-ring__phase';
+  phase.textContent = '学习任务';
   const clock = doc.createElement('div');
-  clock.className = 'st-clock';
-  clock.textContent = '--:--';
-  const sub = doc.createElement('div');
-  sub.className = 'st-sub';
-  sub.textContent = '从左侧选一个任务开始';
+  clock.className = 'st-ring__time';
+  clock.textContent = '00:00';
+  const hint = doc.createElement('div');
+  hint.className = 'st-ring__hint';
+  hint.textContent = '准备好后点击开始';
+  const chip = doc.createElement('div');
+  chip.className = 'st-ring__chip';
+  chip.style.display = 'none';
+  center.append(phase, clock, hint, chip);
+  stage.append(svg, center);
+
+  const percentLine = doc.createElement('div');
+  percentLine.className = 'st-ring__percent';
+  percentLine.textContent = '';
+
+  /* ---------- 模式切换 ---------- */
+  const modeRow = doc.createElement('div');
+  modeRow.className = 'st-modes';
+  const countdownBtn = doc.createElement('button');
+  countdownBtn.type = 'button';
+  countdownBtn.className = 'st-mode';
+  countdownBtn.textContent = '倒计时';
+  countdownBtn.setAttribute('aria-label', '切换到倒计时模式');
+  const countupBtn = doc.createElement('button');
+  countupBtn.type = 'button';
+  countupBtn.className = 'st-mode';
+  countupBtn.textContent = '正计时';
+  countupBtn.setAttribute('aria-label', '切换到正计时模式');
+  modeRow.append(countdownBtn, countupBtn);
+
   const flag = doc.createElement('div');
   flag.className = 'st-flag';
   flag.style.display = 'none';
+
   const actions = doc.createElement('div');
   actions.className = 'st-actions';
+
+  const startBtn = doc.createElement('button');
+  startBtn.type = 'button';
+  startBtn.className = 'st-btn';
+  startBtn.textContent = '开始专注';
+  startBtn.disabled = true;
 
   const pauseBtn = doc.createElement('button');
   pauseBtn.type = 'button';
@@ -197,8 +295,8 @@ export function mountStudyTimerPanel(frame) {
   abandonBtn.className = 'st-btn st-btn--ghost';
   abandonBtn.textContent = '放弃本次';
 
-  actions.append(pauseBtn, finishBtn, abandonBtn);
-  timerCard.append(clock, sub, flag, actions);
+  actions.append(startBtn, pauseBtn, finishBtn, abandonBtn);
+  timerCard.append(stage, percentLine, modeRow, flag, actions);
   body.append(listCard, timerCard);
   host.append(head, body);
   doc.body.append(host);
@@ -220,16 +318,31 @@ export function mountStudyTimerPanel(frame) {
     }
   }
 
+  function paintModeButtons() {
+    const mode = state.timer?.mode ?? state.prefs.mode;
+    countdownBtn.setAttribute('aria-pressed', mode === TIMER_MODE.COUNTDOWN ? 'true' : 'false');
+    countupBtn.setAttribute('aria-pressed', mode === TIMER_MODE.COUNTUP ? 'true' : 'false');
+    countdownBtn.className = mode === TIMER_MODE.COUNTDOWN ? 'st-mode st-mode--active' : 'st-mode';
+    countupBtn.className = mode === TIMER_MODE.COUNTUP ? 'st-mode st-mode--active' : 'st-mode';
+  }
+
   function renderTimer() {
     const current = state.timer;
+    paintModeButtons();
+
     if (!current) {
-      clock.textContent = '--:--';
-      sub.textContent = '从左侧选一个任务开始';
+      const planned = state.pendingTask?.minutes ?? 0;
+      clock.textContent = planned > 0 ? formatStudyClock(planned * 60, { withHours: planned * 60 >= 3600 }) : '00:00';
+      phase.textContent = '学习任务';
+      hint.textContent = state.pendingTask ? '准备好后点击开始' : '从左侧选一个任务开始';
+      chip.style.display = 'none';
+      percentLine.textContent = planned > 0 ? `计划 ${planned} 分钟` : '';
+      progressCircle.setAttribute('stroke-dashoffset', String(ringDashOffset(drawableProgress(0))));
       flag.style.display = 'none';
+      startBtn.disabled = !state.pendingTask;
       pauseBtn.disabled = true;
       finishBtn.disabled = true;
       abandonBtn.disabled = true;
-      finishBtn.textContent = '提前结束';
       navBadge.textContent = '';
       return;
     }
@@ -240,33 +353,59 @@ export function mountStudyTimerPanel(frame) {
       persist();
     }
 
-    const left = remainingSeconds(state.timer, nowMs());
-    clock.textContent = formatRemaining(left);
-    const expired = state.timer.status === TIMER_STATUS.EXPIRED;
-    const paused = state.timer.status === TIMER_STATUS.PAUSED;
+    const timer = state.timer;
+    const elapsed = computeElapsedSeconds(timer, nowMs());
+    const display = computeDisplaySeconds(timer, nowMs());
+    const progress = computeProgress(elapsed, timer.plannedSeconds);
+    const expired = timer.status === TIMER_STATUS.EXPIRED;
+    const paused = timer.status === TIMER_STATUS.PAUSED;
+
+    clock.textContent = formatStudyClock(display, { withHours: timer.plannedSeconds >= 3600 });
+    phase.textContent = '学习任务';
+    chip.style.display = 'inline-block';
+    chip.textContent = timer.title;
+    chip.setAttribute('title', timer.title);
+    progressCircle.setAttribute('stroke-dashoffset', String(ringDashOffset(drawableProgress(progress))));
+    progressCircle.classList.toggle('st-ring__progress--low', progress < 0.0001);
+
+    const percent = Math.round(progress * 100);
+    const doneMinutes = Math.round(elapsed / 60);
+    const plannedMinutes = Math.round(timer.plannedSeconds / 60);
+    if (timer.mode === TIMER_MODE.COUNTUP && overrunSeconds(timer, nowMs()) > 0) {
+      percentLine.textContent = `已完成 100% · 已超过计划 ${Math.floor(overrunSeconds(timer, nowMs()) / 60)} 分钟`;
+    } else {
+      percentLine.textContent = `已完成 ${percent}% · ${doneMinutes} / ${plannedMinutes} 分钟`;
+    }
 
     pauseBtn.disabled = expired;
+    startBtn.disabled = true;
     finishBtn.disabled = false;
     abandonBtn.disabled = false;
     pauseBtn.textContent = paused ? '继续' : '暂停';
-    navBadge.textContent = paused || expired ? '' : formatRemaining(left);
+    navBadge.textContent = paused || expired ? '' : formatStudyClock(display, { withHours: timer.plannedSeconds >= 3600 });
 
     if (expired) {
-      sub.textContent = `${state.timer.title} · ${state.timer.minutes} 分钟已走完`;
+      hint.textContent = '已到时间，请确认完成';
       flag.style.display = 'block';
-      flag.textContent = '已到时间，请确认完成（系统不会自动修改数据）';
+      flag.textContent = '系统不会自动修改数据，确认后才会标记完成';
       finishBtn.textContent = '确认完成';
       finishBtn.className = 'st-btn';
       return;
     }
 
     flag.style.display = 'none';
-    finishBtn.className =
-      state.confirmArmed ? 'st-btn' : 'st-btn st-btn--warn';
-    finishBtn.textContent = state.confirmArmed ? '再点一次确认结束' : '提前结束';
-    sub.textContent = paused
-      ? `已暂停 · ${state.timer.title}（剩余 ${formatRemaining(left)}）`
-      : `正在专注 · ${state.timer.title}（共 ${state.timer.minutes} 分钟）`;
+    finishBtn.className = state.confirmArmed ? 'st-btn' : 'st-btn st-btn--warn';
+    finishBtn.textContent =
+      state.confirmArmed
+        ? '再点一次确认结束'
+        : timer.mode === TIMER_MODE.COUNTUP
+          ? '完成专注'
+          : '提前结束';
+    hint.textContent = paused
+      ? '已暂停 · 剩余时间已保留'
+      : timer.mode === TIMER_MODE.COUNTUP
+        ? '正计时进行中'
+        : '保持专注，剩下的交给计时器';
   }
 
   function startTicking() {
@@ -275,7 +414,11 @@ export function mountStudyTimerPanel(frame) {
   }
 
   function startFor(task) {
-    state.timer = startTimer(task, nowMs());
+    state.pendingTask = task;
+    state.timer = startTimer(
+      { ...task, mode: state.prefs.mode ?? TIMER_MODE.COUNTDOWN },
+      nowMs(),
+    );
     state.confirmArmed = false;
     persist();
     renderTimer();
@@ -289,7 +432,6 @@ export function mountStudyTimerPanel(frame) {
 
     const expired = timer.status === TIMER_STATUS.EXPIRED;
     if (!expired && !state.confirmArmed) {
-      // 二次确认：第一次点击只是"上膛"，4 秒内再点才真正结束
       state.confirmArmed = true;
       renderTimer();
       globalThis.setTimeout(() => {
@@ -299,11 +441,11 @@ export function mountStudyTimerPanel(frame) {
       return;
     }
 
-    const used = expired
-      ? timer.minutes
-      : Math.max(1, Math.round(elapsedSeconds(timer, nowMs()) / 60));
+    const elapsed = computeElapsedSeconds(timer, nowMs());
+    const used = expired ? Math.round(timer.plannedSeconds / 60) : Math.max(1, Math.round(elapsed / 60));
 
     state.timer = null;
+    state.pendingTask = null;
     state.confirmArmed = false;
     persist();
     stopTicking();
@@ -319,6 +461,7 @@ export function mountStudyTimerPanel(frame) {
 
   function abandonTimer() {
     state.timer = null;
+    state.pendingTask = null;
     state.confirmArmed = false;
     persist();
     stopTicking();
@@ -386,6 +529,10 @@ export function mountStudyTimerPanel(frame) {
   });
   back.addEventListener('click', () => host.setAttribute('data-open', 'false'));
 
+  startBtn.addEventListener('click', () => {
+    if (state.pendingTask && !state.timer) startFor(state.pendingTask);
+  });
+
   pauseBtn.addEventListener('click', () => {
     if (!state.timer) return;
     state.timer =
@@ -395,6 +542,20 @@ export function mountStudyTimerPanel(frame) {
     persist();
     renderTimer();
   });
+
+  /** 切换模式：运行中也允许，已专注时间不丢 */
+  function applyMode(mode) {
+    state.prefs = { ...state.prefs, mode };
+    savePrefs(state.prefs);
+    if (state.timer) {
+      state.timer = switchMode(state.timer, mode, nowMs());
+      persist();
+    }
+    renderTimer();
+    renderList();
+  }
+  countdownBtn.addEventListener('click', () => applyMode(TIMER_MODE.COUNTDOWN));
+  countupBtn.addEventListener('click', () => applyMode(TIMER_MODE.COUNTUP));
 
   finishBtn.addEventListener('click', finishTimer);
   abandonBtn.addEventListener('click', abandonTimer);

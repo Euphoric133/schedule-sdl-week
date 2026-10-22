@@ -155,3 +155,79 @@ test('注入：在花园侧边栏追加「学习任务计时」入口，并挂�
     delete globalThis.parent;
   }
 });
+
+/* ---------------- 计时盘 DOM ---------------- */
+
+test('计时盘：注入 300×300 的 SVG、两个半径 144、线宽 12 的圆，并旋转 -90°', async () => {
+  const { readFile, writeFile } = await import('node:fs/promises');
+  const { join, resolve } = await import('node:path');
+  const root = resolve(import.meta.dirname, '..', '..');
+  const smoke = await readFile(join(root, 'tests', 'integration', 'ui-smoke.test.js'), 'utf8');
+  const code = smoke.slice(smoke.indexOf('class FakeClassList'), smoke.indexOf("test('界面启动")) + '\nexport { installFakeDom };';
+  await writeFile('/tmp/panel-ring-fakedom.mjs', code);
+  const { installFakeDom } = await import('/tmp/panel-ring-fakedom.mjs');
+  const { RING_CIRCUMFERENCE, ringDashOffset, drawableProgress } = await import('../../src/services/studyTimer.js');
+
+  const dom = installFakeDom();
+  const doc = dom.document;
+  const proto = Object.getPrototypeOf(doc.createElement('div'));
+  if (typeof proto.append !== 'function') {
+    proto.append = function append(...nodes) {
+      for (const node of nodes) this.appendChild(node);
+    };
+  }
+  const nav = doc.createElement('ul');
+  nav.setAttribute('class', 'nav-list');
+  doc.body.appendChild(nav);
+
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: (key) => store.delete(key),
+  };
+  globalThis.parent = {
+    __plannerGardenApi: {
+      listStudyTasks: () => [{ plannerId: 't1', gardenId: 'g1', title: '两小时项目', startMinutes: 1343, minutes: 120 }],
+      completeStudyTask: () => ({ ok: true }),
+    },
+  };
+
+  try {
+    mountStudyTimerPanel({ contentDocument: doc });
+    const panel = doc.body.__studyTimerPanel;
+    panel.open();
+    const nodes = panel.host.all();
+
+    const svg = nodes.find((node) => String(node.tagName).toLowerCase() === 'svg');
+    assert.ok(svg, '应存在计时盘 SVG');
+    assert.equal(svg.getAttribute('viewBox'), '0 0 300 300');
+    assert.match(String(svg.style?.transform ?? ''), /rotate\(-90deg\)/, '应从 12 点方向起始');
+
+    const circles = nodes.filter((node) => String(node.tagName).toLowerCase() === 'circle');
+    assert.equal(circles.length, 2, '轨道 + 进度两个圆');
+    for (const circle of circles) {
+      assert.equal(circle.getAttribute('r'), '144');
+      assert.equal(circle.getAttribute('stroke-width'), '12');
+      assert.equal(circle.getAttribute('fill'), 'none');
+    }
+
+    const progressCircle = circles[1];
+    assert.equal(Number(progressCircle.getAttribute('stroke-dasharray')), RING_CIRCUMFERENCE);
+    assert.equal(progressCircle.getAttribute('stroke-linecap'), 'round');
+    assert.ok(
+      Math.abs(Number(progressCircle.getAttribute('stroke-dashoffset')) - ringDashOffset(drawableProgress(0))) < 0.01,
+      '空闲时使用最小圆弧',
+    );
+
+    // 两种模式按钮都在，且有无障碍名称
+    const modeButtons = nodes.filter((node) => String(node.className).split(' ').includes('st-mode'));
+    assert.equal(modeButtons.length, 2);
+    assert.deepEqual(modeButtons.map((node) => node.textContent), ['倒计时', '正计时']);
+    assert.ok(modeButtons.every((node) => node.getAttribute('aria-label')));
+    assert.equal(nodes.find((node) => node.getAttribute('role') === 'timer') !== undefined, true, '计时盘应有 role=timer');
+  } finally {
+    delete globalThis.localStorage;
+    delete globalThis.parent;
+  }
+});

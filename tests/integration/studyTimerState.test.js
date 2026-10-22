@@ -18,6 +18,7 @@ import {
   pauseTimer,
   remainingSeconds,
   resumeTimer,
+  restoreStudyTimer,
   saveTimer,
   startTimer,
 } from '../../src/services/studyTimer.js';
@@ -80,9 +81,9 @@ test('持久化：损坏的数据被安全忽略', () => {
     store.set(TIMER_STORAGE_KEY, JSON.stringify({ plannerId: '', startedAt: 1, targetAt: 2 }));
     assert.equal(loadTimer(), null, '没有任务 id 的状态无效');
 
-    store.set(TIMER_STORAGE_KEY, JSON.stringify({ plannerId: 't1', startedAt: 1, targetAt: 2, status: 'weird' }));
-    const loaded = loadTimer();
-    assert.equal(loaded.status, TIMER_STATUS.RUNNING, '未知状态回退为 running');
+    // 未知状态回退为 running；这里用固定 now 隔离"时间推进"的影响
+    const restored = restoreStudyTimer({ plannerId: 't1', startedAt: 1000, targetAt: 922_337_203_685_477, status: 'weird' }, 2000);
+    assert.equal(restored.status, TIMER_STATUS.RUNNING, '未知状态回退为 running');
   } finally {
     delete globalThis.localStorage;
   }
