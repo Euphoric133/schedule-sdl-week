@@ -212,3 +212,157 @@
 :root[data-wallpaper='on'] .app-main {
   background: transparent;
 }
+
+/* ==========================================================================
+   液态玻璃（Liquid Glass）材质令牌
+   ==========================================================================
+
+   阅读顺序很重要，这里记录**为什么这么分层**：
+
+   项目曾经因为"壁纸 + 全页 backdrop-filter + 半透明卡片"导致整页发蒙。
+   所以这次的玻璃只覆盖三类**离散表面**，绝不作用于 body / .app / .app-main：
+
+     Tier 1 外壳（品牌区、顶栏、侧边栏）：真模糊，因为它们是固定的窄条；
+     Tier 2 内容卡片：只做"高不透明度玻璃 tint"，**不模糊**（正文可读性优先）；
+     Tier 3 浮层（弹窗、Toast、菜单）：最强玻璃 + 更大阴影。
+
+   壁纸开启时所有玻璃再提高约 8% 不透明度，保证任何照片下都清晰。
+   ========================================================================== */
+
+:root {
+  /* —— 模糊与饱和 —— */
+  --glass-blur: 20px;
+  --glass-blur-strong: 26px;
+  --glass-blur-soft: 12px; /* 移动端降级 */
+  --glass-saturate: 165%;
+
+  /* —— 表面：外壳（Tier 1） —— */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-bg-hover: rgba(255, 255, 255, 0.82);
+
+  /* —— 表面：内容卡片（Tier 2）—— 不模糊，靠不透明度承载文字 */
+  --glass-bg-card: rgba(255, 255, 255, 0.9);
+  --glass-bg-card-hover: rgba(255, 255, 255, 0.95);
+
+  /* —— 表面：浮层（Tier 3） —— */
+  --glass-bg-strong: rgba(255, 255, 255, 0.86);
+
+  /* —— 边缘光与投影 —— */
+  --glass-border: rgba(255, 255, 255, 0.62);
+  --glass-border-outer: rgba(28, 36, 48, 0.08);
+  --glass-highlight: rgba(255, 255, 255, 0.62);
+  --glass-shade: rgba(28, 36, 48, 0.05);
+  --glass-shadow: 0 1px 2px rgba(28, 36, 48, 0.05), 0 8px 24px rgba(28, 36, 48, 0.07);
+  --glass-shadow-hover: 0 2px 4px rgba(28, 36, 48, 0.06), 0 14px 34px rgba(28, 36, 48, 0.1);
+  --glass-shadow-float: 0 8px 20px rgba(28, 36, 48, 0.12), 0 32px 64px rgba(28, 36, 48, 0.16);
+
+  /* —— 圆角与噪点 —— */
+  --glass-radius-lg: 22px;
+  --glass-radius-md: 14px;
+  --glass-radius-sm: 10px;
+  --glass-noise-opacity: 0.025;
+
+  /* —— 氛围色场（背景光斑） —— */
+  --ambient-1: rgba(120, 165, 235, 0.14);
+  --ambient-2: rgba(96, 196, 178, 0.12);
+  --ambient-3: rgba(214, 178, 94, 0.1);
+  --ambient-opacity: 1;
+
+  /* —— 鼠标高光位置（由 JS 更新） —— */
+  --glass-x: 50%;
+  --glass-y: 0%;
+}
+
+/* 深色：烟熏玻璃，不纯黑；边框高光更细，阴影更重 */
+:root[data-theme='dark'] {
+  --glass-bg: rgba(26, 31, 39, 0.7);
+  --glass-bg-hover: rgba(34, 40, 51, 0.82);
+  --glass-bg-card: rgba(26, 31, 39, 0.92);
+  --glass-bg-card-hover: rgba(34, 40, 51, 0.96);
+  --glass-bg-strong: rgba(26, 31, 39, 0.88);
+
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-border-outer: rgba(0, 0, 0, 0.4);
+  --glass-highlight: rgba(255, 255, 255, 0.16);
+  --glass-shade: rgba(0, 0, 0, 0.28);
+  --glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.34);
+  --glass-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.44), 0 16px 38px rgba(0, 0, 0, 0.42);
+  --glass-shadow-float: 0 10px 24px rgba(0, 0, 0, 0.5), 0 36px 72px rgba(0, 0, 0, 0.55);
+
+  --ambient-1: rgba(90, 130, 200, 0.14);
+  --ambient-2: rgba(60, 140, 130, 0.1);
+  --ambient-3: rgba(180, 150, 80, 0.08);
+  --ambient-opacity: 0.9;
+}
+
+/* 跟随系统深色 */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='system'],
+  :root:not([data-theme]) {
+    --glass-bg: rgba(26, 31, 39, 0.7);
+    --glass-bg-hover: rgba(34, 40, 51, 0.82);
+    --glass-bg-card: rgba(26, 31, 39, 0.92);
+    --glass-bg-card-hover: rgba(34, 40, 51, 0.96);
+    --glass-bg-strong: rgba(26, 31, 39, 0.88);
+
+    --glass-border: rgba(255, 255, 255, 0.14);
+    --glass-border-outer: rgba(0, 0, 0, 0.4);
+    --glass-highlight: rgba(255, 255, 255, 0.16);
+    --glass-shade: rgba(0, 0, 0, 0.28);
+    --glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.34);
+    --glass-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.44), 0 16px 38px rgba(0, 0, 0, 0.42);
+    --glass-shadow-float: 0 10px 24px rgba(0, 0, 0, 0.5), 0 36px 72px rgba(0, 0, 0, 0.55);
+
+    --ambient-1: rgba(90, 130, 200, 0.14);
+    --ambient-2: rgba(60, 140, 130, 0.1);
+    --ambient-3: rgba(180, 150, 80, 0.08);
+    --ambient-opacity: 0.9;
+  }
+}
+
+/* 壁纸开启：玻璃更实（+6%~10%），否则照片会透上来把字搅浑 */
+:root[data-wallpaper='on'] {
+  --glass-bg: rgba(255, 255, 255, 0.82);
+  --glass-bg-hover: rgba(255, 255, 255, 0.9);
+  --glass-bg-card: rgba(255, 255, 255, 0.94);
+  --glass-bg-card-hover: rgba(255, 255, 255, 0.97);
+  --glass-bg-strong: rgba(255, 255, 255, 0.92);
+  --glass-border: rgba(255, 255, 255, 0.7);
+  --glass-shadow: 0 1px 2px rgba(20, 26, 34, 0.08), 0 10px 28px rgba(20, 26, 34, 0.12);
+  --glass-shadow-hover: 0 2px 4px rgba(20, 26, 34, 0.1), 0 16px 38px rgba(20, 26, 34, 0.16);
+}
+
+:root[data-wallpaper='on'][data-theme='dark'] {
+  --glass-bg: rgba(26, 31, 39, 0.8);
+  --glass-bg-hover: rgba(34, 40, 51, 0.88);
+  --glass-bg-card: rgba(24, 29, 37, 0.95);
+  --glass-bg-card-hover: rgba(30, 36, 46, 0.97);
+  --glass-bg-strong: rgba(26, 31, 39, 0.94);
+}
+
+/* —— 降级：不支持 backdrop-filter 的浏览器 —— */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --glass-bg: var(--color-surface);
+    --glass-bg-hover: var(--color-surface-alt);
+    --glass-bg-card: var(--color-surface);
+    --glass-bg-card-hover: var(--color-surface);
+    --glass-bg-strong: var(--color-surface);
+    --glass-border: var(--color-border);
+    --glass-highlight: transparent;
+  }
+}
+
+/* —— 降级：用户要求减少透明 —— */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-bg: var(--color-surface);
+    --glass-bg-hover: var(--color-surface);
+    --glass-bg-card: var(--color-surface);
+    --glass-bg-card-hover: var(--color-surface);
+    --glass-bg-strong: var(--color-surface);
+    --glass-border: var(--color-border);
+    --glass-highlight: transparent;
+    --ambient-opacity: 0;
+  }
+}

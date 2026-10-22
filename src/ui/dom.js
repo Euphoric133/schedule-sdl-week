@@ -139,7 +139,7 @@ export function isTickerRunning() {
 /** 提示条（页面级，轻量，不用 window.alert 打断用户） */
 export function toast(message, level = 'info', timeoutMs = 4000) {
   const host = qs('#toast-host') ?? document.body;
-  const node = el(`div.notice.notice--${level === 'error' ? 'danger' : level}`, { role: 'status' }, [
+  const node = el(`div.notice.notice--${level === 'error' ? 'danger' : level}`, { role: 'status', 'data-glass': '' }, [
     el('div', { text: message }),
   ]);
   node.style.marginBottom = 'var(--space-2)';

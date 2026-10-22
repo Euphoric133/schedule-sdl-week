@@ -32,7 +32,7 @@ import { mountStudyTimerPanel, refreshStudyTimerPanel } from './gardenPanel.js';
 export function createShell({ root, app, services, pages, now, todayInfo = null }) {
   clear(root);
 
-  const brand = el('div.app-brand', {}, [el('span.app-brand__mark'), el('span', { text: '七天学习规划器' })]);
+  const brand = el('div.app-brand', { 'data-glass': '' }, [el('span.app-brand__mark'), el('span', { text: '七天学习规划器' })]);
 
   const todayLabel = el('span', { text: todayInfo ? `今天 ${todayInfo.date} ${todayInfo.weekday}` : '今天' });
   const planLabel = el('span');
@@ -58,14 +58,14 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
     },
   });
 
-  const topbar = el('header.app-topbar', {}, [
+  const topbar = el('header.app-topbar', { 'data-glass': '' }, [
     el('div.app-topbar__meta', {}, [todayLabel, planLabel]),
     el('div.app-topbar__actions', {}, [fileInput, importButton, exportButton]),
   ]);
 
   const navList = el('ul.app-nav__list');
   const navFoot = el('div.app-nav__foot');
-  const nav = el('nav.app-nav', { 'aria-label': '主导航' }, [navList, navFoot]);
+  const nav = el('nav.app-nav', { 'aria-label': '主导航', 'data-glass': '' }, [navList, navFoot]);
   const banner = el('div', { id: 'global-banner', style: { margin: 'var(--space-4) var(--space-5) 0' } });
 
   const main = el('main.app-main', { id: 'main-content', tabindex: '-1' });
@@ -95,6 +95,15 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
   root.appendChild(shell);
   root.appendChild(banner);
   root.appendChild(toastHost);
+
+  /**
+   * 背景氛围层：纯装饰，不接收事件、不进无障碍树。
+   * 放在最后追加（顺序无关，因为它是 z-index: -2），
+   * 这样 `root.children[0]` 仍然是应用外壳 `.app`。
+   */
+  root.appendChild(el('div.ambient-field', { 'aria-hidden': 'true' }));
+
+  installGlassHighlight();
 
   function handleExport() {
     const { text, filename } = app.exportBackup();
@@ -257,6 +266,50 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
     }
   }
 
+  /**
+   * 给玻璃表面打 `data-glass` 标记（样式里据此挂镜面高光）。
+   * 只在 DOM 构建完成后统一标记，组件里不散落硬编码。
+   */
+  function markGlassSurfaces(scope = document) {
+    // 声明式标记在构建时就加好了；这里只兜底补漏（例如页面自行拼出来的表面）
+    const selector = '.app-brand, .app-topbar, .app-nav, .card, .metric, dialog, .notice';
+    for (const node of scope.querySelectorAll?.(selector) ?? []) {
+      if (!node.hasAttribute('data-glass')) node.setAttribute('data-glass', '');
+    }
+  }
+
+  /**
+   * 鼠标镜面高光：一个委托监听 + rAF 节流。
+   * 触摸设备、减少动态效果时直接不启用。
+   */
+  function installGlassHighlight() {
+    const reduce = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+    const coarse = globalThis.matchMedia?.('(hover: none)')?.matches === true;
+    if (reduce || coarse) return;
+
+    let pending = null;
+    let frame = 0;
+
+    const flush = () => {
+      frame = 0;
+      if (!pending) return;
+      const { target, x, y } = pending;
+      pending = null;
+      const rect = target.getBoundingClientRect?.();
+      if (!rect || rect.width === 0 || rect.height === 0) return;
+      target.style.setProperty('--glass-x', `${((x - rect.left) / rect.width) * 100}%`);
+      target.style.setProperty('--glass-y', `${((y - rect.top) / rect.height) * 100}%`);
+    };
+
+    document.addEventListener('pointermove', (event) => {
+      if (event.pointerType === 'touch') return;
+      const target = event.target?.closest?.('[data-glass]');
+      if (!target) return;
+      pending = { target, x: event.clientX, y: event.clientY };
+      if (frame === 0) frame = globalThis.requestAnimationFrame(flush);
+    }, { passive: true });
+  }
+
   let currentRoute = null;
 
   function render(route = parseHash()) {
@@ -290,6 +343,8 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
       shell.removeAttribute('data-mode');
     }
 
+    markGlassSurfaces();
+
     const page = pages[route.path];
     clear(main);
     if (!page || route.unknownPath) {
@@ -318,6 +373,8 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
       };
       const content = page({ app, services, route, now, today: now().date, requestTick, renderPage: () => shellRender() });
       append(main, content);
+      // 页面内容进来之后再打一次玻璃标记（新渲染的卡片 / 磁贴）
+      markGlassSurfaces(main);
       if (!tickRequested) stopTicker();
     } catch (err) {
       // 单个页面渲染失败不能让整个应用白屏：显示错误并给出重试入口

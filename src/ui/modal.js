@@ -88,6 +88,7 @@ export function confirmDialog({
       if (event.target === dialog) close(false);
     });
 
+    dialog.setAttribute('data-glass', '');
     document.body.appendChild(dialog);
     dialog.showModal();
     // 焦点落在取消按钮上，避免用户连续回车误触危险操作

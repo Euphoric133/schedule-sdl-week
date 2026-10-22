@@ -48,14 +48,31 @@ test('背景：壁纸层必须在内容之下（负 z-index），且不接收鼠
   assert.match(after.slice(0, 300), /opacity:\s*0?\.\d+/, '壁纸必须有半透明遮罩');
 });
 
-test('背景：不再对承载内容的卡片使用 backdrop-filter 或半透明底色', async () => {
+test('背景：整页容器与内容卡片绝不使用 backdrop-filter（液态玻璃只作用于离散表面）', async () => {
   const tokens = await readFile(join(projectRoot, 'src', 'ui', 'styles', 'tokens.css'), 'utf8');
   const components = await readFile(join(projectRoot, 'src', 'ui', 'styles', 'components.css'), 'utf8');
 
+  /** 去掉注释，避免把说明文字当成规则 */
+  const strip = (css) => css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  // 规则变更（v1.19）：玻璃允许用于外壳与浮层，但**整页容器**永远不行。
   for (const css of [tokens, components]) {
-    assert.equal(/backdrop-filter/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')), false, '不应再使用 backdrop-filter（会让界面发蒙）');
+    const body = strip(css);
+    for (const selector of ['body', '.app', '.app-main']) {
+      const rule = new RegExp(`(^|[},])\\s*${selector.replace('.', '\\.')}\\s*\\{[^}]*\\}`, 'g');
+      for (const block of body.match(rule) ?? []) {
+        assert.equal(/backdrop-filter/.test(block), false, `${selector} 不允许使用 backdrop-filter`);
+      }
+    }
   }
-  // 卡片在壁纸下也必须是不透明底色
+
+  // 承载正文的卡片只做 tint，不模糊
+  const cardRules = strip(components).match(/(^|[},])\s*\.card\s*\{[^}]*\}/g) ?? [];
+  for (const block of cardRules) {
+    assert.equal(/backdrop-filter/.test(block), false, '.card 不允许使用 backdrop-filter');
+  }
+
+  // 壁纸开启时卡片必须更实，而不是更透
   assert.equal(/:root\[data-wallpaper='on'\] \.card\s*\{/.test(tokens), false, '卡片不应因壁纸而变半透明');
 });
 

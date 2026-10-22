@@ -165,3 +165,57 @@ th {
   border-radius: 6px;
   border: 2px solid var(--color-bg);
 }
+
+/* ==========================================================================
+   氛围色场（Ambient field）
+   ==========================================================================
+
+   纯色背景看不出玻璃的模糊，所以要在内容之下放一层很淡的色场：
+   三个大尺寸径向光斑（冷蓝 / 青绿 / 暖金），缓慢漂移，透明度约 10%。
+
+   层级：z-index: -2 —— 在壁纸（-1）之下、页面背景之上。
+   这样壁纸开启时它会被壁纸盖住，不会把照片弄脏（壁纸自己也提供色彩）。
+
+   它不接收鼠标事件、不进入无障碍树，也不参与打印。
+   ========================================================================== */
+
+.ambient-field {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  opacity: var(--ambient-opacity);
+  background:
+    radial-gradient(52vw 52vw at 12% 8%, var(--ambient-1), transparent 68%),
+    radial-gradient(46vw 46vw at 88% 22%, var(--ambient-2), transparent 70%),
+    radial-gradient(56vw 56vw at 62% 96%, var(--ambient-3), transparent 72%);
+  animation: ambient-drift 36s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+/* 壁纸开启时隐藏：让壁纸自己当氛围，避免叠加后发脏 */
+:root[data-wallpaper='on'] .ambient-field {
+  display: none;
+}
+
+@keyframes ambient-drift {
+  from {
+    transform: translate3d(-1.5%, -1%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(1.5%, 1.5%, 0) scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-field {
+    animation: none;
+    transform: none;
+  }
+}
+
+@media print {
+  .ambient-field {
+    display: none;
+  }
+}

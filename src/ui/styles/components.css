@@ -1495,9 +1495,7 @@ legend {
 .day-tag--overdue { background: var(--color-danger-soft); color: var(--color-danger); }
 .day-tag--cancelled { background: var(--color-surface-alt); color: var(--color-text-faint); }
 
-}
-
-* ==========================================================================
+/* ==========================================================================
    布局与组件样式
    命名约定：块级用 .app- / .card / .btn / .pill / .state；修饰用 -modifier。
    所有颜色与间距都引用 tokens.css 中的变量。
@@ -3090,4 +3088,338 @@ legend {
   background: var(--color-success-soft, #eef5f0);
   color: var(--color-success, #2f6f4f);
   border-color: var(--color-success-border, #c8ddd1);
+}
+
+/* ==========================================================================
+   液态玻璃：分层应用
+   ==========================================================================
+
+   Tier 1 外壳（品牌区 / 顶栏 / 侧边栏）：真模糊。它们是固定的窄条，
+   背后是氛围色场，模糊后才看得出"玻璃"；而且不会盖住正文。
+
+   Tier 2 内容卡片：**不模糊**，只做高不透明度 tint + 边缘光。
+   正文承载在这里，模糊会把字搅浑——这是本项目之前"整页发蒙"的教训。
+
+   Tier 3 浮层（弹窗 / Toast）：最强玻璃 + 大阴影，形成明显的悬浮层级。
+   ========================================================================== */
+
+/* —— Tier 1：外壳 —— */
+.app-brand,
+.app-topbar,
+.app-nav {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border-color: var(--glass-border-outer);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), inset 0 -1px 0 var(--glass-shade);
+}
+
+.app-brand {
+  border-right-color: var(--glass-border-outer);
+  border-bottom-color: var(--glass-border-outer);
+}
+
+.app-topbar {
+  border-bottom-color: var(--glass-border-outer);
+}
+
+.app-nav {
+  border-right-color: var(--glass-border-outer);
+  /* 侧边栏底部有一条更高光的收口，像 macOS 窗口的分隔 */
+  border-bottom: 1px solid transparent;
+}
+
+/* 侧边栏的"顶部高光"再亮一点，模拟玻璃的受光面 */
+.app-brand::after,
+.app-topbar::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--glass-border), transparent);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.app-brand,
+.app-topbar {
+  position: relative;
+}
+
+/* —— Tier 2：内容卡片（tint，不模糊） —— */
+.card {
+  background: var(--glass-bg-card);
+  border: 1px solid var(--glass-border-outer);
+  border-radius: var(--glass-radius-lg);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 -1px 0 var(--glass-shade),
+    var(--glass-shadow);
+  transition: box-shadow 160ms ease, transform 160ms ease, background-color 160ms ease;
+}
+
+/* 更小的表面：圆角收窄，避免"胶囊化" */
+.day-card {
+  background: var(--glass-bg-card);
+  border: 1px solid var(--glass-border-outer);
+  border-radius: var(--glass-radius-sm);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--shadow-sm);
+}
+
+.task-item,
+.metric {
+  background: var(--glass-bg-card);
+  border: 1px solid var(--glass-border-outer);
+  border-radius: var(--glass-radius-md);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--shadow-sm);
+}
+
+/* 悬停：轻微上浮 + 阴影增强（克制，不做发光） */
+.card:hover,
+.metric:hover {
+  background: var(--glass-bg-card-hover);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 -1px 0 var(--glass-shade),
+    var(--glass-shadow-hover);
+}
+
+@media (hover: hover) {
+  .card:hover,
+  .metric:hover {
+    transform: translateY(-1px);
+  }
+}
+
+/* 按压 */
+.card:active,
+.metric:active {
+  transform: translateY(0) scale(0.997);
+}
+
+/* —— Tier 3：浮层 —— */
+dialog {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border-outer);
+  border-radius: var(--glass-radius-lg);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    var(--glass-shadow-float);
+}
+
+dialog::backdrop {
+  background: rgba(16, 20, 26, 0.34);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* Toast / 通知条：与弹窗同族，但更轻 */
+#toast-host .notice {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border-outer);
+  border-radius: var(--glass-radius-md);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    var(--glass-shadow-float);
+}
+
+/* —— 控件 —— */
+
+/* 导航 active：液态高光胶囊，而不是整块高饱和色 */
+.app-nav__link[aria-current='page'] {
+  background:
+    linear-gradient(180deg, var(--glass-highlight), transparent 62%),
+    var(--color-primary-soft);
+  border: 1px solid var(--glass-border-outer);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 1px 2px rgba(20, 26, 34, 0.06);
+  color: var(--color-primary-hover);
+  transition: background-color 180ms ease, box-shadow 180ms ease, color 180ms ease;
+}
+
+.app-nav__link {
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+/* 次级/幽灵按钮：小玻璃胶囊 */
+.btn--ghost {
+  background: var(--glass-bg-card);
+  border-color: var(--glass-border-outer);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+
+.btn--ghost:hover {
+  background: var(--glass-bg-card-hover);
+}
+
+/* 主按钮保持实色（可点击性优先），只加一点内高光与按压反馈 */
+.btn--primary {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 1px 2px rgba(20, 26, 34, 0.16);
+}
+
+.btn:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+/* 输入框：高不透明度，focus 用 accent 边 + 柔和外发光 */
+.input,
+.select,
+textarea {
+  background: var(--glass-bg-strong);
+  border-color: var(--glass-border-outer);
+  box-shadow: inset 0 1px 2px rgba(20, 26, 34, 0.04);
+}
+
+.input:focus,
+.select:focus,
+textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+/* —— 鼠标跟随的镜面高光（只在支持 hover 且未减少动态效果时） —— */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  [data-glass] {
+    position: relative;
+    isolation: isolate;
+  }
+
+  [data-glass]::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 220ms ease;
+    background: radial-gradient(
+      260px circle at var(--glass-x) var(--glass-y),
+      rgba(255, 255, 255, 0.16),
+      transparent 70%
+    );
+    z-index: 0;
+  }
+
+  [data-glass]:hover::before {
+    opacity: 1;
+  }
+
+  /* 内容要压在高光之上，否则会被蒙一层 */
+  [data-glass] > * {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+/* —— 移动端：模糊降档，保证滚动流畅 —— */
+@media (max-width: 720px) {
+  .app-brand,
+  .app-topbar,
+  .app-nav {
+    backdrop-filter: blur(var(--glass-blur-soft)) saturate(150%);
+    -webkit-backdrop-filter: blur(var(--glass-blur-soft)) saturate(150%);
+    background: var(--glass-bg-card);
+  }
+
+  dialog,
+  #toast-host .notice {
+    backdrop-filter: blur(14px) saturate(150%);
+    -webkit-backdrop-filter: blur(14px) saturate(150%);
+  }
+}
+
+/* —— 降低动态效果：去掉上浮与漂移 —— */
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .metric,
+  .btn,
+  .app-nav__link {
+    transition: none;
+  }
+
+  .card:hover,
+  .metric:hover,
+  .card:active,
+  .metric:active,
+  .btn:active {
+    transform: none;
+  }
+
+  [data-glass]::before {
+    display: none;
+  }
+}
+
+/* —— 减少透明：整体退化为实色 —— */
+@media (prefers-reduced-transparency: reduce) {
+  .app-brand,
+  .app-topbar,
+  .app-nav,
+  dialog,
+  #toast-host .notice {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .card,
+  .day-card,
+  .task-item,
+  .metric {
+    background: var(--color-surface);
+    box-shadow: 0 1px 2px rgba(20, 26, 34, 0.06);
+  }
+}
+
+/* —— 强制颜色模式：交给系统色，去掉玻璃与渐变 —— */
+@media (forced-colors: active) {
+  .app-brand,
+  .app-topbar,
+  .app-nav,
+  dialog,
+  .card,
+  .day-card,
+  .task-item,
+  .metric,
+  #toast-host .notice {
+    background: Canvas;
+    border: 1px solid CanvasText;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .ambient-field,
+  [data-glass]::before {
+    display: none;
+  }
+}
+
+/* —— 打印：干净输出，不要背景光斑与阴影 —— */
+@media print {
+  .app-brand,
+  .app-topbar,
+  .app-nav,
+  .card,
+  .day-card,
+  .task-item,
+  .metric,
+  dialog,
+  #toast-host .notice {
+    background: #fff;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  [data-glass]::before {
+    display: none;
+  }
 }

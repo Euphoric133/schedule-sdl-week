@@ -21,7 +21,7 @@ export function pageHead({ title, sub, actions = [] }) {
 
 /** 卡片 */
 export function card({ title, hint, actions = [], body, flush = false }) {
-  return el(`section.card${flush ? '.card--flush' : ''}`, {}, [
+  return el(`section.card${flush ? '.card--flush' : ''}`, { 'data-glass': '' }, [
     title || hint || actions.length > 0
       ? el('div.card__head', {}, [
           el('div', {}, [title ? el('h2.card__title', { text: title }) : null, hint ? el('div.card__hint', { text: hint }) : null]),
@@ -72,7 +72,7 @@ export function metricRow(items) {
   return el(
     'div.metric-row',
     {},
-    items.map((item) => el('div.metric', {}, [el('div.metric__label', { text: item.label }), el('div.metric__value', { text: item.value })])),
+    items.map((item) => el('div.metric', { 'data-glass': '' }, [el('div.metric__label', { text: item.label }), el('div.metric__value', { text: item.value })])),
   );
 }
 

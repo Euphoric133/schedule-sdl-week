@@ -389,6 +389,7 @@ function renderCard({ card, services, onOpenStudy, onCompleteStudy, onDeleteTask
       ]
         .filter(Boolean)
         .join(' '),
+      'data-glass': '',
       style: { minHeight: cardHeightExpression(minutes ?? GRID_QUANTUM_MINUTES) },
       title: `${card.title}　${timeText}${minutes !== null ? `　${formatDuration(minutes)}` : ''}`,
     },
