@@ -13,7 +13,7 @@
  */
 
 import { el, toast } from '../ui/dom.js';
-import { buildScheduleContext, sendMessage } from './chatClient.js';
+import { buildScheduleContext, sendMessage, stripProposalBlock } from './chatClient.js';
 
 const OPENERS = ['今天的学习安排有没有风险？', '我今天没按计划完成，怎么调整？', '帮我看看先做哪件事。'];
 
@@ -163,7 +163,8 @@ export function mountAiAssistant({ root, app, now, send = sendMessage }) {
     const result = await send({ messages, context: context() });
 
     if (result.ok) {
-      messages.push({ role: 'assistant', content: result.reply });
+      // 只显示给人看的文字；提议块由 #/ai 页面解析，不进对话气泡
+      messages.push({ role: 'assistant', content: stripProposalBlock(result.reply) });
       setBusy(false);
       if (!open) {
         // 没打开面板时把结论放到气泡角标上：这就是"打开页面即可看到 AI 结果"
@@ -198,7 +199,7 @@ export function mountAiAssistant({ root, app, now, send = sendMessage }) {
     const prompt = '用两三句话告诉我，根据我今天的任务和截止时间，最需要注意什么。不要列清单，不要复述我的任务。';
     const result = await send({ messages: [{ role: 'user', content: prompt }], context: context() });
     if (result.ok) {
-      messages.push({ role: 'user', content: prompt }, { role: 'assistant', content: result.reply });
+      messages.push({ role: 'user', content: prompt }, { role: 'assistant', content: stripProposalBlock(result.reply) });
       if (!open) {
         badge.hidden = false;
         badge.textContent = '1';

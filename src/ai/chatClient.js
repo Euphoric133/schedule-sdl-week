@@ -218,3 +218,41 @@ async function withTimeoutSignal(doFetch, url, init, timeoutMs) {
     clearTimeout(timer);
   }
 }
+
+
+/**
+ * 从 AI 回复里去掉末尾的提议 JSON 代码块，只留下给人看的文字。
+ *
+ * 为什么需要：系统提示要求模型在回复末尾附带
+ * ```json {"proposals":[...]} ```
+ * 供程序解析。但那段 JSON 是**给程序看的**，直接显示在聊天气泡里
+ * 就是一堆 `{"proposals":[]}`，普通用户看到会以为界面坏了。
+ *
+ * 这里的剥离只影响**显示**：原文本仍会被页面拿去解析提议，两者不冲突。
+ */
+export function stripProposalBlock(reply) {
+  if (typeof reply !== 'string') return '';
+  return reply
+    .replace(/```(?:json)?\s*\{[\s\S]*?"proposals"[\s\S]*?\}\s*```/g, '')
+    .replace(/```(?:json)?\s*\[[\s\S]*?\]\s*```/g, '')
+    .trim();
+}
+
+/**
+ * 解析回复里的提议块。解析失败返回空数组——**绝不猜测意图**。
+ * @returns {{text: string, proposals: object[]}}
+ */
+export function splitReply(reply) {
+  if (typeof reply !== 'string') return { text: '', proposals: [] };
+  const match = reply.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (!match) return { text: reply.trim(), proposals: [] };
+  try {
+    const parsed = JSON.parse(match[1]);
+    return {
+      text: reply.replace(match[0], '').trim(),
+      proposals: Array.isArray(parsed?.proposals) ? parsed.proposals : [],
+    };
+  } catch {
+    return { text: reply.replace(match[0], '').trim(), proposals: [] };
+  }
+}

@@ -349,3 +349,39 @@ test('estimateForNewTask：数据不足时返回 null（不硬给建议）', () 
   const { feature } = setupFeatureApp();
   assert.equal(feature.estimateForNewTask('数学', 60), null);
 });
+
+/* ------------------------------------------------------------------ *
+ * 回复文本的显示处理（普通访客不该看到原始 JSON）
+ * ------------------------------------------------------------------ */
+
+test('stripProposalBlock：去掉末尾的提议 JSON 块，只留文字', async () => {
+  const { stripProposalBlock, splitReply } = await import('../../src/ai/chatClient.js');
+  const reply = '数学今天超时了，建议少做 30 分钟。\n\n```json\n{"proposals":[{"kind":"lock_date","date":"2026-10-23"}]}\n```';
+  const display = stripProposalBlock(reply);
+  assert.ok(!display.includes('proposals'), '显示文本不能包含 proposals');
+  assert.ok(!display.includes('```'), '显示文本不能包含代码围栏');
+  assert.match(display, /建议少做 30 分钟/, '正常文字必须保留');
+
+  const split = splitReply(reply);
+  assert.equal(split.proposals.length, 1, '解析仍要拿到提议');
+  assert.equal(split.proposals[0].date, '2026-10-23');
+  assert.match(split.text, /建议少做 30 分钟/);
+});
+
+test('stripProposalBlock：没有代码块时原样保留', async () => {
+  const { stripProposalBlock } = await import('../../src/ai/chatClient.js');
+  assert.equal(stripProposalBlock('今天先做英语作文。'), '今天先做英语作文。');
+});
+
+test('stripProposalBlock：空提议块也要清掉（否则用户看到 {"proposals":[]}）', async () => {
+  const { stripProposalBlock } = await import('../../src/ai/chatClient.js');
+  const reply = '我这里看不到你的任务。\n\n```json\n{"proposals":[]}\n```';
+  assert.ok(!stripProposalBlock(reply).includes('proposals'));
+});
+
+test('splitReply：非法 JSON 不猜测，返回空提议', async () => {
+  const { splitReply } = await import('../../src/ai/chatClient.js');
+  const split = splitReply('建议休息。\n```json\n{坏掉的 json}\n```');
+  assert.deepEqual(split.proposals, []);
+  assert.ok(!split.text.includes('坏掉的'), '无法解析的块不应显示给用户');
+});
