@@ -48,6 +48,7 @@ import { openRestSettingsForm } from './ui/forms/restSettingsForm.js';
 import { createEmptyState } from './domain/schemas.js';
 import { defaultPreferences } from './services/preferences.js';
 import { openSessionDetail } from './ui/forms/sessionDetail.js';
+import { mountAiAssistant } from './ai/assistantWidget.js';
 
 const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
@@ -769,7 +770,20 @@ export function boot({ root = document.getElementById('app'), clock } = {}) {
   }));
   services.notificationService.handleVisibility();
 
-  return { app, services, shell, loadReport };
+  /**
+   * 日程助手（右下角气泡）。
+   *
+   * 挂载失败绝不能影响主应用：助手只是增强功能，排程、预览、数据读写都不依赖它。
+   * 因此这里用 try/catch 包住，并且**不把它的错误抛给 boot**。
+   */
+  let aiAssistant = null;
+  try {
+    aiAssistant = mountAiAssistant({ root, app, now: services.now });
+  } catch (err) {
+    console.error('[ai-assistant] 挂载失败，主应用继续运行：', err?.message);
+  }
+
+  return { app, services, shell, loadReport, aiAssistant };
 }
 
 // 浏览器环境自动启动；测试环境（无 DOM）导入本模块不会产生副作用。

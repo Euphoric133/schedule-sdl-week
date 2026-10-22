@@ -1,0 +1,20 @@
+# Netlify 站点配置。
+#
+# 这个项目的特殊之处：
+# - **没有构建步骤**：index.html 用相对路径直接引用 ./src/ 下的 ES 模块，
+#   所以 command 必须留空。曾经错误的配置是填 "npm run build"——package.json
+#   里根本没有这个脚本（只有 build:standalone），会让每次部署直接失败。
+# - **publish 必须是 "."**：dist/ 在 .gitignore 里，仓库中并不存在。
+#   把 publish 指向 dist 会发布一个空目录，站点进去就是 404。
+
+[build]
+  publish = "."
+  # 故意留空。不要改成 npm run build。
+  command = ""
+
+# 函数目录：默认就是 netlify/functions，这里显式写出来是为了让配置自解释。
+[functions]
+  directory = "netlify/functions"
+
+# 反斜杠与哈希路由由前端自行处理，这里不做 SPA 重写——
+# 前端用的是 hash 路由（#/home），刷新任何页面都落在真实的 index.html 上。
