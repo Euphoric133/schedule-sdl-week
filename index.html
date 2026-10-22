@@ -31,15 +31,17 @@
     <!--
       AI 中继地址（部署配置，不属于业务代码）。
 
-      留空或删掉这一行 = 使用同源的 /.netlify/functions/ai-chat（Netlify 部署）。
-      中继搬到 Cloudflare Worker 时，把地址填在这里，例如：
-        window.__AI_ENDPOINT__ = 'https://schedule-ai-chat.<你的子域>.workers.dev';
+      留空 = 使用同源的 /.netlify/functions/ai-chat（Netlify 部署）。
+      当前中继运行在 Cloudflare Worker 上（Netlify 的生产部署额度已用尽）。
+
+      注意：这个 origin 必须出现在 Worker 的 ALLOWED_ORIGINS 变量里，
+      否则会被 Worker 以 origin_rejected 拒绝。
 
       放在模块脚本之前：src/main.js 是 type="module"，会被延迟执行，
       因此这里的赋值一定先于应用启动，不存在时序竞争。
     -->
     <script>
-      window.__AI_ENDPOINT__ = '';
+      window.__AI_ENDPOINT__ = 'https://schedule-ai-chat.jft5yd9hfp.workers.dev/';
     </script>
 
     <script type="module" src="./src/main.js"></script>
