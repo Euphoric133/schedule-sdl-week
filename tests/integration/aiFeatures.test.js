@@ -385,3 +385,58 @@ test('splitReply：非法 JSON 不猜测，返回空提议', async () => {
   assert.deepEqual(split.proposals, []);
   assert.ok(!split.text.includes('坏掉的'), '无法解析的块不应显示给用户');
 });
+
+/* ------------------------------------------------------------------ *
+ * ref → 真实 id 映射（修复模型抄错 id 的真实故障）
+ * ------------------------------------------------------------------ */
+
+test('buildRescueInput：上下文里每个任务都带唯一 ref，且与真实 id 一一对应', () => {
+  const { services, feature } = setupFeatureApp();
+  services.taskService.addTask(taskInput({ title: 'A', subject: '数学', plannedMinutes: 60 }));
+  services.taskService.addTask(taskInput({ title: 'B', subject: '英语', plannedMinutes: 30 }));
+  const input = feature.buildRescueInput();
+  const refs = input.context.tasks.map((item) => item.ref);
+  assert.deepEqual(refs, [1, 2], 'ref 必须是从 1 开始的连续编号');
+  for (const item of input.context.tasks) {
+    assert.ok(input.taskById.has(item.id), 'ref 必须能对应到真实任务');
+  }
+});
+
+test('prepareRescuePreview：AI 用 ref 引用任务时能正常通过（模型抄错 id 的修复）', () => {
+  const { app, services, feature } = setupFeatureApp();
+  services.taskService.addTask(taskInput({ title: '数学练习册', subject: '数学', plannedMinutes: 90, deadlineDate: '2025-10-20' }));
+  const input = feature.buildRescueInput();
+  const ref = input.context.tasks[0].ref;
+
+  const result = feature.prepareRescuePreview({
+    ok: true,
+    reply: '建议今天少做一些。',
+    proposals: [{ kind: 'defer_task', taskId: String(ref), minutes: 30, reason: '时间不够' }],
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.issues));
+  assert.equal(result.stage, 'preview_ready');
+});
+
+test('prepareRescuePreview：ref 不存在时仍然拒绝（映射不是兜底猜测）', () => {
+  const { services, feature } = setupFeatureApp();
+  services.taskService.addTask(taskInput({ title: '数学', deadlineDate: '2025-10-20' }));
+  const result = feature.prepareRescuePreview({
+    ok: true,
+    reply: 'x',
+    proposals: [{ kind: 'defer_task', taskId: '99', minutes: 30 }],
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.stage, 'proposal_rejected');
+});
+
+test('prepareRescuePreview：模型直接写真实 id 也接受（两种写法都兼容）', () => {
+  const { app, services, feature } = setupFeatureApp();
+  services.taskService.addTask(taskInput({ title: '数学', deadlineDate: '2025-10-20' }));
+  const realId = app.getState().tasks[0].id;
+  const result = feature.prepareRescuePreview({
+    ok: true,
+    reply: 'x',
+    proposals: [{ kind: 'defer_task', taskId: realId, minutes: 20 }],
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.issues));
+});

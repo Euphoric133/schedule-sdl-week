@@ -61,16 +61,22 @@ export function createAiFeatureService({ app, planService, now }) {
         now: formatMinutes(current.minutes),
         latestSleepMinutes,
         latestSleepTime: Number.isInteger(latestSleepMinutes) ? formatMinutes(latestSleepMinutes) : null,
-        tasks: tasks
-          .slice(0, 8)
-          .map((task) => ({
-            id: task.id,
-            title: task.title,
-            subject: task.subject,
-            remainingMinutes: remainingByTask[task.id],
-            deadline: `${task.deadlineDate} ${task.deadlineTime}`,
-            importance: task.importance,
-          })),
+        /**
+         * 每个任务带一个短编号 ref（1、2、3…）。
+         *
+         * 为什么需要它：实测 gemini-3.5-flash-lite 会把 task_math 抄成 t_math_01——
+         * 模型不擅长逐字复制任意字符串 id，但引用小整数几乎不会错。
+         * 因此让 AI 用 ref，程序再映射回真实 id（一一对应，不是猜测）。
+         */
+        tasks: tasks.slice(0, 8).map((task, index) => ({
+          ref: index + 1,
+          id: task.id,
+          title: task.title,
+          subject: task.subject,
+          remainingMinutes: remainingByTask[task.id],
+          deadline: `${task.deadlineDate} ${task.deadlineTime}`,
+          importance: task.importance,
+        })),
       },
     };
   }
@@ -91,9 +97,29 @@ export function createAiFeatureService({ app, planService, now }) {
     }
 
     const input = buildRescueInput();
+
+    /**
+     * 把 AI 给出的 ref 翻译成真实任务 id。
+     *
+     * 映射是**一对一**的（ref 就是列表序号），因此这不是"猜意图"：
+     * ref 3 只能对应第 3 个任务。找不到对应 ref 的提议原样保留，
+     * 交给 validateProposals 判定为"引用了不存在的任务"并拒绝。
+     */
+    const refToId = new Map();
+    for (const item of input.context.tasks) refToId.set(String(item.ref), item.id);
+    const normalized = (aiResult.proposals ?? []).map((proposal) => {
+      if (!proposal || proposal.kind !== 'defer_task') return proposal;
+      const key = String(proposal.taskId ?? '').trim();
+      const asRef = refToId.get(key);
+      if (asRef) return { ...proposal, taskId: asRef };
+      // 也接受模型直接写真实 id（兼容两种写法）
+      if (input.taskById.has(key)) return { ...proposal, taskId: key };
+      return proposal;
+    });
+
     // 注意接口形状：validateProposals 期望 { proposals: [...] }，不是裸数组。
     // 直接传数组会让它读不到提议、全部误判为"没有建议"——功能会静默失效。
-    const validated = validateProposals({ proposals: aiResult.proposals ?? [] }, input);
+    const validated = validateProposals({ proposals: normalized }, input);
 
     if (!validated.ok) {
       // 全部拒绝：不生成预览。宁可让用户重试，也不展示一个半懂不懂的方案。
