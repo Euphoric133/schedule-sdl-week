@@ -14,6 +14,13 @@
  */
 
 import {
+  AMBIENT_LABELS,
+  AMBIENT_TRACKS,
+  CHIME_KINDS,
+  CHIME_LABELS,
+  createAudioEngine,
+} from '../services/audioEngine.js';
+import {
   RING_CIRCUMFERENCE,
   RING_RADIUS,
   TIMER_MODE,
@@ -87,7 +94,18 @@ const CSS = `
   background:var(--surface,#f6f8f6);color:var(--text-muted,#4a5a51);
   font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
 .st-mode--active{background:var(--accent-soft,#eef5f0);border-color:var(--accent,#4a7c59);color:var(--accent,#4a7c59)}
+.st-chip{padding:5px 11px;border-radius:999px;border:1px solid var(--border,#d7ded9);
+  background:var(--surface,#f6f8f6);color:var(--text-muted,#4a5a51);
+  font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.st-chip--active{background:var(--accent-soft,#eef5f0);border-color:var(--accent,#4a7c59);color:var(--accent,#4a7c59)}
 @media (prefers-reduced-motion: reduce){.st-ring__progress{transition:none;filter:none}}
+.st-sound{margin-top:var(--space-4,16px);padding-top:var(--space-3,12px);border-top:1px solid var(--border,#e3e0d8)}
+.st-sound__label{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted,#6b7a72);margin-bottom:6px}
+.st-sound__row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
+.st-sound__toggle{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-muted,#5c6b63)}
+.st-volume{width:100px;accent-color:var(--accent,#4a7c59)}
+.st-select{padding:5px 8px;border-radius:8px;border:1px solid var(--border,#d7ded9);
+  background:var(--surface,#fff);color:var(--text,#22302a);font:inherit;font-size:12.5px}
 
 .st-host{position:fixed;top:0;right:0;bottom:0;left:var(--nav-width,232px);z-index:40;
   display:none;overflow:auto;background:var(--bg,#f7f5f0);color:var(--text,#22302a);
@@ -157,6 +175,7 @@ export function mountStudyTimerPanel(frame) {
 
   ensureStyle(doc);
 
+  const audio = createAudioEngine();
   const state = {
     timer: loadTimer(),
     prefs: loadPrefs(),
@@ -333,7 +352,90 @@ export function mountStudyTimerPanel(frame) {
   abandonBtn.textContent = '放弃本次';
 
   actions.append(startBtn, pauseBtn, finishBtn, abandonBtn);
-  timerCard.append(stage, percentLine, modeRow, flag, actions);
+
+  /* ---------- 背景音与提示音（独立引擎，不碰花园设置） ---------- */
+  const soundRow = doc.createElement('div');
+  soundRow.className = 'st-sound';
+
+  const ambientLabel = doc.createElement('span');
+  ambientLabel.className = 'st-sound__label';
+  ambientLabel.textContent = '背景音';
+
+  const ambientButtons = Object.entries(AMBIENT_LABELS).map(([track, label]) => {
+    const btn = doc.createElement('button');
+    btn.type = 'button';
+    btn.className = 'st-chip';
+    btn.textContent = label;
+    btn.setAttribute('aria-label', `背景音：${label}`);
+    btn.addEventListener('click', () => {
+      state.prefs = { ...state.prefs, ambient: track };
+      savePrefs(state.prefs);
+      if (track === AMBIENT_TRACKS.OFF) audio.stopAmbient();
+      else audio.startAmbient(track, state.prefs.ambientVolume);
+      paintSound();
+    });
+    return { track, btn };
+  });
+
+  const volume = doc.createElement('input');
+  volume.type = 'range';
+  volume.min = '0';
+  volume.max = '100';
+  volume.step = '5';
+  volume.className = 'st-volume';
+  volume.setAttribute('aria-label', '背景音音量');
+  volume.addEventListener('input', () => {
+    const value = Number(volume.value) / 100;
+    state.prefs = { ...state.prefs, ambientVolume: value };
+    savePrefs(state.prefs);
+    audio.setAmbientVolume(value);
+  });
+
+  const chimeToggle = doc.createElement('label');
+  chimeToggle.className = 'st-sound__toggle';
+  const chimeBox = doc.createElement('input');
+  chimeBox.type = 'checkbox';
+  chimeBox.setAttribute('aria-label', '完成时播放提示音');
+  chimeBox.addEventListener('change', () => {
+    state.prefs = { ...state.prefs, chimeEnabled: chimeBox.checked };
+    savePrefs(state.prefs);
+  });
+  const chimeText = doc.createElement('span');
+  chimeText.textContent = '完成提示音';
+  chimeToggle.append(chimeBox, chimeText);
+
+  const chimeSelect = doc.createElement('select');
+  chimeSelect.className = 'st-select';
+  chimeSelect.setAttribute('aria-label', '提示音音色');
+  for (const [kind, label] of Object.entries(CHIME_LABELS)) {
+    const option = doc.createElement('option');
+    option.value = kind;
+    option.textContent = label;
+    chimeSelect.append(option);
+  }
+  chimeSelect.addEventListener('change', () => {
+    state.prefs = { ...state.prefs, chime: chimeSelect.value };
+    savePrefs(state.prefs);
+  });
+
+  const chimeTest = doc.createElement('button');
+  chimeTest.type = 'button';
+  chimeTest.className = 'st-chip';
+  chimeTest.textContent = '试听';
+  chimeTest.setAttribute('aria-label', '试听完成提示音');
+  chimeTest.addEventListener('click', () => audio.playChime(state.prefs.chime, state.prefs.chimeVolume));
+
+  const soundControls = doc.createElement('div');
+  soundControls.className = 'st-sound__row';
+  soundControls.append(...ambientButtons.map((item) => item.btn), volume);
+
+  const soundSecond = doc.createElement('div');
+  soundSecond.className = 'st-sound__row';
+  soundSecond.append(chimeToggle, chimeSelect, chimeTest);
+
+  soundRow.append(ambientLabel, soundControls, soundSecond);
+
+  timerCard.append(stage, percentLine, modeRow, flag, actions, soundRow);
   body.append(listCard, timerCard);
   inner.append(head, body);
   host.append(inner);
@@ -356,6 +458,17 @@ export function mountStudyTimerPanel(frame) {
     }
   }
 
+  /** 背景音/提示音控件的选中态与数值 */
+  function paintSound() {
+    for (const item of ambientButtons) {
+      item.btn.className =
+        state.prefs.ambient === item.track ? 'st-chip st-chip--active' : 'st-chip';
+    }
+    volume.value = String(Math.round((state.prefs.ambientVolume ?? 0.35) * 100));
+    chimeBox.checked = state.prefs.chimeEnabled !== false;
+    chimeSelect.value = state.prefs.chime;
+  }
+
   function paintModeButtons() {
     const mode = state.timer?.mode ?? state.prefs.mode;
     countdownBtn.setAttribute('aria-pressed', mode === TIMER_MODE.COUNTDOWN ? 'true' : 'false');
@@ -367,6 +480,7 @@ export function mountStudyTimerPanel(frame) {
   function renderTimer() {
     const current = state.timer;
     paintModeButtons();
+    paintSound();
 
     if (!current) {
       const planned = state.pendingTask?.minutes ?? 0;
@@ -457,6 +571,10 @@ export function mountStudyTimerPanel(frame) {
       { ...task, mode: state.prefs.mode ?? TIMER_MODE.COUNTDOWN },
       nowMs(),
     );
+    // 由用户点击触发，符合浏览器自动播放策略；失败也只是没声音
+    if (state.prefs.ambient && state.prefs.ambient !== AMBIENT_TRACKS.OFF) {
+      audio.startAmbient(state.prefs.ambient, state.prefs.ambientVolume);
+    }
     state.confirmArmed = false;
     persist();
     renderTimer();
@@ -487,6 +605,8 @@ export function mountStudyTimerPanel(frame) {
     state.confirmArmed = false;
     persist();
     stopTicking();
+    audio.stopAmbient();
+    if (state.prefs.chimeEnabled !== false) audio.playChime(state.prefs.chime, state.prefs.chimeVolume);
     renderTimer();
 
     api()?.completeStudyTask?.({
@@ -498,6 +618,7 @@ export function mountStudyTimerPanel(frame) {
   }
 
   function abandonTimer() {
+    audio.stopAmbient();
     state.timer = null;
     state.pendingTask = null;
     state.confirmArmed = false;
@@ -596,10 +717,11 @@ export function mountStudyTimerPanel(frame) {
 
   pauseBtn.addEventListener('click', () => {
     if (!state.timer) return;
-    state.timer =
-      state.timer.status === TIMER_STATUS.PAUSED
-        ? resumeTimer(state.timer, nowMs())
-        : pauseTimer(state.timer, nowMs());
+    const wasPaused = state.timer.status === TIMER_STATUS.PAUSED;
+    state.timer = wasPaused ? resumeTimer(state.timer, nowMs()) : pauseTimer(state.timer, nowMs());
+    // 暂停淡出、继续淡入（音频失败不影响计时）
+    if (wasPaused) audio.fadeInAmbient();
+    else audio.fadeOutAmbient();
     persist();
     renderTimer();
   });

@@ -5,6 +5,64 @@
 
 ---
 
+## [1.18.0] — 转盘规则改数字输入；学习任务计时加入背景音与完成提示音
+
+日期：2026-10-20
+
+### 一、抽奖规则改为可输入数字（1–100）
+
+两个入口（成就与奖励页、设置页）的固定选项 `<select>` 都换成了花园自带的数字输入组件 `In`
+（支持 `min/max/onCommit` 与错误提示），因此可以直接输入 1–100 的任意整数：
+
+- 非法值（0、101、非数字）由组件拦下并提示，不会写入 `spins.ruleEvery`；
+- 两个入口共用同一份 `spins.ruleEvery`；
+- 默认值、已获得机会、历史进度都没变（`spin/rule` 分支逻辑未改）。
+
+补丁：`spin-rule-number-input-achievements`、`spin-rule-number-input-settings`；
+同时移除了被取代的两条"选项表加 1"补丁（否则 `--check` 会误报未应用）。
+
+### 二、背景音与完成提示音（独立 Web Audio 引擎）
+
+新增 `src/services/audioEngine.js`，**不碰**花园的 `ambientTrack` / `ambientVolume`：
+
+| 能力 | 实现 |
+|---|---|
+| 音轨 | 关闭 / 雨声 / 溪流 / 风声 / 低频噪声（噪声 + 滤波合成，无音频文件） |
+| 切换 | 先淡出旧节点再启动新节点（250ms），不会叠加 |
+| 音量 | 只改 master gain，不重建音频图；滑杆实时生效 |
+| 暂停/继续 | 暂停淡出、继续淡入 |
+| 完成提示音 | 花园钟声 / 清脆铃音 / 柔和提示 / 电子提示（振荡器 + 包络），可开关、可试听 |
+| 降级 | `AudioContext` 不可用或被挂起时返回 `{ok:false, reason:'audio-unavailable'}`，计时照常 |
+
+面板里加了「背景音」一排按钮 + 音量滑杆 + 提示音开关/音色/试听；偏好持久化在
+`studyPlanner:v1:studyTimerPrefs`，不写入花园设置。
+
+### 三、测试与构建
+
+```
+$ node --test "tests/**/*.test.js"
+ℹ tests 655
+ℹ pass 655
+ℹ fail 0
+
+$ node scripts/build-standalone.mjs
+已生成 dist/standalone.html（1517 KB，内联 76 个模块）
+
+$ node scripts/patch-garden-wheel.mjs --check
+专注花园转盘：补丁已应用
+```
+
+新增 `tests/integration/audioEngine.test.js`（8 个）：无 AudioContext 降级、只创建一个上下文、
+切轨停止旧节点、音量不重建、关闭回到 off、四种提示音、暂停淡出/继续淡入、提示音降级。
+
+### 四、已知限制
+
+- 背景音首次播放必须由用户点击触发（浏览器自动播放策略）；刷新后不会自动开声；
+- 花园原生番茄钟若也在播背景音，两个引擎会**同时出声**（互不知晓，这是设计取舍：不共享状态）；
+- 音频合成参数是"可辨识的近似音色"，与花园原生音色不完全一致。
+
+---
+
 ## [1.17.0] — 已完成任务保留在时间表；前置任务候选与依赖清理
 
 日期：2026-10-20

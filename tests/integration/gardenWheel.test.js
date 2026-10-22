@@ -245,11 +245,14 @@ test('转盘：指针朝下（底边在上、顶点指向轮盘中心）', async
   assert.match(html, /fill:"var\(--warm\)"/, '指针颜色不变');
 });
 
-test('转盘：抽奖规则支持每 1 个番茄获得一次机会', async () => {
+test('转盘：抽奖规则改为可输入数字（1–100），两个入口各一处', async () => {
   const html = await loadEmbedded();
-  assert.match(html, /\[1,2,3,4,5,10\]\.map\(K=>/);
-  assert.match(html, /\[1,2,3,4,5,10\]\.map\(C=>/);
-  assert.equal((html.match(/\[2,3,4,5,10\]\.map/g) ?? []).length, 0, '不应再有排除 1 的旧选项表');
+  // 不再有固定选项表
+  assert.equal((html.match(/\[1,2,3,4,5,10\]\.map/g) ?? []).length, 0, '不应再有固定选项表');
+  // 两个入口都换成花园自带的数字输入组件 In，且限制 1–100
+  assert.match(html, /spin-rule-input"/, '成就页应有数字输入');
+  assert.match(html, /spin-rule-input-settings"/, '设置页应有数字输入');
+  assert.equal((html.match(/min:1,max:100/g) ?? []).length >= 2, true, '两个入口都应限制 1–100');
   assert.match(html, /Ge\(i\.ruleEvery,1,100/, '数据层必须允许最小 1');
 });
 

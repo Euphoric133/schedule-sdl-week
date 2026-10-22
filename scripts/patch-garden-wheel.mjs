@@ -86,20 +86,6 @@ const PATCHES = [
     from: 'M ${we} ${we-zt-12} L ${we-9} ${we-zt+10} L ${we+9} ${we-zt+10} Z',
     to: 'M ${we-9} ${we-zt-12} L ${we+9} ${we-zt-12} L ${we} ${we-zt+10} Z',
   },
-  {
-    id: 'spin-rule-include-1-achievements',
-    marker: '[1,2,3,4,5,10].map(K=>',
-    reason: '成就与奖励页允许每 1 个番茄获得一次转盘机会',
-    from: '[2,3,4,5,10].map(K=>s.jsxs("option",{value:K,children:["每 ",K," 个番茄"]},K))',
-    to: '[1,2,3,4,5,10].map(K=>s.jsxs("option",{value:K,children:["每 ",K," 个番茄"]},K))',
-  },
-  {
-    id: 'spin-rule-include-1-settings',
-    marker: '[1,2,3,4,5,10].map(C=>',
-    reason: '设置页抽奖规则允许每 1 个番茄获得一次转盘机会',
-    from: '[2,3,4,5,10].map(C=>s.jsxs("option",{value:C,children:["每 ",C," 个番茄"]},C))',
-    to: '[1,2,3,4,5,10].map(C=>s.jsxs("option",{value:C,children:["每 ",C," 个番茄"]},C))',
-  },
 
   {
     id: 'spin-grant-action',
@@ -121,6 +107,21 @@ const PATCHES = [
     reason: '抽奖时用同一个随机源生成扇区内的随机落点，写进 targetAngle 并持久化',
     from: 'targetAngle:q1(v.length,y)',
     to: 'targetAngle:q1r(v.length,y,d)',
+  },
+
+  {
+    id: 'spin-rule-number-input-achievements',
+    marker: 'spin-rule-input',
+    reason: '成就与奖励页的抽奖规则改为可输入数字（1–100），复用花园自带的数字输入组件 In',
+    from: 's.jsx("select",{id:"spin-rule",className:"select",value:h.ruleEvery,onChange:K=>{d({type:"spin/rule",ruleEvery:Number(K.target.value)}),o.push("抽奖规则已更新，已获得的机会和进度都会保留","info")},style:{marginTop:6},children:[1,2,3,4,5,10].map(K=>s.jsxs("option",{value:K,children:["每 ",K," 个番茄"]},K))})',
+    to: 's.jsx(In,{id:"spin-rule-input",label:"每完成几个番茄获得一次机会",value:h.ruleEvery,min:1,max:100,hint:"1–100 的整数；修改不会回收已获得的机会，也不会追溯重算进度。",onCommit:K=>{d({type:"spin/rule",ruleEvery:K}),o.push("抽奖规则已更新，已获得的机会和进度都会保留","info")}})',
+  },
+  {
+    id: 'spin-rule-number-input-settings',
+    marker: 'spin-rule-input-settings',
+    reason: '设置页的抽奖规则改为同一个数字输入（1–100）',
+    from: 's.jsx("select",{className:"select","aria-label":"每完成几个番茄获得一次抽奖机会",value:i.spins.ruleEvery,onChange:C=>u({type:"spin/rule",ruleEvery:Number(C.target.value)}),children:[1,2,3,4,5,10].map(C=>s.jsxs("option",{value:C,children:["每 ",C," 个番茄"]},C))})',
+    to: 's.jsx(In,{id:"spin-rule-input-settings",label:"每完成几次专注获得一次抽奖机会",value:i.spins.ruleEvery,min:1,max:100,hint:"1–100 的整数；两个入口共用同一份规则。",onCommit:C=>u({type:"spin/rule",ruleEvery:C})})',
   },
 
 ];
