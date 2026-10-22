@@ -24,7 +24,10 @@ export function card({ title, hint, actions = [], body, flush = false }) {
   return el(`section.card${flush ? '.card--flush' : ''}`, { 'data-glass': '' }, [
     title || hint || actions.length > 0
       ? el('div.card__head', {}, [
-          el('div', {}, [title ? el('h2.card__title', { text: title }) : null, hint ? el('div.card__hint', { text: hint }) : null]),
+          el('div', { style: { minWidth: 0 } }, [
+            title ? el('h2.card__title', { text: title, title }) : null,
+            hint ? el('div.card__hint', { text: hint }) : null,
+          ]),
           actions.length > 0 ? el('div', { style: { display: 'flex', gap: 'var(--space-2)' } }, actions) : null,
         ])
       : null,
@@ -137,7 +140,8 @@ export function taskList(items, { renderActions, pomodoros = null, onFocus = nul
       return el('li.task-item', {}, [
         el('div.task-item__head', {}, [
           el('div', {}, [
-            el('span.task-item__title', { text: task.title }),
+            // 标题会被单行省略，必须给 title 才能看到完整内容
+            el('span.task-item__title', { text: task.title, title: task.title }),
             el('span', { text: ` · ${task.subject}` }),
           ]),
           el('div.task-item__meta', {}, [

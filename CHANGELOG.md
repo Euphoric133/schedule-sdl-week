@@ -5,6 +5,76 @@
 
 ---
 
+## [1.20.0] — 文字安全层：修掉溢出的真正根因
+
+日期：2026-10-20
+
+### 一、先说清楚：本轮的验证边界
+
+我**没有真实浏览器**，跑不了规格里那几段 DevTools 测量脚本。
+所以这一轮做的是：**静态排查根因 → 按根因修 → 加静态断言**；
+320/375/768/1024/1440 与 200% 缩放的实际测量需要你在浏览器里确认。
+
+### 二、实际定位到的根因（静态排查）
+
+| 位置 | 选择器 | 根因 |
+|---|---|---|
+| 页面标题区 | `.page-head` / `.page-head__actions` | flex 子项默认 `min-width: auto` 不收缩；右侧按钮 `flex: none` 把标题挤出去 |
+| 卡片头 | `.card__head` | 同上，且没有 `flex-wrap`，标题+按钮互挤 |
+| 任务行 | `.task-item__head > div:first-child` | 左侧文字块没有 `min-width: 0`，长标题把操作按钮挤走 |
+| 顶栏 | `.app-topbar__meta` / `__actions` | 日期+计划文案过长时不收缩，把右侧按钮顶出视口 |
+| 按钮 | `.btn` | `white-space: nowrap` + 无 `max-width` → 长文案溢出 |
+| 按钮组 | `.form-actions` / `.task-item__actions` | 没有 `flex-wrap`，窄屏多按钮溢出 |
+| 输入框 | `input` / `select` / `textarea` | 没有 `min-width: 0`；原生日期/时间控件有固有宽度，会撑破 grid 列 |
+| 统计磁贴 | `.metric` | `min-width: 96px` 固定，长数字/长标签撑破 |
+| 看板卡片 | `.day-card__title` | 原有 `white-space: nowrap` 让标题单行硬顶，配两行截断时更会顶出卡片 |
+| 看板标签 | `.day-tag` / `.pill` / `.chart__label` | `nowrap` 且无 `max-width`/`text-overflow` |
+| 弹窗 | `dialog` | 没有 `max-height`/`overflow`，长内容超出视口 |
+| Toast | `#toast-host .notice` | 长消息不换行，撑破固定宽度 |
+
+### 三、修复方式（按根因，不做全局掩盖）
+
+1. **收缩**：给 `.page-head` / `.card__head` / `.notice` / `.task-item__head` / `.app-topbar__meta` 的子项补 `min-width: 0`；
+2. **换行**：这些容器补 `flex-wrap: wrap`；`.form-actions` 同样；
+3. **单行省略**：导航项、卡片标题、任务标题、时间、看板时间 + 按钮，统一 `overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0`；
+4. **多行断词**：提示语、错误、通知、弹窗段落统一 `overflow-wrap: anywhere; word-break: break-word`；
+5. **看板标题**：改为两行 `-webkit-line-clamp: 2`，并**显式把继承来的 `nowrap` 改回 `normal`**（否则截断不生效）；
+6. **按钮**：`max-width: 100%`；操作区按钮允许 `white-space: normal`；
+7. **输入框**：`min-width: 0; max-width: 100%`，日期/时间控件单独声明；
+8. **弹窗**：`max-width: min(720px, 100vw - 32px)`、`max-height: calc(100vh - 48px)`、`overflow: auto`；
+9. **窄屏（≤720px）**：标题区/卡片头/任务行改为竖排，操作区左对齐、按钮均分。
+
+**刻意没有做**：不给 `body` / `.app` / `.app-main` 加 `overflow: hidden`（会裁掉焦点环与阴影）；不把正文改成省略号。
+
+### 四、可回溯
+
+被省略的文字补 `title`：任务标题、卡片标题（卡片头同时把标题块设为 `min-width: 0`）。
+图标按钮本来就有 `aria-label`，未改动。
+
+### 五、测试与构建
+
+```
+$ node --test "tests/**/*.test.js"
+ℹ tests 679
+ℹ pass 679
+ℹ fail 0
+
+$ node scripts/build-standalone.mjs
+已生成 dist/standalone.html（1542 KB，内联 76 个模块）
+```
+
+新增 `tests/integration/textSafety.test.js`（9 个）：收缩声明、单行省略 + title、
+多行断词且正文不是 nowrap、看板两行截断并覆盖 nowrap、按钮换行、输入框可收缩、
+弹窗不超视口、禁止全局 overflow hidden、表格仍可横向滚动。
+
+### 六、已知限制
+
+- 原生 `<input type="date">`/`<time>` 在 Safari 上仍有较大的固有宽度，只能靠 `min-width: 0` 缓解；
+- 极窄（320px）下多个操作按钮仍会换行成两排，这是预期行为（优先不溢出）；
+- 玻璃伪元素 `::before` 已确认 `pointer-events: none`，文字在其上层，不会被盖住。
+
+---
+
 ## [1.19.0] — 液态玻璃材质：分层玻璃、氛围色场、边缘光与降级
 
 日期：2026-10-20

@@ -3423,3 +3423,207 @@ textarea:focus {
     display: none;
   }
 }
+
+/* ==========================================================================
+   文字安全层（Text safety）
+   ==========================================================================
+
+   这一层只解决"文字跑出容器"的**根因**，不是用 overflow: hidden 把问题藏起来：
+
+   1. flex / grid 子项默认 `min-width: auto`，不肯收缩 → 补 `min-width: 0`；
+   2. 单行文字（标题/标签/时间）→ 省略号 + `title`（DOM 侧已补）；
+   3. 多行正文 → 允许换行 + `overflow-wrap: anywhere`；
+   4. 按钮/输入框的固有宽度 → `max-width: 100%` + `min-width: 0`。
+
+   刻意**不做**的事：
+   - 不给 body / .app / .app-main 加 overflow: hidden（会裁掉焦点环与阴影）；
+   - 不把正文容器设成 nowrap（重要内容必须能读全）。
+   ========================================================================== */
+
+/* —— 1. 基准：允许收缩 —— */
+.page-head > *,
+.card__head > *,
+.form-actions > *,
+.notice > *,
+.task-item__head > *,
+.app-topbar > *,
+.app-topbar__meta > * {
+  min-width: 0;
+}
+
+.page-head,
+.card__head,
+.app-topbar,
+.app-topbar__meta,
+.form-actions {
+  flex-wrap: wrap;
+}
+
+/* —— 2. 单行：省略号 —— */
+.app-nav__link,
+.app-nav__link > span,
+.card__title,
+.task-item__title,
+.day-card__time,
+.day-card__minutes,
+.page-head__actions .btn {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* 任务行标题要能收缩，否则会把右侧操作按钮挤走 */
+.task-item__head > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* —— 3. 多行：换行 + 断词 —— */
+.page-head__sub,
+.card__hint,
+.task-item__meta,
+.metric__label,
+.form-field__hint,
+.form-field__error,
+.notice,
+#toast-host .notice,
+dialog p,
+dialog li {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* 看板卡片标题：最多两行，超出省略（固定高度卡片不能撑破）。
+   注意：上面原有的 `.day-card__title` 设了 white-space: nowrap，
+   这里必须显式改回 normal，否则 line-clamp 不生效、文字会顶出卡片。 */
+.day-card__title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* 胶囊与图表标签：长文字不能顶出容器 */
+.pill,
+.chart__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 标签也要能省略，否则长科目名会顶出卡片 */
+.day-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* —— 4. 按钮与操作区 —— */
+.btn {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* 操作区里的按钮允许换行显示长文案（只对显式标记的操作区生效） */
+.form-actions .btn,
+.task-item__actions .btn,
+.day-card__actions .btn {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+/* —— 5. 输入框：原生控件有固有宽度，必须显式允许收缩 —— */
+input,
+select,
+textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* 日期/时间控件在 Safari/iOS 上有较宽的固有尺寸 */
+input[type='date'],
+input[type='time'],
+input[type='datetime-local'],
+input[type='month'] {
+  min-width: 0;
+}
+
+textarea {
+  resize: vertical;
+}
+
+/* —— 6. 统计磁贴：长数字/长标签不撑破 —— */
+.metric {
+  min-width: min(96px, 100%);
+  max-width: 100%;
+}
+
+.metric__value {
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+/* —— 7. 弹窗：不超出视口，内容可滚动 —— */
+dialog {
+  max-width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
+/* —— 8. Toast / 通知条：长消息在固定宽度内换行 —— */
+#toast-host .notice {
+  max-width: 100%;
+}
+
+#toast-host .notice > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* —— 9. 外壳：长文案不把按钮挤出去 —— */
+.app-topbar__meta {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.app-topbar__actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.app-topbar__meta > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* —— 10. 窄屏：允许标题与操作区上下堆叠 —— */
+@media (max-width: 720px) {
+  .page-head,
+  .card__head,
+  .task-item__head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-head__actions,
+  .card__head > div:last-child,
+  .task-item__actions {
+    justify-content: flex-start;
+  }
+
+  .form-actions {
+    justify-content: stretch;
+  }
+
+  .form-actions .btn {
+    flex: 1 1 auto;
+  }
+}
