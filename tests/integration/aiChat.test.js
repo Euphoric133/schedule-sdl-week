@@ -477,3 +477,76 @@ test('设置 AI_DEBUG_ERRORS=1 后响应体附带诊断信息', async () => {
     }
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * 诊断端点：GET ?listModels=1
+ * ------------------------------------------------------------------ */
+
+function listModelsRequest({ origin = 'https://example.netlify.app', query = '?listModels=1' } = {}) {
+  const headers = new Headers({ host: 'example.netlify.app' });
+  if (origin) headers.set('origin', origin);
+  return new Request(`https://example.netlify.app/.netlify/functions/ai-chat${query}`, { method: 'GET', headers });
+}
+
+const MODELS_FIXTURE = {
+  models: [
+    { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent', 'countTokens'] },
+    { name: 'models/gemini-3.6-flash', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/gemini-embedding-001', supportedGenerationMethods: ['embedContent'] },
+  ],
+};
+
+test('listModels：只返回支持 generateContent 的模型，并去掉 models/ 前缀', async () => {
+  await withEnv({ GEMINI_API_KEY: 'test-key', AI_DEBUG_ERRORS: '1' }, async () => {
+    const restore = stubFetch(async () => new Response(JSON.stringify(MODELS_FIXTURE), { status: 200 }));
+    try {
+      const response = await handler(listModelsRequest());
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.deepEqual(payload.usableModels, ['gemini-3.8-flash', 'gemini-3.6-flash']);
+      assert.ok(!payload.usableModels.includes('gemini-embedding-001'), '不支持 generateContent 的模型不应出现在可用列表里');
+      assert.equal(payload.totalModels, 3);
+    } finally {
+      restore();
+    }
+  });
+});
+
+test('listModels：未开启 AI_DEBUG_ERRORS 时关闭（默认不暴露）', async () => {
+  await withEnv({ GEMINI_API_KEY: 'test-key', AI_DEBUG_ERRORS: undefined }, async () => {
+    let called = 0;
+    const restore = stubFetch(async () => {
+      called += 1;
+      return new Response('{}');
+    });
+    try {
+      const response = await handler(listModelsRequest());
+      assert.equal(response.status, 403);
+      assert.equal((await response.json()).code, 'debug_disabled');
+      assert.equal(called, 0, '关闭时不应发起任何上游请求');
+    } finally {
+      restore();
+    }
+  });
+});
+
+test('listModels：跨站来源被拒绝', async () => {
+  await withEnv({ GEMINI_API_KEY: 'test-key', AI_DEBUG_ERRORS: '1' }, async () => {
+    const response = await handler(listModelsRequest({ origin: 'https://evil.example' }));
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).code, 'origin_rejected');
+  });
+});
+
+test('listModels：不返回任何敏感字段（只含模型名与计数）', async () => {
+  await withEnv({ GEMINI_API_KEY: 'test-key', AI_DEBUG_ERRORS: '1' }, async () => {
+    const restore = stubFetch(async () => new Response(JSON.stringify(MODELS_FIXTURE), { status: 200 }));
+    try {
+      const payload = await (await handler(listModelsRequest())).json();
+      const keys = Object.keys(payload).sort();
+      assert.deepEqual(keys, ['allModels', 'currentModel', 'ok', 'totalModels', 'usableCount', 'usableModels']);
+    } finally {
+      restore();
+    }
+  });
+});

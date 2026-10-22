@@ -74,6 +74,30 @@ export default async (req) => {
 };
 
 async function handle(req) {
+  /**
+   * 诊断端点：GET /ai-chat?listModels=1
+   *
+   * 为什么需要它：你本地的出口（比如北京）调 models 列表会被地区拒绝，
+   * 而函数跑在美国，能正常拿到列表。排查模型名时这是唯一可靠的来源。
+   *
+   * 安全约束（都很重要）：
+   * - 必须同时设置 AI_DEBUG_ERRORS=1 才会开启，默认关闭；
+   * - 仍然走同源校验，别的网站拿不到；
+   * - 只返回模型名与支持的方法，**不返回 key、项目编号等任何敏感信息**；
+   * - 排查完把 AI_DEBUG_ERRORS 删掉即可整体下线。
+   */
+  const url = new URL(req.url);
+  if (req.method === 'GET' && url.searchParams.get('listModels') === '1') {
+    const originCheck = checkOrigin(req);
+    if (!originCheck.ok) return json(403, { ok: false, code: 'origin_rejected', message: '请求来源不被允许。' });
+    if (readEnv('AI_DEBUG_ERRORS') !== '1') {
+      return json(403, { ok: false, code: 'debug_disabled', message: '诊断端点未开启。设置 AI_DEBUG_ERRORS=1 并重新部署后可用。' });
+    }
+    const apiKey = readEnv('GEMINI_API_KEY');
+    if (!apiKey) return json(503, { ok: false, code: 'missing_api_key', message: '缺少 GEMINI_API_KEY。' });
+    return listModels(apiKey);
+  }
+
   if (req.method !== 'POST') {
     return json(405, { ok: false, code: 'method_not_allowed', message: '只接受 POST 请求。' });
   }
@@ -518,5 +542,72 @@ function json(status, payload) {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
     },
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * 诊断：列出当前 key 可用的模型
+ * ------------------------------------------------------------------ */
+
+/**
+ * 拉取模型列表并整理成「能干什么」的形式。
+ *
+ * 只保留判断所需的信息：
+ * - name（去掉 models/ 前缀，可直接填进 GEMINI_MODEL）
+ * - 是否支持 generateContent（我们回退路径要用）
+ * - 是否支持 createInteraction / 该接口（主路径要用）
+ *
+ * 其它字段（项目信息、额度、描述）一律不返回，避免诊断端点变成信息泄漏点。
+ */
+async function listModels(apiKey) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LIMITS.upstreamTimeoutMs);
+  let response;
+  try {
+    response = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', {
+      headers: { 'x-goog-api-key': apiKey },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    return json(502, {
+      ok: false,
+      code: err?.name === 'AbortError' ? 'timeout' : 'network',
+      message: '拉取模型列表时连不上 Google。',
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const mapped = mapUpstreamError(response.status, data, 'list_models_failed');
+    return json(mapped.status, {
+      ok: false,
+      code: mapped.code,
+      message: mapped.message,
+      diagnostics: upstreamDiagnostics(response.status, data),
+    });
+  }
+
+  const models = (Array.isArray(data?.models) ? data.models : []).map((item) => {
+    const methods = Array.isArray(item.supportedGenerationMethods) ? item.supportedGenerationMethods : [];
+    return {
+      name: String(item.name ?? '').replace(/^models\//, ''),
+      supportsGenerateContent: methods.includes('generateContent'),
+      supportsCountTokens: methods.includes('countTokens'),
+      methods,
+    };
+  });
+
+  // 只保留能生成内容的，并按名字排序，方便直接挑
+  const usable = models.filter((m) => m.supportsGenerateContent);
+
+  return json(200, {
+    ok: true,
+    currentModel: readEnv('GEMINI_MODEL') || DEFAULT_MODEL,
+    totalModels: models.length,
+    usableCount: usable.length,
+    usableModels: usable.map((m) => m.name),
+    allModels: models.map((m) => m.name),
   });
 }
