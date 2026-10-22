@@ -19,6 +19,7 @@ import handler, {
   buildInteractionsBody,
   callGemini,
   __resetRateLimit,
+  upstreamDiagnostics,
   extractGenerateContentText,
   extractInteractionsText,
   mapUpstreamError,
@@ -413,4 +414,66 @@ test('Interactions 请求体的 input 项不带 type 字段（实测带 type=mes
   const body = buildInteractionsBody('m', 'sys', [{ role: 'user', content: 'hi' }]);
   assert.equal(body.input[0].type, undefined);
   assert.equal(body.input[0].role, 'user');
+});
+
+
+/* ------------------------------------------------------------------ *
+ * 线上实测回归：upstream_down 无法定位时的诊断能力
+ * ------------------------------------------------------------------ */
+
+test('扁平结构的地区错误也能识别（{ message, code } 而不是 { error: {...} }）', () => {
+  const result = mapUpstreamError(400, { message: 'User location is not supported for the API use.', code: 'invalid_request' }, 'x');
+  assert.equal(result.code, 'region_blocked');
+});
+
+test('上游错误结果带 raw 内部字段，供调用方决定是否输出诊断', () => {
+  const data = { error: { status: 'UNAVAILABLE', message: 'upstream exploded' } };
+  const result = mapUpstreamError(503, data, 'x');
+  assert.equal(result.code, 'upstream_down');
+  assert.equal(result.raw, data, 'raw 必须保留，否则无法排查线上 502');
+  // raw 只供函数内部使用：handler 构造响应体时不会把它放进去（见下面两条用例）
+});
+
+test('upstreamDiagnostics 只输出非敏感字段，且截断超长文本', () => {
+  const long = 'x'.repeat(500);
+  const diag = upstreamDiagnostics(503, { error: { status: 'UNAVAILABLE', code: 503, message: long } });
+  assert.equal(diag.httpStatus, 503);
+  assert.equal(diag.status, 'UNAVAILABLE');
+  assert.equal(diag.message.length, 200, '超长 message 必须截断');
+  assert.equal(diag.code, undefined, '数字型 code 不是字符串，不输出');
+});
+
+test('默认不输出 diagnostics（AI_DEBUG_ERRORS 未开启时响应体干净）', async () => {
+  await withEnv({ GEMINI_API_KEY: 'test-key', AI_DEBUG_ERRORS: undefined }, async () => {
+    const restore = stubFetch(async () => new Response(JSON.stringify({ error: { message: 'boom' } }), { status: 503 }));
+    try {
+      const response = await handler(makeRequest());
+      const payload = await response.json();
+      assert.equal(payload.ok, false);
+      assert.equal(payload.diagnostics, undefined, '默认不应暴露上游细节');
+    } finally {
+      restore();
+    }
+  });
+});
+
+test('设置 AI_DEBUG_ERRORS=1 后响应体附带诊断信息', async () => {
+  await withEnv({ GEMINI_API_KEY: 'test-key', AI_DEBUG_ERRORS: '1' }, async () => {
+    const restore = stubFetch(async () =>
+      new Response(JSON.stringify({ error: { status: 'UNAVAILABLE', message: 'backend error' } }), { status: 503 }),
+    );
+    try {
+      const response = await handler(makeRequest());
+      const payload = await response.json();
+      assert.equal(payload.code, 'upstream_down');
+      assert.ok(payload.diagnostics, '应包含 diagnostics');
+      // 对外状态码被归一成 502（不把上游 5xx 的细节透给浏览器），
+      // 但诊断里保留真实的上游状态，这正是排查需要的
+      assert.equal(response.status, 502);
+      assert.equal(payload.diagnostics.httpStatus, 503);
+      assert.equal(payload.diagnostics.status, 'UNAVAILABLE');
+    } finally {
+      restore();
+    }
+  });
 });

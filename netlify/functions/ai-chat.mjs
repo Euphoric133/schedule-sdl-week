@@ -115,7 +115,13 @@ async function handle(req) {
 
   if (!upstream.ok) {
     console.error('[ai-chat] upstream', upstream.status, upstream.code);
-    return json(upstream.status, { ok: false, code: upstream.code, message: upstream.message, model });
+    const payload = { ok: false, code: upstream.code, message: upstream.message, model };
+    // 排查用：只有显式设置 AI_DEBUG_ERRORS=1 时才附带上游诊断信息。
+    // upstreamStatus 是上游真实状态码（3xx/4xx/5xx），不是归一后的 502。
+    if (readEnv('AI_DEBUG_ERRORS') === '1') {
+      payload.diagnostics = upstreamDiagnostics(upstream.upstreamStatus ?? upstream.status, upstream.raw);
+    }
+    return json(upstream.status, payload);
   }
 
   return json(200, { ok: true, model, reply: upstream.reply, usage: upstream.usage ?? null });
@@ -418,47 +424,81 @@ async function postJson(url, apiKey, payload) {
  * 具体状态码会写进函数日志，便于排查。
  */
 export function mapUpstreamError(status, data, code) {
+  // 内部字段 raw：仅供调用方决定是否输出诊断，不会原样进入响应体
+  const withRaw = (result) => ({ ...result, raw: data, upstreamStatus: status });
   if (data?.__timeout) {
-    return { ok: false, status: 504, code: 'timeout', message: '助手响应超时了，请稍后再试。' };
+    return withRaw({ ok: false, status: 504, code: 'timeout', message: '助手响应超时了，请稍后再试。' });
   }
   if (data?.__network) {
-    return { ok: false, status: 502, code: 'network', message: '暂时连不上助手的后端服务。' };
+    return withRaw({ ok: false, status: 502, code: 'network', message: '暂时连不上助手的后端服务。' });
   }
+  // 注意：这里的 status 参数是**上游原始状态码**（如 503），
+  // 对外的 status 会被归一成 502。诊断必须用前者，否则排查时看到的也是假状态。
   // 地区限制：实测在中国大陆网络下，generateContent / interactions 都会返回
   // 400 FAILED_PRECONDITION "User location is not supported for the API use."
   // 这不是代码或模型名的问题，换什么模型都会失败，必须明确告诉部署者。
   const upstreamMessage = typeof data?.error?.message === 'string' ? data.error.message : '';
-  if (/location is not supported/i.test(upstreamMessage)) {
-    return {
+  // 实测两种形态都可能出现：{ error: {...} } 与 { message, code } 扁平结构
+  const flatMessage = typeof data?.message === 'string' ? data.message : '';
+  if (/location is not supported/i.test(upstreamMessage) || /location is not supported/i.test(flatMessage)) {
+    return withRaw({
       ok: false,
       status: 502,
       code: 'region_blocked',
       message: 'Google 拒绝对当前网络位置提供服务（User location is not supported）。这不是代码问题：请把站点的函数部署在 Google 支持的地区，或改用部署在支持地区的服务来转发。',
-    };
+    });
   }
   if (status === 400 || status === 404) {
-    return {
+    return withRaw({
       ok: false,
       status: 502,
       code: 'model_unavailable',
       message: '模型名称可能已失效。请在 Netlify 环境变量里检查 GEMINI_MODEL。',
-    };
+    });
   }
   if (status === 401 || status === 403) {
-    return {
+    return withRaw({
       ok: false,
       status: 502,
       code: 'auth_failed',
       message: 'Google API key 无效或被拒绝。请检查 GEMINI_API_KEY，以及这个 key 是否只允许 Gemini API。',
-    };
+    });
   }
   if (status === 429) {
-    return { ok: false, status: 429, code: 'quota_exceeded', message: '助手的调用额度暂时用完了，请几分钟后再试。' };
+    return withRaw({ ok: false, status: 429, code: 'quota_exceeded', message: '助手的调用额度暂时用完了，请几分钟后再试。' });
   }
   if (status >= 500) {
-    return { ok: false, status: 502, code: 'upstream_down', message: 'Google 这边的服务暂时不可用，请稍后再试。' };
+    return withRaw({ ok: false, status: 502, code: 'upstream_down', message: 'Google 这边的服务暂时不可用，请稍后再试。' });
   }
-  return { ok: false, status: 502, code, message: '助手返回了无法识别的内容，请再试一次。' };
+  return withRaw({ ok: false, status: 502, code, message: '助手返回了无法识别的内容，请再试一次。' });
+}
+
+/**
+ * 从上游错误里**只挑出诊断必需、且不含敏感信息**的字段。
+ *
+ * 为什么需要：把错误统一翻译成中文提示对用户友好，但排查时就成了黑箱——
+ * 明明看到 upstream_down，却不知道 Google 到底返回了什么。
+ *
+ * 返回哪些字段是刻意的：
+ * - httpStatus / status / code：判断是哪一类错误
+ * - message：**截断到 200 字**，仅用于定位。Google 的错误文本里不会包含完整 key
+ *   （key 无效时也只显示前缀），所以截断后放出来是安全的。
+ *
+ * 是否输出由环境变量 AI_DEBUG_ERRORS=1 控制，默认**关闭**：
+ * 生产环境不该把上游细节暴露给任何访客。排查完记得关掉。
+ */
+export function upstreamDiagnostics(status, data) {
+  const error = data && typeof data === 'object' && data.error && typeof data.error === 'object' ? data.error : data;
+  const pick = (key) => (error && typeof error[key] === 'string' ? String(error[key]).slice(0, 200) : undefined);
+  const out = {
+    httpStatus: status,
+    status: pick('status'),
+    code: pick('code'),
+    message: pick('message'),
+  };
+  if (data && typeof data.__timeout === 'boolean') out.timeout = data.__timeout;
+  if (data && typeof data.__network === 'boolean') out.network = data.__network;
+  return out;
 }
 
 /* ------------------------------------------------------------------ *
