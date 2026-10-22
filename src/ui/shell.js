@@ -8,8 +8,16 @@
 import { append, clear, downloadText, el, startTicker, stopTicker, toast } from './dom.js';
 import { ROUTES, parseHash } from './router.js';
 import { button, notice } from './components.js';
-import { hideGardenFrame, showGardenFrame } from './gardenFrame.js';
-import { autoStartFocus, listStudyTasks, loadTaskMap, syncTasksToGarden, waitForBridge } from '../services/gardenSync.js';
+import { getGardenFrame, hideGardenFrame, showGardenFrame } from './gardenFrame.js';
+import {
+  autoStartFocus,
+  completeStudyTask,
+  getGardenBridge,
+  listStudyTasks,
+  loadTaskMap,
+  syncTasksToGarden,
+  waitForBridge,
+} from '../services/gardenSync.js';
 import { mountStudyTimerPanel, refreshStudyTimerPanel } from './gardenPanel.js';
 
 /**
@@ -201,17 +209,23 @@ export function createShell({ root, app, services, pages, now, todayInfo = null 
       return listStudyTasks({ tasks: state.tasks ?? [], sessions: state.sessions ?? [], map: loadTaskMap() });
     },
     /**
-     * 一个番茄结束（自然结束或用户提前结束）：把对应学习任务标记为完成。
-     * 走的是主应用已有的状态迁移，失败时不影响花园。
+     * 一个番茄结束（自然到点或用户提前结束）：
+     * 主应用任务标记完成 + 花园任务 +1 番茄。幂等，重复调用不会重复加。
      */
-    completeStudyTask({ plannerId }) {
+    completeStudyTask({ plannerId, gardenId, actualMinutes }) {
+      const frame = getGardenFrame(gardenHost);
       try {
-        const result = services.taskService.changeTaskStatus(plannerId, 'completed');
-        if (result?.ok === false) return { ok: false, message: result.message };
+        const result = completeStudyTask({
+          bridge: getGardenBridge(frame),
+          taskService: services.taskService,
+          plannerId,
+          gardenId,
+          actualMinutes,
+        });
         renderCurrent();
-        return { ok: true };
+        return result;
       } catch (error) {
-        return { ok: false, message: error?.message ?? '未知错误' };
+        return { ok: false, reason: 'error', message: error?.message ?? '未知错误' };
       }
     },
   };

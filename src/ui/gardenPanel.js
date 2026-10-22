@@ -191,7 +191,7 @@ export function mountStudyTimerPanel(frame) {
     api()?.completeStudyTask?.({
       plannerId: timer.plannerId,
       gardenId: timer.gardenId,
-      minutes: Math.round(elapsedSeconds / 60) || timer.minutes,
+      actualMinutes: Math.round(elapsedSeconds / 60) || timer.minutes,
     });
     renderList();
   }

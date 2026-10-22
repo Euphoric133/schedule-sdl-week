@@ -26,7 +26,7 @@ test('清单：开始时间与时长取自计划的最近一段时段', () => {
     { taskId: 't1', date: '2025-10-17', startMinutes: 1343, endMinutes: 1413, state: 'flexible' },
     { taskId: 't1', date: '2025-10-16', startMinutes: 480, endMinutes: 540, state: 'flexible' },
     { taskId: 't2', date: '2025-10-16', startMinutes: 600, endMinutes: 630, state: 'flexible' },
-    { taskId: 't2', date: '2025-10-16', startMinutes: 700, endMinutes: 730, state: 'completed' },
+    { taskId: 't2', date: '2025-10-16', startMinutes: 700, endMinutes: 705, state: 'completed' },
   ];
 
   const list = listStudyTasks({ tasks, sessions, map: { t1: 'g1' } });
@@ -34,12 +34,13 @@ test('清单：开始时间与时长取自计划的最近一段时段', () => {
 
   const first = list.find((item) => item.plannerId === 't1');
   assert.equal(first.startMinutes, 480, '应取最早的一段');
-  assert.equal(first.minutes, 60, '时长 = 该时段的长度');
+  // 口径变更（v1.12）：计时时长 = 任务剩余工作量，而不是单个片段的长度
+  assert.equal(first.minutes, 90, 't1 计划 90 分钟、无已完成 → 90');
   assert.equal(first.gardenId, 'g1');
 
   const second = list.find((item) => item.plannerId === 't2');
   assert.equal(second.startMinutes, 600, '已完成的时段不参与');
-  assert.equal(second.minutes, 30);
+  assert.equal(second.minutes, 25, 't2 计划 40 − 已填 10 − 已完成时段 5 = 25');
 });
 
 test('清单：没有排进计划时用任务自身剩余时长兜底', () => {
@@ -50,7 +51,7 @@ test('清单：没有排进计划时用任务自身剩余时长兜底', () => {
   });
   assert.equal(list.length, 1);
   assert.equal(list[0].startMinutes, null, '没有计划时段就没有开始时间');
-  assert.equal(list[0].minutes, 50, '兜底 = 计划 70 - 已完成 20');
+  assert.equal(list[0].minutes, 50, '剩余 = 计划 70 - 已完成 20');
 });
 
 test('清单：全部完成或取消时返回空，不报错', () => {

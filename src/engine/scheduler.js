@@ -369,6 +369,9 @@ export function run(input) {
 
   /** 给"放不下"的任务挑一个最准确的原因 */
   function refineReason(task, remaining, fallback) {
+    // 不可拆分任务连一个足够长的连续空档都没有时，这个原因最准确，
+    // 不能因为"截止前容量也不够"就覆盖成 deadline_too_close（那是另一回事）。
+    if (fallback === UNSCHEDULED_REASON.NON_SPLITTABLE_NO_SLOT) return fallback;
     const beforeDeadline = capacityBeforeDeadline(task);
     if (beforeDeadline !== null && beforeDeadline < remaining) {
       return UNSCHEDULED_REASON.DEADLINE_TOO_CLOSE;
@@ -404,6 +407,17 @@ export function run(input) {
     if (placed >= planned) continue;
     const already = unscheduled.find((item) => item.taskId === entry.task.id);
     if (already) {
+      /**
+       * 不可拆分任务只要"最长连续空档"都短于任务本身，原因就应该是
+       * "没有足够长的连续空档"，而不是被覆盖成截止时间或总容量不足。
+       * 这条对用户最有指导意义：要么调小任务，要么允许拆分。
+       */
+      const longestForTask = capacityDays.reduce((max, day) => Math.max(max, longestFreeSlot(day.freeWindows)), 0);
+      if (entry.task.splittable === false && longestForTask < entry.task.plannedMinutes) {
+        already.reasonCode = UNSCHEDULED_REASON.NON_SPLITTABLE_NO_SLOT;
+        already.reasonText = REASON_TEXT[already.reasonCode] ?? already.reasonText;
+        continue;
+      }
       // 原因可能被更早的路径写成泛化描述，这里用截止时间口径纠正一次
       already.reasonCode = refineReason(entry.task, planned, already.reasonCode);
       already.reasonText = REASON_TEXT[already.reasonCode] ?? already.reasonText;
@@ -411,7 +425,26 @@ export function run(input) {
     }
     const missing = planned - placed;
     // 不可拆分任务放不下的原因要准确：是"没有足够长的连续空档"，而不是"总容量不足"
-    const longestSlot = capacityDays.reduce((max, day) => Math.max(max, longestFreeSlot(day.freeWindows)), 0);
+    /**
+     * 计算"这个任务实际能用到的"最长连续空档。
+     * 关键：任务指定了开始时间时，空档必须从该时刻之后算起——
+     * 否则会拿别的日期的整天空档来比较，得出"还放得下"的错误结论，
+     * 从而把"没有足够长的连续空档"误报成截止时间太近。
+     */
+    const floor = Number.isInteger(entry.task.plannedStartMinutes) ? entry.task.plannedStartMinutes : 0;
+    const longestSlot = capacityDays.reduce(
+      (max, day) =>
+        Math.max(
+          max,
+          longestFreeSlot(
+            (day.freeWindows ?? []).map((window) => ({
+              startMinutes: Math.max(window.startMinutes, floor),
+              endMinutes: window.endMinutes,
+            })).filter((window) => window.endMinutes > window.startMinutes),
+          ),
+        ),
+      0,
+    );
     const isAtomic = entry.task.splittable === false;
     const atomicNoSlot = isAtomic && longestSlot < entry.task.plannedMinutes;
     // 原因要准确：如果"截止前剩余时间"本身就不够，就不能笼统地说"七天容量不足"

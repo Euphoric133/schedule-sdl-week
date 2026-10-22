@@ -312,24 +312,97 @@ export function readGardenTimer(bridge) {
 export function listStudyTasks({ tasks, sessions, map } = {}) {
   const mapping = map ?? loadTaskMap();
   const active = (tasks ?? []).filter((task) => task.status === 'not_started' || task.status === 'in_progress');
-  const byTask = new Map();
+
+  // 已完成时段会真实消耗工作量，必须从剩余里扣掉；**未完成**的排程片段不扣。
+  const completedByTask = new Map();
   for (const session of sessions ?? []) {
-    if (session.state !== 'flexible' && session.state !== 'in_progress') continue;
-    const list = byTask.get(session.taskId) ?? [];
-    list.push(session);
-    byTask.set(session.taskId, list);
+    if (session.state !== 'completed') continue;
+    const minutes = Number.isFinite(session.actualMinutes)
+      ? session.actualMinutes
+      : Math.max(0, (session.endMinutes ?? 0) - (session.startMinutes ?? 0));
+    completedByTask.set(session.taskId, (completedByTask.get(session.taskId) ?? 0) + minutes);
   }
 
-  return active.map((task) => {
-    const list = (byTask.get(task.id) ?? []).slice().sort((a, b) => (a.date === b.date ? a.startMinutes - b.startMinutes : a.date < b.date ? -1 : 1));
-    const next = list[0] ?? null;
-    const remaining = Math.max(0, (task.plannedMinutes ?? 0) - (task.priorCompletedMinutes ?? 0));
+  // 最近一段"未完成"的计划时段，用来显示开始时间（不是用来算时长）
+  const nextByTask = new Map();
+  for (const session of sessions ?? []) {
+    if (session.state !== 'flexible' && session.state !== 'in_progress') continue;
+    const current = nextByTask.get(session.taskId);
+    if (!current || session.date < current.date || (session.date === current.date && session.startMinutes < current.startMinutes)) {
+      nextByTask.set(session.taskId, session);
+    }
+  }
+
+  const list = active.map((task) => {
+    /**
+     * 计时时长 = **任务自身剩余工作量**：
+     * plannedMinutes − priorCompletedMinutes − 已完成时段的分钟数。
+     * 不能用"第一个排程片段的长度"——那样 2 小时的任务会变成 30 分钟。
+     */
+    const remaining = Math.max(
+      0,
+      (task.plannedMinutes ?? 0) - (task.priorCompletedMinutes ?? 0) - (completedByTask.get(task.id) ?? 0),
+    );
+    const next = nextByTask.get(task.id) ?? null;
     return {
       plannerId: task.id,
       gardenId: mapping[task.id] ?? null,
       title: task.title,
       startMinutes: next ? next.startMinutes : null,
-      minutes: next ? next.endMinutes - next.startMinutes : Math.max(1, remaining || 25),
+      minutes: Math.max(1, remaining),
+      importance: task.importance ?? 0,
     };
   });
+
+  // 排序：有开始时间的按时间升序在前；同时间按重要度降序；再按标题、id 保证稳定
+  list.sort((a, b) => {
+    if (a.startMinutes === null && b.startMinutes !== null) return 1;
+    if (b.startMinutes === null && a.startMinutes !== null) return -1;
+    if (a.startMinutes !== b.startMinutes) return (a.startMinutes ?? 0) - (b.startMinutes ?? 0);
+    if (b.importance !== a.importance) return b.importance - a.importance;
+    if (a.title !== b.title) return a.title < b.title ? -1 : 1;
+    return a.plannerId < b.plannerId ? -1 : a.plannerId > b.plannerId ? 1 : 0;
+  });
+
+  return list;
+}
+
+/**
+ * 计时结束（自然到点 / 提前结束）：把主应用任务标记完成，并让花园任务 +1 番茄。
+ *
+ * 幂等：重复调用不会重复加番茄、不会重复派发完成动作。
+ * 桥不可用（花园没加载/被改坏了）时返回结构化失败，但**主应用仍然完成**，不丢用户的操作。
+ *
+ * @returns {{ok: boolean, reason?: string, pomodoros?: number}}
+ */
+export function completeStudyTask({ bridge, taskService, plannerId, gardenId, actualMinutes = null } = {}) {
+  if (!plannerId) return { ok: false, reason: 'no-planner-task' };
+
+  if (taskService?.changeTaskStatus) {
+    const result = taskService.changeTaskStatus(plannerId, 'completed');
+    if (result?.ok === false && result?.code !== 'already_completed') {
+      return { ok: false, reason: 'planner-failed', message: result.message ?? null };
+    }
+  }
+
+  if (!bridge) return { ok: false, reason: 'no-bridge' };
+
+  const state = bridge.getState?.() ?? {};
+  const gardenTask = (state.tasks ?? []).find((task) => task.id === gardenId);
+  if (!gardenTask) return { ok: true, reason: 'no-garden-task', pomodoros: null };
+
+  // 已经完成过的任务不再重复加番茄（幂等的关键）
+  if (gardenTask.status === 'done') {
+    return { ok: true, reason: 'already-done', pomodoros: gardenTask.completedPomodoros ?? 0 };
+  }
+
+  const pomodoros = (gardenTask.completedPomodoros ?? 0) + 1;
+  bridge.dispatch({
+    type: 'task/update',
+    id: gardenTask.id,
+    patch: { status: 'done', completedPomodoros: pomodoros },
+  });
+
+  void actualMinutes;
+  return { ok: true, pomodoros };
 }

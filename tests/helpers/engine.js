@@ -12,6 +12,11 @@ import { createFixedActivity } from '../../src/domain/fixedActivity.js';
 import { run as runScheduler } from '../../src/engine/scheduler.js';
 import { buildPolicy } from '../../src/engine/policy.js';
 import { FIXED_NOW, FIXED_NOW_ISO, testIdFactory } from './clock.js';
+import { readFile, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 export const NOW = Object.freeze({ date: FIXED_NOW.date, minutes: FIXED_NOW.minutes });
 export const WINDOW_START = FIXED_NOW.date;
@@ -177,4 +182,128 @@ export function stablePlanShape(plan) {
     unscheduled: plan.unscheduled.map((item) => ({ taskId: item.taskId, minutes: item.remainingMinutes, reason: item.reasonCode })),
     metrics: plan.metrics,
   });
+}
+
+/* ================================================================== *
+ * 追加：服务级夹具（便于在固定时钟下走 requestPreview 断言引擎产物）
+ * ================================================================== */
+
+let domModulePromise = null;
+
+async function getDomModule() {
+  if (!domModulePromise) {
+    domModulePromise = (async () => {
+      const smoke = await readFile(join(projectRoot, 'tests', 'integration', 'ui-smoke.test.js'), 'utf8');
+      const code =
+        smoke.slice(smoke.indexOf('class FakeClassList'), smoke.indexOf("test('界面启动")) +
+        '\nexport { installFakeDom };';
+      const target = '/tmp/engine-helper-fakedom.mjs';
+      await writeFile(target, code);
+      return import(target);
+    })();
+  }
+  return domModulePromise;
+}
+
+/**
+ * 在固定时钟下装配一个可用的应用实例，并暴露 `run()` 走真实的 requestPreview 链路。
+ * 断言仍然落在引擎产物上（blocks / diagnostics / unscheduled）。
+ */
+export async function serviceContext({ now } = {}) {
+  const { installFakeDom } = await getDomModule();
+  const dom = installFakeDom();
+  const hours = Math.floor(now.minutes / 60);
+  const minutes = now.minutes % 60;
+  const { boot } = await import(pathToFileURL(join(projectRoot, 'src', 'main.js')).href);
+  const instance = boot({ root: dom.appHost, clock: () => new Date(2025, 9, 16, hours, minutes) });
+
+  return {
+    dom,
+    instance,
+    services: instance.services,
+    app: instance.app,
+    now,
+    addTask(overrides = {}) {
+      const result = instance.services.taskService.addTask({
+        title: '任务',
+        subject: '数学',
+        plannedMinutes: 30,
+        deadlineDate: now.date,
+        deadlineTime: '23:00',
+        importance: 3,
+        difficulty: 3,
+        procrastination: 3,
+        splittable: true,
+        minChunkMinutes: null,
+        maxChunkMinutes: null,
+        plannedStartMinutes: null,
+        dependsOn: [],
+        note: '',
+        ...overrides,
+      });
+      if (!result.ok) throw new Error(`addTask 失败：${result.message ?? ''}`);
+      return result.task ?? instance.app.getState().tasks.at(-1);
+    },
+    setUniformWindow(startMinutes, endMinutes) {
+      instance.app.commit(
+        (state) => {
+          const studyWindows = {};
+          for (let day = 1; day <= 7; day += 1) studyWindows[String(day)] = [{ startMinutes, endMinutes }];
+          return { ...state, settings: { ...state.settings, studyWindows } };
+        },
+        { reason: 'test-window' },
+      );
+    },
+    addFixedActivity(activity) {
+      instance.app.commit(
+        (state) => ({
+          ...state,
+          fixedActivities: [
+            ...state.fixedActivities,
+            {
+              id: `fx_${state.fixedActivities.length + 1}`,
+              title: activity.title ?? '固定日程',
+              type: activity.type ?? 'class',
+              recurrence: activity.recurrence ?? { kind: 'once', date: now.date },
+              startMinutes: toMinutesOfDay(activity.start ?? '08:00'),
+              endMinutes: toMinutesOfDay(activity.end ?? '09:00'),
+              activeFrom: null,
+              activeTo: null,
+              movable: false,
+              note: '',
+              createdAt: '2025-10-16T00:00:00.000Z',
+              updatedAt: '2025-10-16T00:00:00.000Z',
+            },
+          ],
+        }),
+        { reason: 'test-fixed' },
+      );
+    },
+    run(options = {}) {
+      const result = instance.services.planService.requestPreview({
+        now,
+        ...(options.startAt ? { startAt: options.startAt } : {}),
+        ...(options.optimizationPasses ? { optimizationPasses: options.optimizationPasses } : {}),
+      });
+      const pending = instance.services.planService.getPendingPreview();
+      return {
+        ok: result.ok === true,
+        issues: result.issues ?? [],
+        plan: pending?.candidate ?? null,
+        diagnostics: pending?.candidate?.diagnostics ?? [],
+        unscheduled: pending?.unscheduled ?? pending?.candidate?.unscheduled ?? [],
+      };
+    },
+    cleanup() {
+      for (const key of [
+        'Node', 'addEventListener', 'removeEventListener', 'document', 'window', 'location',
+        'requestAnimationFrame', 'getComputedStyle', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout',
+      ]) delete globalThis[key];
+    },
+  };
+}
+
+function toMinutesOfDay(text) {
+  const [hh, mm] = String(text).split(':').map((part) => Number.parseInt(part, 10));
+  return (Number.isFinite(hh) ? hh : 0) * 60 + (Number.isFinite(mm) ? mm : 0);
 }
