@@ -79,7 +79,8 @@ export function mountAiAssistant({ root, app, now, send = sendMessage }) {
     status,
     el('div.ai-assistant__composer', {}, [input, sendButton]),
     el('p.ai-assistant__hint', {
-      text: '助手只能给建议，任何日程调整都需要你在预览页手动确认。对话内容会发送给 Google Gemini 用于生成回答。',
+      // 数据流向必须说清楚：会话摘要（任务标题、截止时间、剩余时长）会离开浏览器
+      text: '助手只能给建议，日程调整需要你在预览页确认。你输入的对话，以及最多 8 个进行中任务的标题、科目、截止时间与剩余时长，会发送给 Google Gemini 用于生成回答；其余数据仍只保存在浏览器里。',
     }),
   );
 
