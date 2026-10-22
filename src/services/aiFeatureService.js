@@ -213,9 +213,36 @@ export function createAiFeatureService({ app, planService, now }) {
     };
   }
 
+  /**
+   * 上一次急救的结果，**存在服务层而不是 DOM 里**。
+   *
+   * 为什么必须有这一层：prepareRescuePreview 会调用 requestPreview，
+   * 后者 commit 状态 → app.subscribe → 整页重渲染。
+   * 如果结果只渲染在 DOM 里，重渲染会立刻把它抹掉——
+   * 用户会看到分析结果闪一下就消失（这是实测发现的真实缺陷）。
+   *
+   * 放在这里还有一个附带好处：切到别的页面再回来，结果仍然在。
+   */
+  let rescueState = null;
+
+  function getRescueState() {
+    return rescueState;
+  }
+
+  function setRescueState(next) {
+    rescueState = next;
+  }
+
+  function clearRescueState() {
+    rescueState = null;
+  }
+
   return {
     buildRescueInput,
     prepareRescuePreview,
+    getRescueState,
+    setRescueState,
+    clearRescueState,
     getCalibration,
     estimateForNewTask,
     buildCalibrationContext,

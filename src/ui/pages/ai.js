@@ -28,7 +28,7 @@ const TENDENCY_KIND = Object.freeze({
   stable: 'success',
 });
 
-export function renderAi({ app, services, now }) {
+export function renderAi({ app, services, now, renderPage }) {
   const state = app.getState();
   const nodes = [];
   const assistant = services.aiAssistant;
@@ -73,6 +73,25 @@ export function renderAi({ app, services, now }) {
     'aria-label': '描述今天的情况',
   });
   const resultBox = el('div.ai-result');
+
+  /**
+   * 恢复上一次的结果。
+   *
+   * 没有这段的话，requestPreview 触发的重渲染会把刚显示的分析结果抹掉
+   * （实测发现的缺陷）。恢复时连输入框的文字一起还原，
+   * 用户不会看到"结果还在、但我写的情况没了"。
+   */
+  const savedState = services.aiFeatureService.getRescueState?.();
+  if (savedState) {
+    report.value = savedState.reportText ?? '';
+    if (savedState.preparing) {
+      resultBox.appendChild(el('div.ai-loading', { text: 'AI 正在分析……' }));
+    } else if (savedState.prepared) {
+      resultBox.appendChild(renderRescueResult(savedState.prepared));
+    } else if (savedState.error) {
+      resultBox.appendChild(notice({ level: 'error', title: 'AI 没有返回结果', message: savedState.error }));
+    }
+  }
   const askButton = button('让 AI 分析并给出方案', { variant: 'primary', onClick: () => runRescue() });
 
   rescueBody.push(report, el('div.btn-row', {}, [askButton]), resultBox);
@@ -84,30 +103,43 @@ export function renderAi({ app, services, now }) {
       toast('先描述一下今天发生了什么。', 'error');
       return;
     }
+    const store = services.aiFeatureService;
+    store.setRescueState({ reportText: text, preparing: true });
     resultBox.replaceChildren(el('div.ai-loading', { text: 'AI 正在分析……' }));
     askButton.disabled = true;
 
     try {
-      const input = services.aiFeatureService.buildRescueInput();
+      const input = store.buildRescueInput();
       const ai = await services.aiClient.sendMessage({
         messages: [{ role: 'user', content: text }],
         context: input.context,
       });
 
       if (!ai.ok) {
+        store.setRescueState({ reportText: text, error: ai.message });
         resultBox.replaceChildren(notice({ level: 'error', title: 'AI 没有返回结果', message: ai.message }));
         return;
       }
 
       const parsedProposals = parseProposalsFromReply(ai.reply);
-      const prepared = services.aiFeatureService.prepareRescuePreview({
+      const prepared = store.prepareRescuePreview({
         ok: true,
         reply: parsedProposals.reply,
         proposals: parsedProposals.proposals,
       });
 
+      /**
+       * 先落盘到服务层，再重新渲染整页。
+       *
+       * 顺序很重要：prepareRescuePreview 内部可能已经 commit 过状态并触发过
+       * 一次重渲染（那次渲染时结果还没存进来），所以这里必须再主动刷一次，
+       * 否则用户看到的会是空的结果区。
+       */
+      store.setRescueState({ reportText: text, prepared });
       resultBox.replaceChildren(renderRescueResult(prepared));
+      if (typeof renderPage === 'function') renderPage();
     } catch (err) {
+      store.setRescueState({ reportText: text, error: err?.message ?? String(err) });
       resultBox.replaceChildren(notice({ level: 'error', title: '处理失败', message: err?.message ?? String(err) }));
     } finally {
       askButton.disabled = false;

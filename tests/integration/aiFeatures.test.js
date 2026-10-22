@@ -440,3 +440,48 @@ test('prepareRescuePreview：模型直接写真实 id 也接受（两种写法�
   });
   assert.equal(result.ok, true, JSON.stringify(result.issues));
 });
+
+/* ------------------------------------------------------------------ *
+ * 结果必须在重渲染后存活（实测发现的缺陷）
+ * ------------------------------------------------------------------ */
+
+test('急救结果存在服务层，重渲染后仍可取回', () => {
+  const { services, feature } = setupFeatureApp();
+  services.taskService.addTask(taskInput({ title: '数学', deadlineDate: '2025-10-20' }));
+
+  assert.equal(feature.getRescueState(), null, '初始应为空');
+
+  const prepared = { ok: true, stage: 'preview_ready', proposals: [{ kind: 'lock_date', date: '2025-10-17' }], reply: '建议锁定' };
+  feature.setRescueState({ reportText: '数学超时了', prepared });
+
+  /**
+   * 模拟 prepareRescuePreview 内部 requestPreview 触发的整页重渲染：
+   * 页面重新执行 renderAi 时读的必须是这份状态。
+   * 若结果只存在 DOM 里，重渲染会把它抹掉——用户看到分析闪一下就消失。
+   */
+  const restored = feature.getRescueState();
+  assert.equal(restored.reportText, '数学超时了', '输入框文字要一起恢复');
+  assert.equal(restored.prepared.stage, 'preview_ready');
+
+  feature.clearRescueState();
+  assert.equal(feature.getRescueState(), null);
+});
+
+test('prepareRescuePreview 成功后，结果可由 getRescueState 保存并复原', () => {
+  const { services, feature } = setupFeatureApp();
+  services.taskService.addTask(taskInput({ title: '数学', deadlineDate: '2025-10-20' }));
+  const input = feature.buildRescueInput();
+  const ref = input.context.tasks[0].ref;
+
+  const prepared = feature.prepareRescuePreview({
+    ok: true,
+    reply: '建议少做一点',
+    proposals: [{ kind: 'defer_task', taskId: String(ref), minutes: 20 }],
+  });
+  feature.setRescueState({ reportText: '数学超时', prepared });
+
+  const restored = feature.getRescueState();
+  assert.equal(restored.prepared.ok, true);
+  assert.equal(restored.prepared.stage, 'preview_ready');
+  assert.ok(restored.prepared.preview, '预览对象必须保留，否则重渲染后按钮点了也没内容');
+});
