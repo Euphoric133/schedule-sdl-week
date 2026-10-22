@@ -125,18 +125,18 @@ const PATCHES = [
   },
 
   {
-    id: 'wheel-pointer-no-tick',
-    marker: 'className:"wheel-pointer"',
-    reason: '指针不再抖动：去掉旋转期间的 wheel-pointer--spinning 抖动类，指针保持定住不动',
-    from: 'className:M?"wheel-pointer wheel-pointer--spinning":"wheel-pointer"',
-    to: 'className:"wheel-pointer"',
+    id: 'wheel-pointer-damped-tick',
+    marker: 'pointer-tick-decay',
+    reason: '恢复指针抖动，但改为阻尼式：幅度随转动减速而衰减、摆动周期随之拉长，停稳时几乎不动',
+    from: '.wheel-pointer--spinning{animation:none}',
+    to: '.wheel-pointer--spinning{animation:pointer-tick-decay 4.2s linear 1 both}@keyframes pointer-tick-decay{0%{transform:rotate(0.00deg)}2.5%{transform:rotate(-6.67deg)}5%{transform:rotate(0.62deg)}7.5%{transform:rotate(5.81deg)}10%{transform:rotate(-3.10deg)}12.5%{transform:rotate(-2.83deg)}15%{transform:rotate(5.13deg)}17.5%{transform:rotate(-3.78deg)}20%{transform:rotate(1.46deg)}22.5%{transform:rotate(0.19deg)}25%{transform:rotate(-0.86deg)}27.5%{transform:rotate(0.70deg)}30%{transform:rotate(0.12deg)}32.5%{transform:rotate(-1.41deg)}35%{transform:rotate(2.66deg)}37.5%{transform:rotate(-2.92deg)}40%{transform:rotate(1.40deg)}42.5%{transform:rotate(1.21deg)}45%{transform:rotate(-2.38deg)}47.5%{transform:rotate(0.47deg)}50%{transform:rotate(1.90deg)}52.5%{transform:rotate(-0.84deg)}55%{transform:rotate(-1.59deg)}57.5%{transform:rotate(0.50deg)}60%{transform:rotate(1.47deg)}62.5%{transform:rotate(0.23deg)}65%{transform:rotate(-1.08deg)}67.5%{transform:rotate(-0.92deg)}70%{transform:rotate(0.16deg)}72.5%{transform:rotate(0.89deg)}75%{transform:rotate(0.74deg)}77.5%{transform:rotate(0.04deg)}80%{transform:rotate(-0.56deg)}82.5%{transform:rotate(-0.71deg)}85%{transform:rotate(-0.42deg)}87.5%{transform:rotate(0.06deg)}90%{transform:rotate(0.44deg)}92.5%{transform:rotate(0.59deg)}95%{transform:rotate(0.49deg)}97.5%{transform:rotate(0.20deg)}100%{transform:rotate(-0.16deg)}}',
   },
   {
-    id: 'wheel-pointer-drop-tick-keyframes',
-    marker: '.wheel-pointer--spinning{animation:none}',
-    reason: '删掉已无用的 pointer-tick 抖动关键帧，避免样式里留下死动画',
-    from: '.wheel-pointer--spinning{animation:pointer-tick .14s linear infinite}@keyframes pointer-tick{0%,to{transform:rotate(0)}50%{transform:rotate(-7deg)}}',
-    to: '.wheel-pointer--spinning{animation:none}',
+    id: 'wheel-pointer-restore-spinning-class',
+    marker: 'wheel-pointer--spinning":"wheel-pointer',
+    reason: '指针在旋转期间重新带上 spinning 类（抖动用上面的阻尼关键帧）',
+    from: 'className:"wheel-pointer"',
+    to: 'className:M?"wheel-pointer wheel-pointer--spinning":"wheel-pointer"',
   },
 
 ];

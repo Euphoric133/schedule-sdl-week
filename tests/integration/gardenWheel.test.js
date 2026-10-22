@@ -240,10 +240,10 @@ test('转盘：指针朝下（底边在上、顶点指向轮盘中心）', async
     false,
     '不应再保留朝上的旧 path',
   );
-  // 指针必须"定住"：不再有旋转期间的抖动
-  assert.match(html, /className:"wheel-pointer"/, '指针应固定不动（不再有 spinning 抖动类）');
-  assert.equal(/wheel-pointer wheel-pointer--spinning/.test(html), false, '不应再出现抖动类');
-  assert.equal(/pointer-tick/.test(html), false, '抖动关键帧应已删除');
+  // 指针抖动改为"阻尼式"：幅度随转动减速衰减
+  assert.match(html, /className:M\?"wheel-pointer wheel-pointer--spinning":"wheel-pointer"/, '旋转期间应带 spinning 类');
+  assert.match(html, /animation:pointer-tick-decay 4\.2s linear 1 both/, '抖动应是一条 4.2 秒的衰减动画');
+  assert.equal(/pointer-tick .14s linear infinite/.test(html), false, '不应再有恒定幅度的高速抖动');
   assert.match(html, /fill:"var\(--warm\)"/, '指针颜色不变');
 });
 
@@ -293,4 +293,21 @@ test('发放机会：新增 spin/grant 分支，且只增加 grantedCount', asyn
   assert.match(html, /case"spin\/grant":\{[^}]*grantedCount:i\.spins\.grantedCount\+g/, '应有 spin/grant');
   assert.equal(/case"spin\/grant":\{[^}]*progressCount/.test(html), false, '不得改动 progressCount');
   assert.equal(/case"spin\/grant":\{[^}]*usedCount/.test(html), false, '不得改动 usedCount');
+});
+
+
+test('指针抖动：幅度随时间衰减、周期随减速拉长（阻尼式）', async () => {
+  const html = await loadEmbedded();
+  const start = html.indexOf('@keyframes pointer-tick-decay{');
+  assert.ok(start > 0, '应有阻尼关键帧');
+  const end = html.indexOf('}}', start) + 2;
+  const block = html.slice(start, end);
+  const angles = [...block.matchAll(/rotate\((-?[\d.]+)deg\)/g)].map((m) => Math.abs(Number(m[1])));
+
+  assert.ok(angles.length >= 20, '关键帧应足够密，过渡才平滑');
+  const head = Math.max(...angles.slice(0, 8));
+  const tail = Math.max(...angles.slice(-8));
+  assert.ok(head > 4, `起始幅度应明显（实际 ${head}°）`);
+  assert.ok(tail < head * 0.25, `结束幅度必须明显衰减（${head}° → ${tail}°）`);
+  assert.ok(Math.abs(angles.at(-1)) < 1, '最后一帧几乎不动，停稳时不跳变');
 });
