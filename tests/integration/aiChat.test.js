@@ -550,3 +550,111 @@ test('listModels：不返回任何敏感字段（只含模型名与计数）', a
     }
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * 模型过载自动回退
+ * ------------------------------------------------------------------ */
+
+/** 构造一个按模型名分流的上游：主模型返回指定状态，备用模型正常回答 */
+function stubByModel(map) {
+  return stubFetch(async (url, init) => {
+    const body = init?.body ? JSON.parse(init.body) : {};
+    const model = body.model ?? (url.match(/models\/([^:]+):/) || [])[1];
+    const behavior = map[model] ?? map['*'];
+    if (!behavior) throw new Error(`未预期请求模型 ${model}`);
+    if (behavior.status !== 200) {
+      return new Response(JSON.stringify(behavior.data ?? { error: { status: 'UNAVAILABLE', message: 'high demand' } }), {
+        status: behavior.status,
+      });
+    }
+    return new Response(JSON.stringify({ outputs: [{ content: [{ text: behavior.text ?? `来自 ${model}` }] }] }), { status: 200 });
+  });
+}
+
+test('主模型过载(503)时自动换备用模型，并标记 fallbackFrom', async () => {
+  await withEnv({ GEMINI_API_KEY: 'test-key' }, async () => {
+    const restore = stubByModel({
+      'gemini-3.8-flash': { status: 503 },
+      'gemini-3.5-flash-lite': { status: 200, text: '备用模型回答' },
+    });
+    try {
+      const response = await handler(makeRequest());
+      const payload = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(payload.ok, true);
+      assert.equal(payload.reply, '备用模型回答');
+      assert.equal(payload.model, 'gemini-3.5-flash-lite');
+      assert.equal(payload.fallbackFrom, 'gemini-3.8-flash');
+    } finally {
+      restore();
+    }
+  });
+});
+
+test('key 无效(401)时不回退——换模型掩盖不了鉴权问题', async () => {
+  let calls = 0;
+  await withEnv({ GEMINI_API_KEY: 'test-key' }, async () => {
+    const restore = stubFetch(async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ error: { status: 'UNAUTHENTICATED', message: 'bad key' } }), { status: 401 });
+    });
+    try {
+      const payload = await (await handler(makeRequest())).json();
+      assert.equal(payload.code, 'auth_failed');
+      assert.equal(calls, 1, '鉴权失败不应触发备用模型请求');
+      assert.equal(payload.fallbackTried, undefined);
+    } finally {
+      restore();
+    }
+  });
+});
+
+test('模型名不存在(404)时不走模型回退——那是配置错误，不是过载', async () => {
+  await withEnv({ GEMINI_API_KEY: 'test-key' }, async () => {
+    const restore = stubByModel({
+      'gemini-3.8-flash': { status: 404, data: { error: { status: 'NOT_FOUND', message: 'model not found' } } },
+    });
+    try {
+      const payload = await (await handler(makeRequest())).json();
+      assert.notEqual(payload.ok, true);
+      assert.equal(payload.fallbackTried, undefined, '404 不是过载，不该换模型');
+    } finally {
+      restore();
+    }
+  });
+});
+
+test('主备模型都过载时：返回主模型的错误，且记录 fallbackTried', async () => {
+  await withEnv({ GEMINI_API_KEY: 'test-key' }, async () => {
+    const restore = stubByModel({
+      'gemini-3.8-flash': { status: 503 },
+      'gemini-3.5-flash-lite': { status: 503 },
+    });
+    try {
+      const payload = await (await handler(makeRequest())).json();
+      assert.equal(payload.ok, false);
+      assert.equal(payload.code, 'upstream_down');
+      assert.equal(payload.model, 'gemini-3.8-flash', '应返回用户配置的主模型');
+      assert.equal(payload.fallbackTried, 'gemini-3.5-flash-lite');
+      assert.equal(payload.fallbackCode, 'upstream_down');
+    } finally {
+      restore();
+    }
+  });
+});
+
+test('备用模型与主模型相同时不重复请求', async () => {
+  let calls = 0;
+  await withEnv({ GEMINI_API_KEY: 'test-key', GEMINI_MODEL: 'same-model', GEMINI_MODEL_FALLBACK: 'same-model' }, async () => {
+    const restore = stubFetch(async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ error: { status: 'UNAVAILABLE' } }), { status: 503 });
+    });
+    try {
+      await handler(makeRequest());
+      assert.equal(calls, 1, '同一个模型不该请求两次');
+    } finally {
+      restore();
+    }
+  });
+});

@@ -27,6 +27,16 @@
 /** 默认模型。Google 的模型迭代很快，用环境变量 GEMINI_MODEL 覆盖，不要写死在这里。 */
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 
+/**
+ * 主模型过载时的备用模型。
+ *
+ * 依据是真实的模型列表（GET ?listModels=1 实测得到）：
+ * gemini-3.5-flash-lite / gemini-3.1-flash-lite 都在可用列表里。
+ * 备用选轻量档，理由很实际：旗舰 flash 最容易在高峰期被挤满，
+ * 而备用模型的作用只是"先把话说完"，不需要最强能力。
+ */
+const DEFAULT_FALLBACK_MODEL = 'gemini-3.5-flash-lite';
+
 /** 当前推荐的接口。旧接口（generateContent）作为回退，见 callGemini。 */
 const INTERACTIONS_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 
@@ -135,11 +145,18 @@ async function handle(req) {
   if (!parsed.ok) return json(400, { ok: false, code: 'bad_request', message: parsed.message });
 
   const model = readEnv('GEMINI_MODEL') || DEFAULT_MODEL;
-  const upstream = await callGemini({ apiKey, model, messages: parsed.messages });
+  const fallbackModel = readEnv('GEMINI_MODEL_FALLBACK') || DEFAULT_FALLBACK_MODEL;
+  const upstream = await callGemini({ apiKey, model, messages: parsed.messages, fallbackModel });
 
   if (!upstream.ok) {
     console.error('[ai-chat] upstream', upstream.status, upstream.code);
-    const payload = { ok: false, code: upstream.code, message: upstream.message, model };
+    const payload = {
+      ok: false,
+      code: upstream.code,
+      message: upstream.message,
+      model,
+      ...(upstream.fallbackTried ? { fallbackTried: upstream.fallbackTried, fallbackCode: upstream.fallbackCode } : {}),
+    };
     // 排查用：只有显式设置 AI_DEBUG_ERRORS=1 时才附带上游诊断信息。
     // upstreamStatus 是上游真实状态码（3xx/4xx/5xx），不是归一后的 502。
     if (readEnv('AI_DEBUG_ERRORS') === '1') {
@@ -148,7 +165,14 @@ async function handle(req) {
     return json(upstream.status, payload);
   }
 
-  return json(200, { ok: true, model, reply: upstream.reply, usage: upstream.usage ?? null });
+  return json(200, {
+    ok: true,
+    // 实际回答用的模型：回退发生时这里会是备用模型，便于排查"为什么换模型了"
+    model: upstream.model ?? model,
+    fallbackFrom: upstream.fallbackFrom ?? null,
+    reply: upstream.reply,
+    usage: upstream.usage ?? null,
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -333,16 +357,51 @@ function withContext(systemInstruction, contextText) {
  * @param {{apiKey: string, model: string, messages: Array<{role: string, content: string}>, contextText?: string}} input
  * @returns {Promise<{ok: true, reply: string, usage: object|null} | {ok: false, status: number, code: string, message: string}>}
  */
-export async function callGemini({ apiKey, model, messages, contextText = '' }) {
+export async function callGemini({ apiKey, model, messages, contextText = '', fallbackModel = null }) {
   const system = withContext(SYSTEM_INSTRUCTION, contextText);
 
+  const first = await callOneModel({ apiKey, model, system, messages });
+
+  /**
+   * 自动回退到备用模型。
+   *
+   * 触发条件只有一个：**主模型过载**（503 / UNAVAILABLE / 高需求）。
+   * 为什么只回退这一类：
+   * - 它能自愈，用户完全无感，是真正的"临时故障"；
+   * - 其它错误（key 无效、模型名不存在、参数错）换模型也没用，
+   *   回退只会把真正的原因掩盖掉，让排查更难。
+   *
+   * 只在配置了 fallbackModel 且与主模型不同的时候才尝试，
+   * 因此两边的错误行为都不会变。
+   */
+  if (!first.ok && first.code === 'upstream_down' && fallbackModel && fallbackModel !== model) {
+    const second = await callOneModel({ apiKey, model: fallbackModel, system, messages });
+    if (second.ok) {
+      return { ...second, usedFallback: true, fallbackFrom: model };
+    }
+    // 两个都失败：返回主模型的错误（它是用户配置的那个，更该被看见），
+    // 但把真实的原始诊断保留下来，方便判断是不是两个都过载了。
+    return { ...first, fallbackTried: fallbackModel, fallbackCode: second.code };
+  }
+
+  return first;
+}
+
+/**
+ * 用**一个**模型完成一次调用：先试推荐的 Interactions，再回退 generateContent。
+ *
+ * 注意这两个"回退"是不同层面的：
+ * - 这里解决的是**接口**差异（同一模型在新旧接口上的可用性）；
+ * - 外层解决的是**模型**过载（同一接口换一个模型）。
+ */
+async function callOneModel({ apiKey, model, system, messages }) {
   const primary = await postJson(INTERACTIONS_URL, apiKey, buildInteractionsBody(model, system, messages));
   if (primary.ok) {
     const reply = extractInteractionsText(primary.data);
-    if (reply) return { ok: true, reply, usage: primary.data?.usage ?? null };
+    if (reply) return { ok: true, reply, usage: primary.data?.usage ?? null, model };
     return mapUpstreamError(primary.status, primary.data, 'interactions_empty');
   }
-  // 404/400 才回退；401/403（key 问题）与 429（限流）回退没有意义，直接如实返回
+  // 404/400 才回退；其余（key 问题、限流、过载）直接如实返回
   if (primary.status !== 404 && primary.status !== 400) {
     return mapUpstreamError(primary.status, primary.data, 'interactions_failed');
   }
@@ -356,7 +415,7 @@ export async function callGemini({ apiKey, model, messages, contextText = '' }) 
 
   const reply = extractGenerateContentText(legacy.data);
   if (!reply) return mapUpstreamError(200, legacy.data, 'generate_content_empty');
-  return { ok: true, reply, usage: legacy.data?.usageMetadata ?? null };
+  return { ok: true, reply, usage: legacy.data?.usageMetadata ?? null, model };
 }
 
 /** Interactions API 的请求体：system 放在 system_instruction，历史消息放在 input。 */
