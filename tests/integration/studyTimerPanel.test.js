@@ -80,7 +80,7 @@ test('到点判定：未到开始时间 / 正在进行 / 已过时段', () => {
   assert.equal(schedulePhaseOf(task, { minutes: 1343 }), 'due', '到点即开始');
   assert.equal(schedulePhaseOf(task, { minutes: 1400 }), 'due');
   assert.equal(schedulePhaseOf(task, { minutes: 1413 }), 'overdue');
-  assert.equal(schedulePhaseOf({ startMinutes: null, minutes: 30 }, { minutes: 600 }), 'upcoming');
+  assert.equal(schedulePhaseOf({ startMinutes: null, minutes: 30 }, { minutes: 600 }), 'unscheduled', '没有排程的任务不属于任何时段');
 });
 
 /* ---------------- 注入健壮性 ---------------- */
@@ -90,4 +90,68 @@ test('注入：没有 iframe 或没有文档时安静失败，不抛错', () => 
   assert.equal(mountStudyTimerPanel({}), false);
   assert.equal(mountStudyTimerPanel({ contentDocument: null }), false);
   assert.equal(mountStudyTimerPanel({ get contentDocument() { throw new Error('cross-origin'); } }), false);
+});
+
+/* ---------------- 侧边栏分区注入 ---------------- */
+
+test('注入：在花园侧边栏追加「学习任务计时」入口，并挂出整页', async () => {
+  const { readFile, writeFile } = await import('node:fs/promises');
+  const { join, resolve } = await import('node:path');
+  const root = resolve(import.meta.dirname, '..', '..');
+  const smoke = await readFile(join(root, 'tests', 'integration', 'ui-smoke.test.js'), 'utf8');
+  const code = smoke.slice(smoke.indexOf('class FakeClassList'), smoke.indexOf("test('界面启动")) + '\nexport { installFakeDom };';
+  await writeFile('/tmp/panel-mount-fakedom.mjs', code);
+  const { installFakeDom } = await import('/tmp/panel-mount-fakedom.mjs');
+
+  const dom = installFakeDom();
+  const doc = dom.document;
+  // 最小 DOM 没有 Element.append，补一个等价实现（真实浏览器无需）
+  const proto = Object.getPrototypeOf(doc.createElement('div'));
+  if (typeof proto.append !== 'function') {
+    proto.append = function append(...nodes) {
+      for (const node of nodes) this.appendChild(node);
+    };
+  }
+
+  const nav = doc.createElement('ul');
+  nav.setAttribute('class', 'nav-list');
+  doc.body.appendChild(nav);
+
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: (key) => store.delete(key),
+  };
+  const completed = [];
+  globalThis.parent = {
+    __plannerGardenApi: {
+      listStudyTasks: () => [{ plannerId: 't1', gardenId: 'g1', title: '两小时项目', startMinutes: 1343, minutes: 120 }],
+      completeStudyTask: (payload) => completed.push(payload),
+    },
+  };
+
+  try {
+    const mounted = mountStudyTimerPanel({ contentDocument: doc });
+    assert.equal(mounted, true);
+
+    // 侧边栏入口
+    assert.equal(nav.children.length, 1, '应当追加一个入口');
+    assert.match(nav.children[0].textContent, /学习任务计时/);
+
+    // 整页
+    const panel = doc.body.__studyTimerPanel;
+    assert.ok(panel?.host, '应当挂出计时页面');
+    assert.equal(panel.host.getAttribute('data-open'), 'false', '默认不占屏');
+
+    panel.open();
+    assert.equal(panel.host.getAttribute('data-open'), 'true');
+
+    const rows = panel.host.all().filter((node) => node.className === 'st-row');
+    assert.equal(rows.length, 1, '应当列出学习任务');
+    assert.match(rows[0].textContent, /22:23 · 120 分钟/);
+  } finally {
+    delete globalThis.localStorage;
+    delete globalThis.parent;
+  }
 });

@@ -1,23 +1,32 @@
 /**
  * 花园内的「学习任务计时」分区。
  *
- * 这是**我们**加在花园里的新区域，不改花园原有一行代码：
- * 花园的 React 挂在它自己的 `#root` 上，我们在这之外插入一块独立的浮层，
- * 通过同源 `window.parent` 拿主应用的数据、回写完成状态。
+ * 形态：**花园侧边栏里的一个入口**（与「专注」「任务」并列），点开是一整块计时页面，
+ * 不再是右下角的小浮层。视觉上是花园的一个分区，但对花园的 React 树与路由**零改动**：
+ * 只在它的 `<ul class="nav-list">` 里追加一个按钮，再叠一层自己的页面。
  *
- * 为什么不做成花园里的一个导航页：
- * 那需要改它的 React 树与路由（属于改它的功能）。做成同一文档里的独立分区，
- * 视觉上仍然是"花园里的一个区域"，但对花园是零侵入。
- *
- * 计时器规则（按需求）：
- * - 时长 = 该学习任务的计划时长（不是固定 25 分钟）；
- * - 到任务计划开始时间自动开始；
- * - 有「提前结束」，提前结束同样算完成一个番茄；
- * - 结束时 → 花园任务 +1 番茄（主应用里显示 🍅 N）→ 主应用任务标记完成。
+ * 规则（按需求）：
+ * - 时长 = 任务的剩余工作量（清单口径由 gardenSync 保证）；
+ * - 到计划开始时间**自动开始**（页面前台时每 15 秒检查一次，同一任务同一分钟只触发一次）；
+ * - 自然到点 → 进入「已到时间，待确认」，**不自动**改任何数据；
+ * - 「提前结束」需要二次确认，确认后计为完成一个番茄；
+ * - 计时状态持久化（绝对结束时刻），刷新/重进花园后恢复，不归零。
  */
 
-/** 面板只创建一次 */
+import {
+  TIMER_STATUS,
+  advanceTimer,
+  elapsedSeconds,
+  loadTimer,
+  pauseTimer,
+  remainingSeconds,
+  resumeTimer,
+  saveTimer,
+  startTimer,
+} from '../services/studyTimer.js';
+
 const PANEL_KEY = '__studyTimerPanel';
+const AUTO_CHECK_MS = 15_000;
 
 /** 秒 → mm:ss / h:mm:ss */
 export function formatRemaining(totalSeconds) {
@@ -30,25 +39,71 @@ export function formatRemaining(totalSeconds) {
   return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+/** 分钟数 → HH:mm */
+export function formatClock(minutes) {
+  if (!Number.isInteger(minutes)) return '未排时间';
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
 /**
- * 根据"计划开始时间 + 时长"判断当前该做什么。
+ * 判断任务相对"现在"的阶段。
  *
- * @param {{startMinutes: number, minutes: number}} task
- * @param {{minutes: number}} now 当天的"从零点起的分钟数"
- * @returns {'upcoming'|'due'|'overdue'}
+ * @param {{startMinutes: number|null, minutes: number}} task
+ * @param {{minutes: number}} now
+ * @returns {'upcoming'|'due'|'overdue'|'unscheduled'}
  */
 export function schedulePhaseOf(task, now) {
-  if (!Number.isInteger(task?.startMinutes)) return 'upcoming';
+  if (!Number.isInteger(task?.startMinutes)) return 'unscheduled';
   if (now.minutes < task.startMinutes) return 'upcoming';
   if (now.minutes < task.startMinutes + Math.max(1, task.minutes ?? 0)) return 'due';
   return 'overdue';
 }
 
+const STYLE_ID = '__study-timer-style';
+const CSS = `
+.st-host{position:fixed;inset:0;z-index:9000;display:none;flex-direction:column;
+  background:#f7f5f0;color:#22302a;font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
+.st-host[data-open="true"]{display:flex}
+.st-head{display:flex;align-items:center;gap:12px;padding:16px 24px;border-bottom:1px solid #e3e0d8;background:#fff}
+.st-head h2{margin:0;font-size:17px}
+.st-back{margin-left:auto;padding:7px 14px;border-radius:999px;border:1px solid #d7d3c8;
+  background:#fff;color:#22302a;font:inherit;font-weight:600;cursor:pointer}
+.st-body{flex:1;overflow:auto;padding:24px;display:grid;gap:20px;
+  grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);align-items:start}
+@media (max-width:820px){.st-body{grid-template-columns:1fr;padding:16px}}
+.st-card{background:#fff;border:1px solid #e3e0d8;border-radius:16px;padding:16px}
+.st-card h3{margin:0 0 10px;font-size:14px;color:#5c6b63}
+.st-row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-top:1px solid #f0eee8}
+.st-row:first-of-type{border-top:0}
+.st-row__main{flex:1;min-width:0}
+.st-row__name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st-row__meta{color:#6b7a72;font-size:12px}
+.st-btn{padding:7px 14px;border-radius:10px;border:1px solid #4a7c59;background:#4a7c59;
+  color:#fff;font:inherit;font-weight:600;cursor:pointer}
+.st-btn--ghost{background:#f6f8f6;color:#4a5a51;border-color:#d7ded9}
+.st-btn--warn{background:#fdf1ed;color:#a4442a;border-color:#e2b7a8}
+.st-btn:disabled{opacity:.45;cursor:not-allowed}
+.st-clock{font-size:clamp(44px,7vw,64px);font-weight:700;font-variant-numeric:tabular-nums;text-align:center;letter-spacing:1px}
+.st-sub{text-align:center;color:#5c6b63;margin-top:4px;min-height:20px}
+.st-actions{display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap}
+.st-badge{margin-left:auto;font-size:11.5px;color:#4a7c59;font-weight:700}
+.st-flag{margin-top:10px;padding:8px 10px;border-radius:10px;background:#fdf6ec;color:#8a5a1f;font-size:12.5px;text-align:center}
+`;
+
+function ensureStyle(doc) {
+  if (doc.getElementById(STYLE_ID)) return;
+  const style = doc.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = CSS;
+  // 某些环境（以及测试用的最小 DOM）没有 head，退回到 body
+  (doc.head ?? doc.body)?.appendChild?.(style);
+}
+
 /**
- * 把面板注入到花园的文档里（同源 iframe）。
+ * 在花园的侧边栏里挂一个入口，并注入整页计时界面。
  *
  * @param {HTMLIFrameElement|null} frame
- * @returns {boolean} 是否注入成功
+ * @returns {boolean} 注入成功与否
  */
 export function mountStudyTimerPanel(frame) {
   let doc = null;
@@ -60,175 +115,238 @@ export function mountStudyTimerPanel(frame) {
   if (!doc?.body) return false;
   if (doc.body[PANEL_KEY]) return true;
 
-  const state = { timer: null, tick: null };
+  const navList = doc.querySelector('.nav-list');
+  if (!navList) return false; // 花园还没渲染出侧边栏
 
-  /* ---------------- 启动按钮 ---------------- */
-  const launcher = doc.createElement('button');
-  launcher.type = 'button';
-  launcher.textContent = '⏱ 学习任务计时';
-  launcher.setAttribute('data-study-timer', 'launcher');
-  Object.assign(launcher.style, {
-    position: 'fixed',
-    right: '18px',
-    bottom: '18px',
-    zIndex: '9999',
-    padding: '10px 16px',
-    borderRadius: '999px',
-    border: '1px solid rgba(0,0,0,.12)',
-    background: '#4a7c59',
-    color: '#fff',
-    font: '600 13px/1.2 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif',
-    boxShadow: '0 6px 18px rgba(0,0,0,.18)',
-    cursor: 'pointer',
-  });
+  ensureStyle(doc);
 
-  /* ---------------- 面板 ---------------- */
-  const panel = doc.createElement('section');
-  panel.setAttribute('data-study-timer', 'panel');
-  Object.assign(panel.style, {
-    position: 'fixed',
-    right: '18px',
-    bottom: '70px',
-    width: 'min(360px, calc(100vw - 36px))',
-    maxHeight: 'min(70vh, 560px)',
-    overflow: 'auto',
-    zIndex: '9999',
-    background: '#fff',
-    color: '#22302a',
-    border: '1px solid rgba(0,0,0,.12)',
-    borderRadius: '16px',
-    boxShadow: '0 18px 42px rgba(0,0,0,.22)',
-    padding: '14px',
-    font: '13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif',
-    display: 'none',
-  });
+  const state = {
+    timer: loadTimer(),
+    tick: null,
+    auto: null,
+    confirmArmed: false,
+    lastAutoKey: null,
+  };
 
-  const title = doc.createElement('div');
-  title.textContent = '学习任务计时';
-  Object.assign(title.style, { fontWeight: '700', fontSize: '14px', marginBottom: '8px' });
+  /* ---------- 侧边栏入口 ---------- */
+  const navItem = doc.createElement('li');
+  const navButton = doc.createElement('button');
+  navButton.type = 'button';
+  navButton.className = 'nav-item';
+  navButton.setAttribute('data-study-timer', 'nav');
+  const navLabel = doc.createElement('span');
+  navLabel.textContent = '学习任务计时';
+  const navBadge = doc.createElement('span');
+  navBadge.className = 'st-badge';
+  navButton.append(navLabel, navBadge);
+  navItem.append(navButton);
+  navList.append(navItem);
 
+  /* ---------- 整页 ---------- */
+  const host = doc.createElement('section');
+  host.className = 'st-host';
+  host.setAttribute('data-study-timer', 'page');
+  host.setAttribute('data-open', 'false');
+
+  const head = doc.createElement('div');
+  head.className = 'st-head';
+  const h2 = doc.createElement('h2');
+  h2.textContent = '学习任务计时';
+  const back = doc.createElement('button');
+  back.type = 'button';
+  back.className = 'st-back';
+  back.textContent = '← 返回花园';
+  head.append(h2, back);
+
+  const body = doc.createElement('div');
+  body.className = 'st-body';
+
+  const listCard = doc.createElement('div');
+  listCard.className = 'st-card';
+  const listTitle = doc.createElement('h3');
+  listTitle.textContent = '学习任务';
   const list = doc.createElement('div');
-  const timerBox = doc.createElement('div');
-  Object.assign(timerBox.style, { marginTop: '10px', display: 'none', textAlign: 'center' });
+  listCard.append(listTitle, list);
 
+  const timerCard = doc.createElement('div');
+  timerCard.className = 'st-card';
   const clock = doc.createElement('div');
-  Object.assign(clock.style, { fontSize: '34px', fontWeight: '700', fontVariantNumeric: 'tabular-nums', letterSpacing: '1px' });
+  clock.className = 'st-clock';
+  clock.textContent = '--:--';
+  const sub = doc.createElement('div');
+  sub.className = 'st-sub';
+  sub.textContent = '从左侧选一个任务开始';
+  const flag = doc.createElement('div');
+  flag.className = 'st-flag';
+  flag.style.display = 'none';
+  const actions = doc.createElement('div');
+  actions.className = 'st-actions';
 
-  const timerLabel = doc.createElement('div');
-  Object.assign(timerLabel.style, { color: '#5c6b63', marginBottom: '8px' });
-
-  const actionRow = doc.createElement('div');
-  Object.assign(actionRow.style, { display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '6px' });
+  const pauseBtn = doc.createElement('button');
+  pauseBtn.type = 'button';
+  pauseBtn.className = 'st-btn st-btn--ghost';
+  pauseBtn.textContent = '暂停';
 
   const finishBtn = doc.createElement('button');
   finishBtn.type = 'button';
+  finishBtn.className = 'st-btn st-btn--warn';
   finishBtn.textContent = '提前结束';
-  Object.assign(finishBtn.style, {
-    padding: '8px 14px', borderRadius: '10px', border: '1px solid #d16b4f',
-    background: '#fdf1ed', color: '#a4442a', fontWeight: '600', cursor: 'pointer',
-  });
 
-  const stopBtn = doc.createElement('button');
-  stopBtn.type = 'button';
-  stopBtn.textContent = '放弃本次';
-  Object.assign(stopBtn.style, {
-    padding: '8px 14px', borderRadius: '10px', border: '1px solid #d7ded9',
-    background: '#f6f8f6', color: '#4a5a51', fontWeight: '600', cursor: 'pointer',
-  });
+  const abandonBtn = doc.createElement('button');
+  abandonBtn.type = 'button';
+  abandonBtn.className = 'st-btn st-btn--ghost';
+  abandonBtn.textContent = '放弃本次';
 
-  actionRow.append(finishBtn, stopBtn);
-  timerBox.append(clock, timerLabel, actionRow);
-  panel.append(title, list, timerBox);
+  actions.append(pauseBtn, finishBtn, abandonBtn);
+  timerCard.append(clock, sub, flag, actions);
+  body.append(listCard, timerCard);
+  host.append(head, body);
+  doc.body.append(host);
 
-  /* ---------------- 行为 ---------------- */
+  /* ---------- 行为 ---------- */
   const api = () => globalThis.parent?.__plannerGardenApi ?? null;
+  const nowMs = () => Date.now();
+  const nowMinutes = () => {
+    const date = new Date();
+    return date.getHours() * 60 + date.getMinutes();
+  };
 
-  function stopTimer() {
+  const persist = () => saveTimer(state.timer);
+
+  function stopTicking() {
     if (state.tick !== null) {
       globalThis.clearInterval(state.tick);
       state.tick = null;
     }
-    state.timer = null;
-    timerBox.style.display = 'none';
   }
 
-  function renderRemaining() {
-    if (!state.timer) return;
-    const left = Math.max(0, Math.round((state.timer.targetAt - Date.now()) / 1000));
-    clock.textContent = formatRemaining(left);
-    timerLabel.textContent = `${state.timer.title} · 计划 ${state.timer.minutes} 分钟`;
-    if (left <= 0) finish(true);
-  }
-
-  function start(task) {
-    stopTimer();
-    const minutes = Math.max(1, Math.round(task.minutes ?? 25));
-    state.timer = {
-      ...task,
-      minutes,
-      startedAt: Date.now(),
-      targetAt: Date.now() + minutes * 60_000,
-    };
-    timerBox.style.display = 'block';
-    renderRemaining();
-    state.tick = globalThis.setInterval(renderRemaining, 1000);
-  }
-
-  /**
-   * 结束一次专注。
-   *
-   * @param {boolean} automatic true = 时间到；false = 用户点了「提前结束」或「放弃」
-   */
-  function finish(completed) {
-    const timer = state.timer;
-    stopTimer();
-    if (!timer) return;
-    if (!completed) {
-      renderList();
+  function renderTimer() {
+    const current = state.timer;
+    if (!current) {
+      clock.textContent = '--:--';
+      sub.textContent = '从左侧选一个任务开始';
+      flag.style.display = 'none';
+      pauseBtn.disabled = true;
+      finishBtn.disabled = true;
+      abandonBtn.disabled = true;
+      finishBtn.textContent = '提前结束';
+      navBadge.textContent = '';
       return;
     }
-    const elapsedSeconds = Math.max(0, Math.round((Date.now() - timer.startedAt) / 1000));
+
+    const advanced = advanceTimer(current, nowMs());
+    if (advanced !== current) {
+      state.timer = advanced;
+      persist();
+    }
+
+    const left = remainingSeconds(state.timer, nowMs());
+    clock.textContent = formatRemaining(left);
+    const expired = state.timer.status === TIMER_STATUS.EXPIRED;
+    const paused = state.timer.status === TIMER_STATUS.PAUSED;
+
+    pauseBtn.disabled = expired;
+    finishBtn.disabled = false;
+    abandonBtn.disabled = false;
+    pauseBtn.textContent = paused ? '继续' : '暂停';
+    navBadge.textContent = paused || expired ? '' : formatRemaining(left);
+
+    if (expired) {
+      sub.textContent = `${state.timer.title} · ${state.timer.minutes} 分钟已走完`;
+      flag.style.display = 'block';
+      flag.textContent = '已到时间，请确认完成（系统不会自动修改数据）';
+      finishBtn.textContent = '确认完成';
+      finishBtn.className = 'st-btn';
+      return;
+    }
+
+    flag.style.display = 'none';
+    finishBtn.className =
+      state.confirmArmed ? 'st-btn' : 'st-btn st-btn--warn';
+    finishBtn.textContent = state.confirmArmed ? '再点一次确认结束' : '提前结束';
+    sub.textContent = paused
+      ? `已暂停 · ${state.timer.title}（剩余 ${formatRemaining(left)}）`
+      : `正在专注 · ${state.timer.title}（共 ${state.timer.minutes} 分钟）`;
+  }
+
+  function startTicking() {
+    stopTicking();
+    state.tick = globalThis.setInterval(renderTimer, 1000);
+  }
+
+  function startFor(task) {
+    state.timer = startTimer(task, nowMs());
+    state.confirmArmed = false;
+    persist();
+    renderTimer();
+    startTicking();
+    renderList();
+  }
+
+  function finishTimer() {
+    const timer = state.timer;
+    if (!timer) return;
+
+    const expired = timer.status === TIMER_STATUS.EXPIRED;
+    if (!expired && !state.confirmArmed) {
+      // 二次确认：第一次点击只是"上膛"，4 秒内再点才真正结束
+      state.confirmArmed = true;
+      renderTimer();
+      globalThis.setTimeout(() => {
+        state.confirmArmed = false;
+        if (state.timer) renderTimer();
+      }, 4000);
+      return;
+    }
+
+    const used = expired
+      ? timer.minutes
+      : Math.max(1, Math.round(elapsedSeconds(timer, nowMs()) / 60));
+
+    state.timer = null;
+    state.confirmArmed = false;
+    persist();
+    stopTicking();
+    renderTimer();
+
     api()?.completeStudyTask?.({
       plannerId: timer.plannerId,
       gardenId: timer.gardenId,
-      actualMinutes: Math.round(elapsedSeconds / 60) || timer.minutes,
+      actualMinutes: used,
     });
+    renderList();
+  }
+
+  function abandonTimer() {
+    state.timer = null;
+    state.confirmArmed = false;
+    persist();
+    stopTicking();
+    renderTimer();
     renderList();
   }
 
   function makeRow(task) {
     const row = doc.createElement('div');
-    Object.assign(row.style, {
-      display: 'flex', alignItems: 'center', gap: '8px',
-      padding: '8px 6px', borderTop: '1px solid #eef1ee',
-    });
+    row.className = 'st-row';
 
-    const info = doc.createElement('div');
-    Object.assign(info.style, { flex: '1 1 auto', minWidth: '0' });
-
+    const main = doc.createElement('div');
+    main.className = 'st-row__main';
     const name = doc.createElement('div');
+    name.className = 'st-row__name';
     name.textContent = task.title;
-    Object.assign(name.style, { fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
-
     const meta = doc.createElement('div');
-    const startLabel = Number.isInteger(task.startMinutes)
-      ? `${String(Math.floor(task.startMinutes / 60)).padStart(2, '0')}:${String(task.startMinutes % 60).padStart(2, '0')}`
-      : '未排时间';
-    meta.textContent = `${startLabel} · ${task.minutes} 分钟`;
-    Object.assign(meta.style, { color: '#6b7a72', fontSize: '12px' });
+    meta.className = 'st-row__meta';
+    meta.textContent = `${formatClock(task.startMinutes)} · ${task.minutes} 分钟`;
+    main.append(name, meta);
 
-    info.append(name, meta);
+    const focus = doc.createElement('button');
+    focus.type = 'button';
+    focus.className = 'st-btn';
+    focus.textContent = '专注';
+    focus.addEventListener('click', () => startFor(task));
 
-    const focusBtn = doc.createElement('button');
-    focusBtn.type = 'button';
-    focusBtn.textContent = '专注';
-    Object.assign(focusBtn.style, {
-      padding: '6px 12px', borderRadius: '9px', border: '1px solid #4a7c59',
-      background: '#4a7c59', color: '#fff', fontWeight: '600', cursor: 'pointer', flex: '0 0 auto',
-    });
-    focusBtn.addEventListener('click', () => start(task));
-
-    row.append(info, focusBtn);
+    row.append(main, focus);
     return row;
   }
 
@@ -237,34 +355,88 @@ export function mountStudyTimerPanel(frame) {
     list.textContent = '';
     if (tasks.length === 0) {
       const empty = doc.createElement('div');
-      empty.textContent = '还没有学习任务。先在主应用里创建任务，再回到这里。';
-      Object.assign(empty.style, { color: '#6b7a72', padding: '10px 4px' });
+      empty.className = 'st-row__meta';
+      empty.textContent = '还没有学习任务。先在规划器里创建任务，再回到这里。';
       list.append(empty);
       return;
     }
     for (const task of tasks) list.append(makeRow(task));
   }
 
-  finishBtn.addEventListener('click', () => finish(true));
-  stopBtn.addEventListener('click', () => finish(false));
+  /** 到点自动开始：只在前台、且当前没有计时时触发；同一任务同一分钟只触发一次 */
+  function autoCheck() {
+    if (state.timer) return;
+    const tasks = api()?.listStudyTasks?.() ?? [];
+    const minute = nowMinutes();
+    const due = tasks.find((task) => task.startMinutes === minute);
+    if (!due) return;
+    const key = `${due.plannerId}@${minute}`;
+    if (state.lastAutoKey === key) return;
+    state.lastAutoKey = key;
+    startFor(due);
+  }
 
-  launcher.addEventListener('click', () => {
-    const hidden = panel.style.display === 'none';
-    panel.style.display = hidden ? 'block' : 'none';
-    if (hidden) renderList();
+  navButton.addEventListener('click', () => {
+    const open = host.getAttribute('data-open') === 'true';
+    host.setAttribute('data-open', open ? 'false' : 'true');
+    if (!open) {
+      renderList();
+      renderTimer();
+    }
+  });
+  back.addEventListener('click', () => host.setAttribute('data-open', 'false'));
+
+  pauseBtn.addEventListener('click', () => {
+    if (!state.timer) return;
+    state.timer =
+      state.timer.status === TIMER_STATUS.PAUSED
+        ? resumeTimer(state.timer, nowMs())
+        : pauseTimer(state.timer, nowMs());
+    persist();
+    renderTimer();
   });
 
-  doc.body.append(panel, launcher);
-  doc.body[PANEL_KEY] = { panel, launcher, state, renderList };
+  finishBtn.addEventListener('click', finishTimer);
+  abandonBtn.addEventListener('click', abandonTimer);
+
+  renderList();
+  renderTimer();
+  if (state.timer && state.timer.status === TIMER_STATUS.RUNNING) startTicking();
+  state.auto = globalThis.setInterval(autoCheck, AUTO_CHECK_MS);
+  autoCheck();
+
+  doc.body[PANEL_KEY] = {
+    host,
+    state,
+    renderList,
+    renderTimer,
+    open: () => {
+      host.setAttribute('data-open', 'true');
+      renderList();
+      renderTimer();
+    },
+  };
   return true;
 }
 
-/** 面板打开时刷新列表（主应用数据可能变了） */
+/** 数据变化后刷新清单与计时显示 */
 export function refreshStudyTimerPanel(frame) {
   try {
     const panel = frame?.contentDocument?.body?.[PANEL_KEY];
     panel?.renderList?.();
+    panel?.renderTimer?.();
   } catch {
     // 文档已卸载或跨域：忽略
+  }
+}
+
+/** 打开花园里的计时分区（供外部调用/测试） */
+export function openStudyTimerPanel(frame) {
+  try {
+    const panel = frame?.contentDocument?.body?.[PANEL_KEY];
+    panel?.open?.();
+    return Boolean(panel);
+  } catch {
+    return false;
   }
 }
