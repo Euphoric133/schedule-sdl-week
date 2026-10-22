@@ -485,3 +485,36 @@ test('prepareRescuePreview 成功后，结果可由 getRescueState 保存并复�
   assert.equal(restored.prepared.stage, 'preview_ready');
   assert.ok(restored.prepared.preview, '预览对象必须保留，否则重渲染后按钮点了也没内容');
 });
+
+test('上下文提供 validTaskRefs，且与 tasks 的 ref 完全一致', () => {
+  const { services, feature } = setupFeatureApp();
+  services.taskService.addTask(taskInput({ title: 'A', deadlineDate: '2025-10-20' }));
+  services.taskService.addTask(taskInput({ title: 'B', deadlineDate: '2025-10-20' }));
+  const input = feature.buildRescueInput();
+  assert.deepEqual(input.context.validTaskRefs, [1, 2]);
+  assert.deepEqual(input.context.tasks.map((t) => t.ref), [1, 2]);
+});
+
+test('AI 直接写精确标题时也能映射（确定性匹配，非模糊猜测）', () => {
+  const { app, services, feature } = setupFeatureApp();
+  services.taskService.addTask(taskInput({ title: '数学练习册', subject: '数学', deadlineDate: '2025-10-20' }));
+  const result = feature.prepareRescuePreview({
+    ok: true,
+    reply: 'x',
+    proposals: [{ kind: 'defer_task', taskId: '数学练习册', minutes: 20 }],
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.issues));
+});
+
+test('标题相同但重复出现时不猜（避免改错任务）', () => {
+  const { services, feature } = setupFeatureApp();
+  services.taskService.addTask(taskInput({ title: '数学作业', deadlineDate: '2025-10-20' }));
+  services.taskService.addTask(taskInput({ title: '数学作业', deadlineDate: '2025-10-21' }));
+  const result = feature.prepareRescuePreview({
+    ok: true,
+    reply: 'x',
+    proposals: [{ kind: 'defer_task', taskId: '数学作业', minutes: 20 }],
+  });
+  assert.equal(result.ok, false, '同名任务时必须拒绝，而不是随便选一个');
+  assert.equal(result.stage, 'proposal_rejected');
+});

@@ -77,6 +77,13 @@ export function createAiFeatureService({ app, planService, now }) {
           deadline: `${task.deadlineDate} ${task.deadlineTime}`,
           importance: task.importance,
         })),
+        /**
+         * 明确列出"允许使用的 ref"。
+         *
+         * 实测模型会凭空发明编号（只有 1 个任务却说 taskId:"2"）。
+         * 把合法集合单独写出来，比让它自己从数组推断更可靠。
+         */
+        validTaskRefs: tasks.slice(0, 8).map((task, index) => index + 1),
       },
     };
   }
@@ -114,6 +121,15 @@ export function createAiFeatureService({ app, planService, now }) {
       if (asRef) return { ...proposal, taskId: asRef };
       // 也接受模型直接写真实 id（兼容两种写法）
       if (input.taskById.has(key)) return { ...proposal, taskId: key };
+      /**
+       * 最后一条确定性通道：**精确标题**匹配。
+       *
+       * 只有在"标题完全相同且唯一"时才采纳——这是事实匹配，不是模糊猜测。
+       * 模型偶尔会忽略 ref 直接写任务名，与其整体拒绝，不如接受这种明确指认。
+       * 注意：不做"包含/相近"匹配，那才是猜意图。
+       */
+      const byTitle = input.context.tasks.filter((item) => item.title === key);
+      if (byTitle.length === 1) return { ...proposal, taskId: byTitle[0].id };
       return proposal;
     });
 
