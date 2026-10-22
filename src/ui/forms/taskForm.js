@@ -11,7 +11,13 @@
 
 import { append, clear, el, toast } from '../dom.js';
 import { button } from '../components.js';
-import { TASK_STATUS, TITLE_MAX_LENGTH, SUBJECT_MAX_LENGTH, createTaskDraft } from '../../domain/task.js';
+import {
+  TASK_STATUS,
+  TITLE_MAX_LENGTH,
+  SUBJECT_MAX_LENGTH,
+  createTaskDraft,
+  listDependencyCandidates,
+} from '../../domain/task.js';
 import { formatIssue } from '../../domain/validation.js';
 import { isValidDateString, isValidTimeString } from '../../domain/time.js';
 

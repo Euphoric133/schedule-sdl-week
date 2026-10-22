@@ -9,6 +9,7 @@
 import { append, clear, el, num } from './dom.js';
 import { BLOCK_KIND_LABELS_ZH } from '../domain/calendarBlock.js';
 import { formatDuration, formatMinutes, formatDateWithWeekday, weekday as weekdayOf } from '../domain/time.js';
+import { issueMessage } from './labels.js';
 
 /** 页面标题区 */
 export function pageHead({ title, sub, actions = [] }) {

@@ -219,3 +219,29 @@ test('取消任务不会误删别人的依赖（只有完成才清理）', async
     );
   });
 });
+
+/* ================================================================== *
+ * 回归：新建任务表单必须能打开（曾经因为漏导入 listDependencyCandidates 而崩）
+ * ================================================================== */
+
+test('新建任务：已有任务时也能打开表单，且前置候选里没有已完成任务', async () => {
+  await withApp(async ({ dom, instance }) => {
+    const base = taskInput({ title: '已有任务' });
+    instance.services.taskService.addTask(base);
+    const created = instance.services.taskService.addTask(taskInput({ title: '已完成任务' }));
+    instance.services.taskService.changeTaskStatus(created.task.id, 'completed');
+
+    dom.location.hash = '#/tasks';
+    instance.shell.render();
+    const main = dom.appHost.children[0].byClass('app-main')[0];
+    const newTask = main.all().find((node) => node.tagName === 'BUTTON' && node.textContent.trim() === '新建任务');
+    assert.ok(newTask, '应有「新建任务」按钮');
+
+    assert.doesNotThrow(() => newTask.click(), '点击新建任务不能抛错');
+    const dialogs = dom.document.body.all().filter((node) => String(node.tagName).toLowerCase() === 'dialog');
+    assert.equal(dialogs.length, 1, '必须真的打开表单弹窗');
+    const text = dialogs[0].textContent;
+    assert.match(text, /前置任务/, '应包含前置任务区域');
+    assert.equal(text.includes('已完成任务'), false, '已完成任务不应出现在候选里');
+  });
+});

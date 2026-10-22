@@ -5,6 +5,50 @@
 
 ---
 
+## [1.18.1] — 修复「新建任务」点不开（漏导入 listDependencyCandidates）
+
+日期：2026-10-20
+
+### 现象
+
+点击「新建任务」没有任何反应，无法创建任务。
+
+### 根因
+
+1.17.0 把「前置任务」候选改成调用 `listDependencyCandidates()`，
+但 `src/ui/forms/taskForm.js` **只用了它、没有 import 它**。
+
+只要已经存在至少一个任务，渲染候选时就会抛
+`ReferenceError: listDependencyCandidates is not defined`，
+表单构建中断 → 弹窗根本没被插进 DOM，看起来就是"点了没反应"。
+
+（当时的自动化测试没发现，是因为测试夹具里没有其它任务，过滤函数一次都没被调用。）
+
+### 修复
+
+- `src/ui/forms/taskForm.js`：补上 `listDependencyCandidates` 的导入；
+- 追加回归测试：**先创建一个任务和一个已完成任务**，再点「新建任务」，
+  断言弹窗真的出现、含「前置任务」、且候选里没有已完成任务。
+
+### 顺带修掉一处同类隐患
+
+静态扫描（本仓库导出符号 vs 各文件导入）发现 `src/ui/components.js` 的 `diagList`
+调用了 `issueMessage()` 但没导入 —— 任何展示诊断列表的地方都会崩。已补上导入。
+
+### 测试与构建
+
+```
+$ node --test "tests/**/*.test.js"
+ℹ tests 656
+ℹ pass 656
+ℹ fail 0
+
+$ node scripts/build-standalone.mjs
+已生成 dist/standalone.html（1517 KB，内联 76 个模块）
+```
+
+---
+
 ## [1.18.0] — 转盘规则改数字输入；学习任务计时加入背景音与完成提示音
 
 日期：2026-10-20
