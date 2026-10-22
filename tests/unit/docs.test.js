@@ -159,3 +159,44 @@ test('样式：焦点可见性与屏幕阅读器工具类存在（可访问性�
   assert.equal(/\.focus-timer/.test(components), false, '番茄钟计时环已移除');
   assert.equal(/\.wheel__/.test(components), false, '奖励转盘已移除');
 });
+
+/* ------------------------------------------------------------------ *
+ * 文档与实现的一致性：AI 相关的表述
+ * ------------------------------------------------------------------ */
+
+test('文档不得声称"完全没有 AI"（与已实现的 AI 助手矛盾）', async () => {
+  /**
+   * 这条测试来自一次真实事故：加上 AI 助手之后，README 与 PROJECT_SPEC 里
+   * 仍写着"不含任何 AI 模型或外部 API""任何 AI / LLM 调用明确禁止"，
+   * 而页面上的 AI 助手正在把任务标题发给 Google。
+   * 对用户来说这是虚假陈述，比功能缺失严重得多。
+   *
+   * 判定方式：允许提到"排程不使用 AI"，但不允许出现无限定词的绝对否定。
+   */
+  const forbidden = [
+    /不含任何 AI 模型或外部 API/,
+    /任何 AI \/ LLM \/ 云端 API 调用[^|]*\|[^|]*明确禁止/,
+  ];
+  for (const file of ['README.md', 'PROJECT_SPEC.md']) {
+    const text = await readFile(join(projectRoot, file), 'utf8');
+    for (const pattern of forbidden) {
+      assert.ok(!pattern.test(text), `${file} 仍含与实现矛盾的 AI 表述：${pattern}`);
+    }
+  }
+});
+
+test('README 必须如实说明 AI 会把哪些数据外发', async () => {
+  const text = await readFile(join(projectRoot, 'README.md'), 'utf8');
+  // 至少要说清楚：什么时候外发、外发什么、不发送什么
+  assert.match(text, /标题/, '应说明会发送任务标题');
+  assert.match(text, /截止时间/, '应说明会发送截止时间');
+  assert.ok(
+    /不使用 AI 助手时[^。]*不[^。]*网络请求|不使用 AI 助手时[，,]?\s*应用不会发起任何网络请求/.test(text),
+    '应说明不使用助手时不发网络请求',
+  );
+});
+
+test('架构文档必须写明引擎不依赖 AI 代码', async () => {
+  const text = await readFile(join(projectRoot, 'ARCHITECTURE.md'), 'utf8');
+  assert.ok(/engine\/?[^\n]*不[^\n]*import[^\n]*AI/i.test(text) || /不 import 任何 AI 代码/.test(text), '应声明引擎不依赖 AI');
+});

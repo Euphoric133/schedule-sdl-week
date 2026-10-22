@@ -35,6 +35,13 @@
 4. **`services/` 依赖 `domain/` 与 `storage/`**：所有写入都必须经过服务层，界面不得直接改状态。
 5. **`ui/` 依赖 `services/`（并读取 `domain/` 的纯数据模型与格式化函数）**：
    界面不做业务判断，不直接访问存储，不自己实现排程规则。
+6. **`ai/` 与 `services/aiFeatureService.js` 是可选的外围层，任何核心层都不得依赖它们**：
+   - `domain/`、`engine/`、`storage/` **不 import 任何 AI 代码**，引擎的纯函数契约因此不受影响；
+   - 删除整个 `src/ai/` 与 `netlify/functions/`，排程、预览、存储全部照常工作；
+   - AI 的提议经由 `services/aiFeatureService.js` 转成**普通的 ops**，
+     之后走的是与手动操作完全相同的「预览 → 确认」链路，不存在绕过校验的旁路；
+   - 网络请求只允许发生在 `ai/chatClient.js`（发往自建的中继函数），
+     且必须由用户主动使用 AI 助手触发；不使用助手时应用不发任何网络请求。
 
 > **关于 `ui/ → domain/` 的直接引用**：这是**有意的例外**，仅限两类内容：
 > ① 纯数据常量与状态枚举（如 `TASK_STATUS`、`SESSION_STATE`、`PLAN_STATUS`）；
