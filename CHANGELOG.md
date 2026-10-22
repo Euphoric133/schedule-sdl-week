@@ -5,6 +5,54 @@
 
 ---
 
+## [1.14.0] — 转盘指针改为朝下 + 抽奖规则支持「每 1 个番茄」
+
+日期：2026-10-20
+
+### 一、指针方向
+
+`focus-garden.html` 里 `wheel-pointer` 的 path 由「顶点在上」改为「底边在上、顶点朝下」：
+
+```text
+改前：M ${we} ${we-zt-12} L ${we-9} ${we-zt+10} L ${we+9} ${we-zt+10} Z
+改后：M ${we-9} ${we-zt-12} L ${we+9} ${we-zt-12} L ${we} ${we-zt+10} Z
+```
+
+`className`、`fill="var(--warm)"`、`stroke`、`strokeWidth` 与 `wheel-pointer--spinning` 的 tick 动画**均未改动**。
+
+### 二、抽奖规则增加「每 1 个番茄」
+
+两个入口的选项表都由 `[2,3,4,5,10]` 扩展为 `[1,2,3,4,5,10]`：
+
+- 成就与奖励页（`map(K=>…`）
+- 设置 → 成就与奖励 → 抽奖规则（`map(C=>…`）
+
+数据层本来就允许 1（`Ge(i.ruleEvery,1,100,…)`），因此不需要改算法。默认值未改变。
+
+### 三、补丁机制
+
+两条新补丁都追加在 `scripts/patch-garden-wheel.mjs` 的 `PATCHES` 末尾，
+沿用「短标记 + 单处匹配 + 幂等」的机制；现在共 **6 处**补丁，`--check` 退出码 0。
+
+### 四、测试
+
+新增 2 条静态断言（`tests/integration/gardenWheel.test.js`）：
+
+- 指针 path 已改为朝下，旧 path 不再出现，tick 动画与颜色保留；
+- 两个入口都包含 `1`，旧选项表 `[2,3,4,5,10]` 出现 0 次，数据层下限仍为 1。
+
+```
+$ node --test "tests/**/*.test.js"
+ℹ tests 619
+ℹ pass 619
+ℹ fail 0
+
+$ node scripts/build-standalone.mjs
+已生成 dist/standalone.html（1477 KB，内联 75 个模块）
+```
+
+---
+
 ## [1.13.0] — 计时器搬进花园侧边栏 + 持久化 / 到点自动开始 / 提前结束确认
 
 日期：2026-10-20

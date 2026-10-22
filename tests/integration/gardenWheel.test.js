@@ -222,3 +222,33 @@ test('补丁：内联副本与源文件同步（改完必须重新生成）', as
       .replace(/<link[^>]+rel=["'](?:icon|shortcut icon|apple-touch-icon)["'][^>]*>\s*/gi, '');
   assert.equal(embedded, stripRelative(source), '内联副本不同步：请运行 node scripts/build-garden-embed.mjs');
 });
+
+
+/* ================================================================== *
+ * 五、指针方向与抽奖规则（v1.14）
+ * ================================================================== */
+
+test('转盘：指针朝下（底边在上、顶点指向轮盘中心）', async () => {
+  const html = await loadEmbedded();
+  assert.match(
+    html,
+    /M \$\{we-9\} \$\{we-zt-12\} L \$\{we\+9\} \$\{we-zt-12\} L \$\{we\} \$\{we-zt\+10\} Z/,
+    '指针应改为朝下的三角形',
+  );
+  assert.equal(
+    /M \$\{we\} \$\{we-zt-12\} L \$\{we-9\} \$\{we-zt\+10\}/.test(html),
+    false,
+    '不应再保留朝上的旧 path',
+  );
+  // 指针的其它属性必须保持不变
+  assert.match(html, /className:M\?"wheel-pointer wheel-pointer--spinning":"wheel-pointer"/, '旋转时的指针 tick 动画应保留');
+  assert.match(html, /fill:"var\(--warm\)"/, '指针颜色不变');
+});
+
+test('转盘：抽奖规则支持每 1 个番茄获得一次机会', async () => {
+  const html = await loadEmbedded();
+  assert.match(html, /\[1,2,3,4,5,10\]\.map\(K=>/);
+  assert.match(html, /\[1,2,3,4,5,10\]\.map\(C=>/);
+  assert.equal((html.match(/\[2,3,4,5,10\]\.map/g) ?? []).length, 0, '不应再有排除 1 的旧选项表');
+  assert.match(html, /Ge\(i\.ruleEvery,1,100/, '数据层必须允许最小 1');
+});

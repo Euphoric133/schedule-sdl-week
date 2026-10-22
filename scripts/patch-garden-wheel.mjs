@@ -79,6 +79,28 @@ const PATCHES = [
     from: 'children:u?s.jsxs("div",{className:"wheel-result__card",children:[',
     to: 'children:u&&!M?s.jsxs("div",{className:"wheel-result__card",children:[',
   },
+  {
+    id: 'wheel-pointer-point-down',
+    marker: 'M ${we-9} ${we-zt-12} L ${we+9} ${we-zt-12} L ${we} ${we-zt+10} Z',
+    reason: '转盘指针当前朝上，改为底边在上、顶点朝下，指向轮盘中心',
+    from: 'M ${we} ${we-zt-12} L ${we-9} ${we-zt+10} L ${we+9} ${we-zt+10} Z',
+    to: 'M ${we-9} ${we-zt-12} L ${we+9} ${we-zt-12} L ${we} ${we-zt+10} Z',
+  },
+  {
+    id: 'spin-rule-include-1-achievements',
+    marker: '[1,2,3,4,5,10].map(K=>',
+    reason: '成就与奖励页允许每 1 个番茄获得一次转盘机会',
+    from: '[2,3,4,5,10].map(K=>s.jsxs("option",{value:K,children:["每 ",K," 个番茄"]},K))',
+    to: '[1,2,3,4,5,10].map(K=>s.jsxs("option",{value:K,children:["每 ",K," 个番茄"]},K))',
+  },
+  {
+    id: 'spin-rule-include-1-settings',
+    marker: '[1,2,3,4,5,10].map(C=>',
+    reason: '设置页抽奖规则允许每 1 个番茄获得一次转盘机会',
+    from: '[2,3,4,5,10].map(C=>s.jsxs("option",{value:C,children:["每 ",C," 个番茄"]},C))',
+    to: '[1,2,3,4,5,10].map(C=>s.jsxs("option",{value:C,children:["每 ",C," 个番茄"]},C))',
+  },
+
 ];
 
 async function main() {
