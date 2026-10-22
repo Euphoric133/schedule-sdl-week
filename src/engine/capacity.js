@@ -271,18 +271,32 @@ export function nextHourAfter(now) {
  * @param {{date: string, minutes: number}} params.now
  * @param {{date: string, minutes: number}|null} params.requested
  */
-export function resolveSearchStart({ now, requested }) {
+export function resolveSearchStart({ now, requested, earliestTaskStart = null }) {
   const fallback = nextHourAfter(now);
   const diagnostics = [];
 
   if (!requested || typeof requested !== 'object') {
+    /**
+     * 默认取"下一个整点"，但**让位于用户给任务填的更早开始时间**：
+     * 现在 22:05、某任务要求 22:23 开始，就应该从 22:23 开始规划，
+     * 而不是被整点规则顶到 23:00（那样 22:23 永远轮不到）。
+     * 只对今天生效，且该时间不能早于现在。
+     */
+    const honoursTaskStart =
+      Number.isInteger(earliestTaskStart) &&
+      earliestTaskStart >= now.minutes &&
+      earliestTaskStart < fallback.minutes;
+
+    const start = honoursTaskStart ? { date: fallback.date, minutes: earliestTaskStart } : fallback;
     diagnostics.push({
       code: DIAGNOSTIC_CODE.START_TIME_DEFAULT,
       level: 'info',
       date: fallback.date,
-      message: `未指定开始时间，从当前时刻之后的下一个整点开始规划（${formatMinutesLocal(fallback.minutes)}）。`,
+      message: honoursTaskStart
+        ? `未指定规划开始时间；有任务要求从 ${formatMinutesLocal(earliestTaskStart)} 开始，因此本次从 ${formatMinutesLocal(earliestTaskStart)} 开始规划。`
+        : `未指定规划开始时间，从当前时刻之后的下一个整点开始规划（${formatMinutesLocal(fallback.minutes)}）；若任务指定了更早的开始时间，则从该时间开始。`,
     });
-    return { start: fallback, diagnostics, source: 'default' };
+    return { start, diagnostics, source: honoursTaskStart ? 'task-start' : 'default' };
   }
 
   if (!Number.isInteger(requested.minutes) || requested.minutes < 0 || requested.minutes > 1440) {

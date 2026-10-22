@@ -10,7 +10,7 @@
 import { DEFAULT_WEIGHTS } from '../domain/schemas.js';
 
 /** 引擎版本：任何会改变排程结果的算法改动都必须递增 */
-export const ENGINE_VERSION = 'engine@1.0.0';
+export const ENGINE_VERSION = 'engine@1.1.0';
 
 /** 策略版本：参数结构变化时递增（用于排查"为什么同样的数据结果不同"） */
 export const POLICY_VERSION = 'policy@1.0.0';
@@ -76,6 +76,8 @@ export const DIAGNOSTIC_CODE = Object.freeze({
   RESERVED_BLOCK_OVERLAP: 'reserved_block_overlap', // 锁定时段与固定活动重叠（数据冲突）
   /** 任务的计划开始时间早于本次规划的搜索起点，被上移（如实告知，不静默） */
   PLANNED_START_CLAMPED: 'planned_start_clamped',
+  /** 任务的严格开始时间被占用/顺延：告诉用户"计划 HH:mm，实际 HH:mm，原因是..." */
+  PLANNED_START_DELAYED: 'planned_start_delayed',
   /** 规划开始时间相关（默认取下一个整点 / 用户指定 / 指定的时间已经过去） */
   START_TIME_DEFAULT: 'start_time_default',
   START_TIME_USER: 'start_time_user',

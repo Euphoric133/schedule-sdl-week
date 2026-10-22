@@ -183,7 +183,22 @@ export function run(input) {
    *   绝不悄悄把过去的时间当成未来；
    * - 未指定 → 默认取"当前时刻之后的下一个整点"（严格之后：20:00 也取 21:00）。
    */
-  const searchStart = resolveSearchStart({ now, requested: input.startAt ?? null });
+  /**
+   * 今天之内、用户给任务指定的最早开始时间（不早于现在）。
+   * 它会把"下一个整点"的默认起点拉早——否则 22:05 时任务要求 22:23，
+   * 默认整点 23:00 会把 22:23 直接跳过。
+   */
+  const todayTaskStarts = (state.tasks ?? [])
+    .filter((task) => SCHEDULABLE_TASK_STATUSES.includes(task.status))
+    .map((task) => task.plannedStartMinutes)
+    .filter((minutes) => Number.isInteger(minutes) && minutes >= now.minutes);
+  const earliestTaskStartToday = todayTaskStarts.length > 0 ? Math.min(...todayTaskStarts) : null;
+
+  const searchStart = resolveSearchStart({
+    now,
+    requested: input.startAt ?? null,
+    earliestTaskStart: earliestTaskStartToday,
+  });
   diagnostics.push(...searchStart.diagnostics);
 
   const capacityDays = computeWindowCapacity({
@@ -502,6 +517,15 @@ export function run(input) {
   const bufferBlocks = [];
 
   const blocks = [...studyBlocks, ...reservedBlocks, ...fixedBlocks, ...restBlocks, ...bufferBlocks].sort(compareBlocks);
+
+  /**
+   * 严格开始时间的落点诊断。
+   *
+   * 用户填了"从这个时刻之后开始"，就应当**正好**从那一刻开始；如果没有做到，
+   * 必须明确告诉他"计划 22:23，实际 22:53，原因是 X"，绝不静默改时间。
+   * 这里放在优化（压缩）之后统计，因此也覆盖"被挪回更早/更晚"的情况。
+   */
+  diagnostics.push(...describePlannedStartOutcomes(optimized, taskById, { now, searchStart }));
 
   /* ---------- 第 9 步：硬约束校验 ---------- */
   const validation = validatePlanConstraints({
@@ -1264,4 +1288,55 @@ function parseDeadlineMinutes(value) {
   } catch {
     return null;
   }
+}
+
+
+/**
+ * 计算并描述每个"指定了开始时间"的任务，实际第一个片段落在哪里。
+ *
+ * @param {Array<object>} placements 优化后的放置结果
+ * @param {Map<string, object>} taskById
+ * @param {{now: object, searchStart: {start: {date: string, minutes: number}, source?: string}}} ctx
+ * @returns {Array<object>} 诊断数组
+ */
+function describePlannedStartOutcomes(placements, taskById, { now, searchStart }) {
+  const diagnostics = [];
+  const seen = new Set();
+
+  const study = (placements ?? [])
+    .filter((item) => item.kind === 'study' && item.taskId)
+    .slice()
+    .sort((a, b) => (a.date === b.date ? a.startMinutes - b.startMinutes : a.date < b.date ? -1 : 1));
+
+  for (const item of study) {
+    const task = taskById?.get?.(item.taskId);
+    const plannedStart = task?.plannedStartMinutes;
+    if (!Number.isInteger(plannedStart) || seen.has(item.taskId)) continue;
+    seen.add(item.taskId);
+
+    // 今天且正好落在计划时刻 → 完全符合要求，无需提示
+    if (item.date === now.date && item.startMinutes === plannedStart) continue;
+
+    const actual = item.startMinutes;
+    const sameDay = item.date === now.date;
+    const reasonText = sameDay
+      ? item.startMinutes === searchStart.start.minutes
+        ? '该时刻已被固定日程、更高优先级的任务或已锁定的时段占用'
+        : '该时刻已被占用'
+      : '今天该时刻之后已排不下，顺延到了之后的日期';
+
+    diagnostics.push({
+      code: DIAGNOSTIC_CODE.PLANNED_START_DELAYED,
+      severity: 'warning',
+      date: item.date,
+      relatedIds: [task.id, item.id],
+      plannedStartMinutes: plannedStart,
+      actualStartMinutes: actual,
+      message: sameDay
+        ? `任务「${task.title}」计划 ${formatMinutes(plannedStart)} 开始，实际 ${formatMinutes(actual)} 开始（${reasonText}）。`
+        : `任务「${task.title}」计划 ${formatMinutes(plannedStart)} 开始，但今天已排不下，顺延到 ${item.date} ${formatMinutes(actual)}。`,
+    });
+  }
+
+  return diagnostics;
 }
