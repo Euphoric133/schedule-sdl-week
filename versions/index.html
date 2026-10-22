@@ -3,37 +3,48 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>七天学习规划器 · 从 0 到 1 的完整过程</title>
+<title>七天学习规划器 · 从 0 到 1（时间线）</title>
 <style>
-  :root { color-scheme: light dark; --fg:#1f2328; --muted:#6a737d; --line:#e1e4e8; --bg:#fff; --card:#fafbfc; --accent:#2f6f4f; }
-  @media (prefers-color-scheme: dark) { :root { --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --bg:#0d1117; --card:#11161c; --accent:#5cc08f; } }
-  * { box-sizing: border-box; }
-  body { margin:0; padding:32px 20px 72px; background:var(--bg); color:var(--fg);
-    font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; }
-  .wrap { max-width: 1080px; margin: 0 auto; }
-  h1 { font-size:24px; margin:0 0 6px; }
+  :root { color-scheme: light dark; --fg:#1f2328; --muted:#6a737d; --line:#e1e4e8; --bg:#fff;
+    --card:#fafbfc; --accent:#2f6f4f; --dot:#c9d1da; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e6edf3; --muted:#8b949e; --line:#30363d;
+    --bg:#0d1117; --card:#11161c; --accent:#5cc08f; --dot:#3a434e; } }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:36px 20px 72px; background:var(--bg); color:var(--fg);
+    font:15px/1.68 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1040px; margin:0 auto; }
+  h1 { font-size:25px; margin:0 0 6px; letter-spacing:-.01em; }
   p.lead { color:var(--muted); margin:0 0 10px; font-size:14px; }
-  .stats { color:var(--muted); font-size:13px; margin-bottom:24px; }
+  .stats { color:var(--muted); font-size:13px; margin-bottom:26px; }
   .stats b { color:var(--fg); }
-  h2 { font-size:16px; margin:32px 0 12px; }
-  .round { background:var(--card); border:1px solid var(--line); border-radius:14px; margin-bottom:10px; overflow:hidden; }
-  .round > summary { cursor:pointer; padding:12px 14px; display:flex; align-items:center; gap:10px; list-style:none; }
-  .round > summary::-webkit-details-marker { display:none; }
-  .round > summary:hover { background:rgba(0,0,0,.02); }
-  .rname { font-weight:600; }
-  .rrange { margin-left:auto; color:var(--muted); font-size:12px; white-space:nowrap; }
+
+  /* 时间线 */
+  .timeline { list-style:none; margin:0; padding:0 0 0 22px; position:relative; }
+  .timeline::before { content:''; position:absolute; left:7px; top:6px; bottom:6px; width:2px;
+    background:linear-gradient(180deg, var(--dot), transparent); }
+  .tl-item { position:relative; margin-bottom:16px; }
+  .tl-dot { position:absolute; left:-22px; top:18px; width:12px; height:12px; border-radius:50%;
+    background:var(--bg); border:2px solid var(--accent); box-shadow:0 0 0 3px var(--bg); }
+  .tl-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; }
+  .tl-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .tl-title { font-weight:650; }
+  .tl-meta { margin-left:auto; color:var(--muted); font-size:12px; white-space:nowrap; }
   .tag { font-size:11.5px; font-weight:700; padding:1px 8px; border-radius:999px; border:1px solid; white-space:nowrap; }
-  .rbody { padding:4px 14px 14px; border-top:1px solid var(--line); }
-  .block { margin-top:12px; }
-  .block__label { font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+  .tl-details { margin-top:10px; }
+  .tl-details > summary { cursor:pointer; color:var(--muted); font-size:12.5px; }
+  .tl-details[open] > summary { margin-bottom:8px; }
   .prompt { margin:0; padding:12px; background:var(--bg); border:1px solid var(--line); border-radius:10px;
-    white-space:pre-wrap; overflow-wrap:anywhere; font:13px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--fg); }
-  .prompt--missing { font-style:italic; color:var(--muted); }
-  .solved { margin:0; }
-  .vlinks { display:flex; flex-wrap:wrap; gap:6px; }
-  .vlink { font:12px ui-monospace,SFMono-Regular,Menlo,monospace; padding:2px 8px; border:1px solid var(--line);
+    white-space:pre-wrap; overflow-wrap:anywhere; max-height:420px; overflow:auto;
+    font:12.5px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .solved { margin-top:10px; font-size:14px; }
+  .solved__label { display:inline-block; margin-right:8px; padding:1px 8px; border-radius:999px;
+    background:var(--accent); color:#fff; font-size:11.5px; font-weight:700; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .chip { font:12px ui-monospace,SFMono-Regular,Menlo,monospace; padding:2px 8px; border:1px solid var(--line);
     border-radius:999px; color:var(--muted); text-decoration:none; }
-  .vlink:hover { color:var(--accent); border-color:var(--accent); }
+  .chip:hover { color:var(--accent); border-color:var(--accent); }
+
+  h2 { font-size:16px; margin:34px 0 12px; }
   table { width:100%; border-collapse:collapse; font-size:13.5px; }
   th, td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
   th { font-size:12px; color:var(--muted); border-bottom:2px solid var(--line); }
@@ -42,951 +53,906 @@
   td.d { width:92px; color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
   a { color:var(--accent); text-decoration:none; }
   a:hover { text-decoration:underline; }
-  note { display:block; margin-top:28px; color:var(--muted); font-size:13px; line-height:1.9; }
+  note { display:block; margin-top:26px; color:var(--muted); font-size:13px; line-height:1.9; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>七天学习规划器 · 从 0 到 1</h1>
-  <p class="lead">每个阶段都给出：我给你的原始 prompt、解决了什么问题、以及当时可运行的完整版本。点开任意阶段展开。</p>
-  <div class="stats">共 <b>58</b> 个版本 · <b>24</b> 个阶段 · 其中「重大」<b>19</b> 个</div>
+  <p class="lead">按时间线排列：每条给出一段我给你的原始 prompt、它解决了什么问题、以及当时产生的可运行版本。</p>
+  <div class="stats">共 <b>59</b> 个版本 · <b>26</b> 段 prompt · 跨 <b>7</b> 天（2026-10-16 → 10-22）</div>
 
-  <h2>阶段视图（prompt → 解决了什么 → 版本）</h2>
-  
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#eef2f7;color:#31537a;border-color:#c9d6e4">地基</span>
-        <span class="rname">01. 从零搭建：数据模型、排程引擎、预览闭环</span>
-        <span class="rrange">12 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <p class="prompt prompt--missing">（该阶段发生在本次会话上下文之外，原始 prompt 未被保留；仅保留提交信息与产出。）</p>
-        </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">建立零依赖纯前端架构、确定性排程引擎、硬约束校验、差异预览与第一版可用界面。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="01-2026-10-16-1c5b995.html">01</a> <a class="vlink" href="02-2026-10-16-931868a.html">02</a> <a class="vlink" href="03-2026-10-16-45a0b60.html">03</a> <a class="vlink" href="04-2026-10-16-983577d.html">04</a> <a class="vlink" href="05-2026-10-16-0e26457.html">05</a> <a class="vlink" href="06-2026-10-16-a72b9d7.html">06</a> <a class="vlink" href="07-2026-10-16-a83a5bf.html">07</a> <a class="vlink" href="08-2026-10-16-de4cdb5.html">08</a> <a class="vlink" href="09-2026-10-16-9288f83.html">09</a> <a class="vlink" href="10-2026-10-16-bc35357.html">10</a> <a class="vlink" href="11-2026-10-16-28cb265.html">11</a> <a class="vlink" href="12-2026-10-16-0206a31.html">12</a></div>
-        </div>
-      </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdf2e3;color:#8a5a1f;border-color:#e8cda6">扩张</span>
-        <span class="rname">02. 功能大扩张：番茄钟 / 奖励转盘 / 统计 / 通知</span>
-        <span class="rrange">7 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <p class="prompt prompt--missing">（该阶段发生在本次会话上下文之外，原始 prompt 未被保留；仅保留提交信息与产出。）</p>
-        </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">一次性引入番茄钟、奖励转盘、学习统计、通知提醒、主题壁纸，并补齐测试。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="13-2026-10-16-1272c05.html">13</a> <a class="vlink" href="14-2026-10-16-7640669.html">14</a> <a class="vlink" href="15-2026-10-16-459ba8f.html">15</a> <a class="vlink" href="16-2026-10-16-11ab484.html">16</a> <a class="vlink" href="17-2026-10-17-7e1bd03.html">17</a> <a class="vlink" href="18-2026-10-17-6ce7851.html">18</a> <a class="vlink" href="19-2026-10-17-c1a2e64.html">19</a></div>
-        </div>
-      </div>
-    </details>
-    <details class="round" open>
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">03. 第一轮：修复数据一致性，精简掉番茄钟</span>
-        <span class="rrange">5 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">本次以第一版现有代码为基础进行修复和精简，不要重写整个项目，也不要擅自迁移到新架构。</pre>
-        </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">修复任务与时段的数据一致性；移除缓冲时间；移除番茄钟与奖励转盘；壁纸不显示修复。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="20-2026-10-17-4ed947d.html">20</a> <a class="vlink" href="21-2026-10-17-c2a1d6c.html">21</a> <a class="vlink" href="22-2026-10-17-be807aa.html">22</a> <a class="vlink" href="23-2026-10-17-d0cd0ea.html">23</a> <a class="vlink" href="24-2026-10-17-0870336.html">24</a></div>
-        </div>
-      </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">04. 第二轮：背景发蒙、任务删除、七天看板、休息时间</span>
-        <span class="rrange">8 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">修复界面发蒙：壁纸把内容糊住了；任务要能删除、完成后要隐藏；七天计划左侧「时间」列和刻度行全部去掉；固定任务要跨周重复；任务名限 10 字；按 5 分钟一格；新增休息时间并处理跨午夜。</pre>
-        </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">壁纸负 z-index 修复发蒙；日期列看板取代时间轴；休息时间实体与跨午夜拆分；名称 10 字上限。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="25-2026-10-17-3dd9871.html">25</a> <a class="vlink" href="26-2026-10-17-89be691.html">26</a> <a class="vlink" href="27-2026-10-17-1352887.html">27</a> <a class="vlink" href="28-2026-10-17-f512421.html">28</a> <a class="vlink" href="29-2026-10-17-03de665.html">29</a> <a class="vlink" href="30-2026-10-17-7b32449.html">30</a> <a class="vlink" href="31-2026-10-17-7faeaf7.html">31</a> <a class="vlink" href="32-2026-10-20-e65e72f.html">32</a></div>
-        </div>
-      </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">05. 第三轮：历史不锁时间、科目管理、设置休息</span>
-        <span class="rrange">6 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">「添加休息时间」完全没反应；「设置休息」要分今晚 / 固定睡觉时间两种；图表重做；已完成/已删除的任务不能锁住时间；计划开始时间要可选；要自动避开固定日程；要科目管理；删掉「可学习时间（按星期）」。</pre>
-        </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">休息保存作用域错误修复；历史记录不再占用冲突层；规划开始时间；科目管理；图表重做。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="33-2026-10-20-fa0c982.html">33</a> <a class="vlink" href="34-2026-10-20-0e04e12.html">34</a> <a class="vlink" href="35-2026-10-20-46e02c5.html">35</a> <a class="vlink" href="36-2026-10-20-6cd8545.html">36</a> <a class="vlink" href="37-2026-10-20-ff0959e.html">37</a> <a class="vlink" href="38-2026-10-20-2b49049.html">38</a></div>
-        </div>
-      </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">06. 第四轮：16:00 延迟根因、可选属性、自动预览</span>
-        <span class="rrange">1 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">计划总是从 16:00 开始（应该从当下之后的下一个整点）；截止时间没生效；任务列表要只显示有效任务；三个字段要可选（已完成/最短/最长）；删除「跟随系统」主题；新增&quot;自动生成预览&quot;开关。</pre>
-        </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">根因是遗留的每天 7 小时默认窗口（16:00–23:00）；改为 07:00–23:00 并做旧数据升级。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="39-2026-10-21-a75047c.html">39</a></div>
-        </div>
-      </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">07. 第五轮：重置系统、彻底删除、开始时间下界、通知可用性</span>
-        <span class="rrange">1 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">① 修复/实现真正的「重置系统」（带确认）；② 只删七天计划里的「重新规划」入口；③ 已删除历史要能永久删除；④ 计划开始时间要真正生效（13:23 + 15:30 应从 15:30 开始，不是 14:00）；⑤ 通知先审计，只实现普通 HTML/JS/浏览器 API 能做到的部分，并如实说明限制。</pre>
-        </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">重置系统；task.purge；plannedStart 改为硬下界；通知加安全上下文/构造器/失败原因判断。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="40-2026-10-21-8884442.html">40</a></div>
-        </div>
-      </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">08. 收尾：真正的恢复出厂设置 + 通知限制说明</span>
-        <span class="rrange">1 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">偏好设置里的「危险操作」中，恢复出厂设置不能正常使用，用户无法重置整个应用。要恢复到首次使用状态（数据 + 主题等个性化设置），并检查所有持久化位置，不能靠清空存储空间碰运气；通知设置区域要明确展示平台限制（iOS/Safari/file:// /后台推送）。</pre>
-        </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">新增 resetFactory（数据+设置+主题+壁纸+通知）；修复 IndexedDB 阻塞导致&quot;点了没反应&quot;；通知页写明使用限制。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="41-2026-10-21-918e231.html">41</a></div>
-        </div>
-      </div>
-    </details>
-    <details class="round" open>
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">09. 内嵌专注花园（独立窗口）</span>
-        <span class="rrange">2 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">我现在已经把我要部署进这个app的&quot;专注花园&quot;已经放进工作区了，你放进去吧。
+  <ul class="timeline">
 
-（随后）我想要专注花园有一个独立的窗口，而不是直接显示在网站里，我想要的是可以全屏使用。</pre>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#eef2f7;color:#31537a;border-color:#c9d6e4">地基</span>
+          <span class="tl-title">01. 项目总开发指令：从 0 开始搭建（阶段 0 → 阶段 5）</span>
+          <span class="tl-meta">2026-10-16 · 版本 01–08</span>
         </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">用 srcdoc 内嵌花园；侧边栏入口；改为独立窗口打开。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="42-2026-10-21-d3f58de.html">42</a> <a class="vlink" href="43-2026-10-22-f09728c.html">43</a></div>
-        </div>
+        <details class="tl-details" open>
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">（原文为分阶段总指令，此处保留全部章节与硬性要求）
+
+一、你的角色与项目目标
+资深产品/前端/算法/测试工程师，开发真正可运行、可长期扩展的学生学习时间规划 Web 应用。
+必须遵守：
+1. 不使用 AI 模型、AI API 或大语言模型来决定学习安排；
+2. 所有排程、任务拆分、冲突判断和重新规划都由普通程序逻辑完成；
+3. 最终界面通过 HTML 呈现，可在电脑浏览器使用；
+4. 便于以后新增功能、修改规则、修复 Bug；
+5. 我是最终审核者，必须遵循分阶段审批，不得擅自跳过。
+
+二、最重要的执行规则：先规划，等待审核
+阶段 0 只分析、不写代码：先输出需求范围、页面草图、技术架构与目录、核心数据模型、
+七天规划算法、预览/确认/撤销/版本设计、测试清单与风险、第一版不做的功能、需要我选择的事项，
+然后停止等待批准。
+阶段 1–5：基础项目与数据模型 → 无 AI 排程引擎 → 页面与七天视图 → 持久化与执行界面 → 测试与交付。
+每个阶段完成后必须暂停汇报，未经同意不得进入下一阶段。
+
+三、产品核心功能
+1. 七天学习计划（今天 + 6 天；每日视图与周视图基于同一份计划数据；未来 30 天截止风险；窗口滚动）。
+2. 学习任务管理（ID/名称/科目/预计与剩余用时/截止/重要度/难度/拖延/可拆分/最短最长/前置/状态/时间戳）。
+3. 跨日任务模型（Task 与 StudySession 严格区分；完成时段 ≠ 完成任务；只算剩余工作量；不可拆分一次排完；
+   前置未完成不得提前执行；时长必须守恒；排不下要如实报告）。
+4. 固定活动与个人偏好（可学习时间、偏好时段、难度重要度、连续学习自适应、最短最长、休息规则、
+   科目切换惩罚、10% 机动缓冲；超载时报超载而不是偷偷取消缓冲）。
+5. 无 AI 排程引擎（10 步流程；P = 0.35 紧迫 + 0.30 难度 + 0.20 重要 + 0.15 拖延；权重可配置；
+   不得宣称未经严格求解的&quot;全局最优&quot;）。
+6. 硬性约束（不与固定活动重叠、时段不冲突、只在允许时间、不得谎称按时完成、依赖顺序、时长有效、
+   已完成不得自动删除、锁定不得被移动、缓冲与休息不重复计、重排失败保留原计划）。
+7. 锁定机制（flexible / pinned / in_progress / completed；锁定是硬约束不是加分）。
+8. 完整调整预览与用户确认（新增/移动/拆分/缩短/取消、原时间与新时间、原因、保持不变项、
+   锁定影响、每日量与缓冲变化、未安排与风险、是否完整可行；确认或放弃；版本号；预览过期不得覆盖）。
+9. 可行性状态（feasible / partially_feasible / infeasible / invalid_input；区分&quot;输入不合法&quot;与&quot;时间不足&quot;）。
+10. 学习执行界面（当前任务与科目、计划时段与剩余、开始/暂停/继续/结束、记录实际时长、剩余工作处理）。
+
+四、技术与 HTML 呈现
+语义化 HTML/CSS/JS；主入口 index.html；模块化分层（domain / engine / storage / ui / services / tests）；
+浏览器本地存储、刷新不丢、版本号与迁移、导入导出校验、导入失败不得覆盖现有数据、不上传外部服务器。
+
+五、自动化测试与验收（20 条必测场景：完整计划、优先级平衡、超载、跨天拆分、不可拆分、
+固定活动不重叠、锁定、缓冲不重复、依赖顺序、已完成不重复安排、预览差异、放弃不变、
+确认后持久化、刷新仍在、错误导入不破坏、预览过期不覆盖、两次相同输入结果一致、
+时区跨午夜、边界输入不崩、新功能不破坏回归）。
+验收原则：每个硬约束都要有自动化测试；不得只用截图证明算法；不得谎称测试通过；
+不得为通过测试而删测试或降标准。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>零依赖纯前端架构；确定性排程引擎与硬约束校验；差异预览闭环；本地持久化与导入导出；第一版可用界面。</div>
+        <div class="chips"><a class="chip" href="01-2026-10-16-1c5b995.html">01</a> <a class="chip" href="02-2026-10-16-931868a.html">02</a> <a class="chip" href="03-2026-10-16-45a0b60.html">03</a> <a class="chip" href="04-2026-10-16-983577d.html">04</a> <a class="chip" href="05-2026-10-16-0e26457.html">05</a> <a class="chip" href="06-2026-10-16-a72b9d7.html">06</a> <a class="chip" href="07-2026-10-16-a83a5bf.html">07</a> <a class="chip" href="08-2026-10-16-de4cdb5.html">08</a></div>
       </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">10. 转盘动画修复（首次不转）</span>
-        <span class="rrange">1 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">请检查当前番茄钟项目中的奖励转盘功能。用户点击「开始抽奖」后，系统可以直接判定并显示中奖礼物，但转盘本身没有正常旋转。（附完整规格：5–8 圈、4.2 秒缓出、从当前角度继续、结果与指针一致、防重复点击等）</pre>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">02. 项目升级总指令：做成可长期使用的正式产品</span>
+          <span class="tl-meta">2026-10-16 · 版本 09–16</span>
         </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">根因是首次抽奖时长被算成 0；改为固定 6 圈/4.2 秒，角度从当前值累加，结果延后到停稳后显示。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="44-2026-10-22-b8fead9.html">44</a></div>
-        </div>
+        <details class="tl-details" open>
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">（原文为完整升级指令，此处保留全部章节与关键要求）
+
+一、开发前要求：先检查现有目录/代码/依赖/数据模型/页面；不要推倒重做；保留用户数据；
+不只给计划要给实现与测试；重大架构变更先申请；不擅自改环境；本软件不使用 AI 排程。
+
+二、优先修复：任务规划与调整预览（最高优先级）
+现状：点生成计划就进&quot;调整预览&quot;却无法完成规划，真正的排程入口藏在偏好设置里；
+预览里新增/移动时段全是 0，用户看不懂。
+1. 正确的规划入口（首页或清晰入口：任务增删改、时长与截止、重要度难度拖延、可拆分与前置、
+   每周可学习时间/固定课程/睡眠/吃饭/运动、查看七天、生成或重新生成、未安排原因）。
+2. 调整预览必须真正有用（新增/移动/拆分/缩短/延长/取消、前后时间与原因、每日学习/休息/缓冲变化、
+   保持不变项、未安排原因、截止风险与冲突、锁定与已完成是否受保护；无变化要显示&quot;本次无需调整&quot;；
+   没有任务或没有可用时间要有引导，不能显示&quot;完整可行&quot;）。
+3. 彻底修复确认应用（确认即应用并保存历史、取消不改、撤销可恢复、应用前再校验、不得破坏已完成/锁定、
+   候选与正式清晰区分、对话框用用户能懂的话）。
+
+三、彻底清理开发过程痕迹（删除&quot;阶段 1：预览框架已就绪&quot;&quot;待接入&quot;&quot;后续完成&quot;等，
+不得只隐藏文字，不得用虚假完成提示冒充功能）。
+
+四、全面升级视觉设计（统一设计系统、卡片/留白/圆角/阴影/微动画、首页突出重点、
+统一各页面风格、按钮有真实作用与状态、适配桌面与手机、动画轻量）。
+
+五、新增自定义壁纸和外观主题（浅色/深色/系统；全部页面与控件正确适配；
+壁纸上传/预览/应用/更换/移除、显示方式、模糊或遮罩、刷新保留、格式与大小校验；
+本地处理不上传；合理处理浏览器存储限制）。
+
+六、新增浏览器通知提醒（先点启用再申请权限；允许后提醒下一项任务/开始时间/计时结束；
+拒绝或不支持要有真实反馈与指引；可配置开关、提前时间、类型；不重复发送；
+按真实时间调度并处理时区跨日与后台限制；不声称关闭页面后一定可用；不得绕过权限）。
+
+七、新增完整番茄钟与专注工作区（专注/短休息/长休息、开始暂停继续结束重启、自定义时长、
+自动进入下一阶段、当前任务与剩余与阶段、结束提示、可选环境音与音量；
+必须用真实时间戳计算、刷新/切后台/休眠不漂移、暂停恢复不重复计时、只有真实完成才计入统计、
+中途结束按实际记录、刷新恢复状态；与任务联动，完成一轮 ≠ 任务完成，不得自动标记完成）。
+
+八、新增可自定义奖励转盘（自定义奖项增删改启停与恢复默认；真正可交互的转盘与轻量动画，
+停止位置与中奖一致，不得永远同一结果；触发规则：累计专注分钟/每完成番茄/完成指定任务；
+防重复奖励，必须与真实记录关联；中奖记录，确认后才更新状态，不得强制打开外部应用）。
+
+九、完善学习统计与个人记录（今日计划与实际、每日每周时长、科目时长、完成率与逾期、
+专注轮数与历史、中途结束记录、奖励次数与历史、连续学习与成就；数据必须真实，不得用固定数字伪装）。
+
+十、数据保存与长期维护（刷新仍在；localStorage 与 IndexedDB 合理分工；导入导出与校验；
+升级不丢数据；不上传；核心算法与计时与奖励资格要有测试；保持模块化；少加依赖）。
+
+十一、必须执行的测试（新建任务并生成七天计划、不同难度与截止的合理安排、固定日程冲突识别、
+大任务跨天、预览真实差异、确认更新/取消不变、已完成与锁定不被改、空任务与非法输入、
+浅色深色壁纸、通知三种状态、番茄钟刷新与暂停准确、专注后任务与统计更新、转盘结果与资格、
+刷新后数据仍在、异常导入不破坏、所有主要按钮与跳转）。
+
+十二、最终验收与交付（实际运行并修控制台错误；不允许只有外观没有行为的功能；
+清理开发痕迹；更新文档；如实汇报未完成项）。
+最终标准：用户无需了解代码即可设置日程、建任务、生成计划、理解并应用调整、专注学习、
+收到允许的提醒、用转盘激励，并在刷新后保留数据。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>修复规划主流程与预览（差异真实、确认可用、放弃不变）；清理开发痕迹；统一视觉；新增主题与壁纸、通知、番茄钟、奖励转盘、学习统计；补端到端点击测试。</div>
+        <div class="chips"><a class="chip" href="09-2026-10-16-9288f83.html">09</a> <a class="chip" href="10-2026-10-16-bc35357.html">10</a> <a class="chip" href="11-2026-10-16-28cb265.html">11</a> <a class="chip" href="12-2026-10-16-0206a31.html">12</a> <a class="chip" href="13-2026-10-16-1272c05.html">13</a> <a class="chip" href="14-2026-10-16-7640669.html">14</a> <a class="chip" href="15-2026-10-16-459ba8f.html">15</a> <a class="chip" href="16-2026-10-16-11ab484.html">16</a></div>
       </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#f3f0fa;color:#4a3a86;border-color:#d6cdee">工具</span>
-        <span class="rname">11. 版本画廊（第一次）</span>
-        <span class="rrange">1 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">你现在把所有的版本都像之前一样，整理到 versions 文件夹，还是统一通过 index.html 进行查看，注意标注出大改动的版本。</pre>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">03. 第一轮：修复数据一致性，精简掉番茄钟</span>
+          <span class="tl-meta">2026-10-17 · 版本 17–21</span>
         </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">导出 37 个历史版本 + 带大改动标注的索引页。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="45-2026-10-22-16d9092.html">45</a></div>
-        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">本次以第一版现有代码为基础进行修复和精简，不要重写整个项目，也不要擅自迁移到新架构。
+
+重点：
+1. 修复任务与学习时段的数据一致性（完成任务/改工作量/改已完成后，超出的未完成时段要同步取消），
+   不能出现&quot;已完成却有 120 分钟未完成时段&quot;导致校验失败、任务删不掉、甚至下次打不开。
+2. 加载旧数据时要安全修复，而不是显示空白。
+3. 移除缓冲时间功能，并兼容旧计划里的缓冲块。
+4. 移除番茄钟与奖励转盘：页面、服务、路由、入口、状态字段、通知类型与相关样式都要清理干净，
+   但保留普通学习记录统计。
+5. 重设每日视图：以日期为列、任务为内容的日程概览，替换原来的时间轴网格。
+6. 不要为了修一个问题而重写大量稳定代码。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>完成/修改任务时由 reconcile 统一取消超额时段；壁纸背景层修复；移除缓冲时间与番茄钟、转盘（含状态字段与通知类型）；每日视图改为日期列。</div>
+        <div class="chips"><a class="chip" href="17-2026-10-17-7e1bd03.html">17</a> <a class="chip" href="18-2026-10-17-6ce7851.html">18</a> <a class="chip" href="19-2026-10-17-c1a2e64.html">19</a> <a class="chip" href="20-2026-10-17-4ed947d.html">20</a> <a class="chip" href="21-2026-10-17-c2a1d6c.html">21</a></div>
       </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">12. 花园改内嵌常驻（计时不中断）</span>
-        <span class="rrange">2 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">等下，你现在先暂时不考虑我刚才跟你说的东西……你可不可以直接把专注花园 html 做进这个软件，这次不是点击跳转，而是真正的套进了这个网站，跟复制粘贴一般，这样我后续可以将这两个 app 进行联动……并且你不可以更改任何专注花园原有的任何功能。
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">04. 第二轮：背景发蒙、任务删除与隐藏、七天看板、休息时间</span>
+          <span class="tl-meta">2026-10-17 · 版本 22–27</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">（原始 prompt 未在本会话保留，以下为当轮要求的要点复述）
+· 壁纸把内容糊住了（整页发蒙、部分区块看不见、点击被盖住）——修层级与卡片透明度；
+· 任务要能删除，完成后要从正常的任务/看板里隐藏，但历史记录要保留；
+· 七天计划左侧的&quot;时间&quot;列和所有时间刻度行全部去掉，改成以日期为列的看板；
+· 固定任务必须按重复规则跨周出现，不能只在当前 7 天显示；
+· 任务名称统一限制 10 个字；
+· 看板按 5 分钟一格计算卡片高度；
+· 新增&quot;休息时间&quot;实体，支持跨午夜拆分到两个日期。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>壁纸改负 z-index 并去掉卡片 backdrop-filter；日期列看板彻底取代时间轴；休息时间实体与跨午夜拆分；名称 10 字上限；跨周重复的固定日程。</div>
+        <div class="chips"><a class="chip" href="22-2026-10-17-be807aa.html">22</a> <a class="chip" href="23-2026-10-17-d0cd0ea.html">23</a> <a class="chip" href="24-2026-10-17-0870336.html">24</a> <a class="chip" href="25-2026-10-17-3dd9871.html">25</a> <a class="chip" href="26-2026-10-17-89be691.html">26</a> <a class="chip" href="27-2026-10-17-1352887.html">27</a></div>
+      </div>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">05. 第三轮：休息无响应、统计柱状图、历史残留锁时间、计划开始时间、科目管理</span>
+          <span class="tl-meta">2026-10-17 · 版本 28–31</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">请继续维护当前的学习规划器项目。本轮基于现有代码进行增量修复，不要重写整个项目，不要清空现有数据。
+
+1. 「添加休息时间」完全无响应：先排查按钮事件、表单校验、字段传递、保存调用、状态刷新与异常吞掉，
+   找到真实原因再最小修改；保存后立即显示、刷新仍在、非法输入要提示、失败不能表现为没反应。
+   同时把入口放到「每日视图」右上角，分两种模式：
+   · 仅设置今晚休息（一次性）；· 固定睡觉时间（每周重复，复用固定日程的重复规则与跨午夜处理）。
+2. 学习统计柱状图一高一低不协调：先查数据来源、范围、分组与比例，判断是数据差异还是计算/布局问题；
+   保留真实数据，不许为了好看改数值；统一口径与纵轴缩放；0 值与缺数据要合理区分。
+3. 最高优先级：已完成或已删除任务仍锁住时间（例如完成后想在同一时段排固定任务却被判冲突）。
+   必须区分&quot;历史记录&quot;与&quot;当前有效占用&quot;：已完成/已删除任务的时段不得继续参与冲突检测；
+   固定任务只在其有效日期时间参与；休息与固定睡觉时间仍然占用；候选与历史版本不能当成正式计划；
+   重新排程后旧版本不能继续生效；不得靠删历史或关闭校验让冲突消失。
+4. 改进计划生成：增加可选「规划开始时间」；不填时严格取当前时刻之后的**下一个整点**
+   （20:24→21:00，20:00→21:00，21:00→22:00）；遇到固定日程冲突自动寻找其他时段而不是直接失败；
+   可拆分任务跨多段且总量守恒；不可拆分任务必须一次排进连续时段；找不到时段要说明原因。
+5. 增加统一「科目管理」：查看/新增/修改/删除、处理重名与空格；修改后引用任务同步更新；
+   删除被引用的科目不得损坏数据；不要让每个任务表单各存一套科目列表。
+6. 删除偏好设置中的「可学习时间（按星期）」区域（含说明与交互），但底层必要数据不得删除。
+
+执行顺序：先审计并报告根因 → 修数据与排程核心 → 休息设置与科目管理 → 统计与精简 → 完整回归。
+完成后报告每个问题的真实根因、修改的文件、测试结果与未解决问题，然后停止等待检查。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>休息保存的作用域错误（ReferenceError 被吞）修复；两模式设置休息；图表重做；历史记录不再进入冲突层；规划开始时间与整点规则；科目管理；删除可学习时间区块。</div>
+        <div class="chips"><a class="chip" href="28-2026-10-17-f512421.html">28</a> <a class="chip" href="29-2026-10-17-03de665.html">29</a> <a class="chip" href="30-2026-10-17-7b32449.html">30</a> <a class="chip" href="31-2026-10-17-7faeaf7.html">31</a></div>
+      </div>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">06. 第四轮：计划总是从 16:00 开始 / 截止时间失效 / 可选属性</span>
+          <span class="tl-meta">2026-10-20 · 版本 32</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">（原始 prompt 未在本会话保留，以下为当轮要求的要点复述）
+· 计划总是从 16:00 开始，而不是&quot;当前时刻之后的下一个整点&quot;——要找到根因；
+· 截止时间没有真正参与排程；
+· 任务列表只显示有效任务（已完成/已取消/已删除不在正常列表里）；
+· 「已经完成 / 最短学习时段 / 最长学习时段」三个字段要可选（留空不能变成 0）；
+· 删除&quot;跟随系统&quot;主题；
+· 新增&quot;自动生成预览&quot;开关（关掉时先问再生成）；
+· 计划开始时间（任务的）要可选并真正生效。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>根因是遗留的每天 7 小时默认窗口（16:00–23:00），改为 07:00–23:00 并对旧数据做一次性升级；截止时间参与排程；任务列表过滤；可选字段存 null；主题只剩浅/深；自动预览开关。</div>
+        <div class="chips"><a class="chip" href="32-2026-10-20-e65e72f.html">32</a></div>
+      </div>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">07. 第五轮：重置系统、彻底删除历史、计划开始时间下界、通知可用性</span>
+          <span class="tl-meta">2026-10-20 · 版本 33</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">1. 偏好设置里无法正常重置系统。要一个真正有效的「重置系统」：清晰入口、二次确认并说明会删除什么；
+   清除任务、固定日程、学习任务与相关排程数据，以及关联的计划、候选计划、过期引用与缓存；
+   已删除历史也按范围清理；保留运行必需的默认配置与基础设置；重置后刷新所有视图并给出明确反馈。
+   安全：未经确认绝不执行；不得用删除整个数据库/清空所有 localStorage 来代替有范围的重置；
+   失败不得显示成功。
+2. 七日计划：只删除该页面的「重新规划」功能与专属入口，共用逻辑必须保留，不得影响其他页面。
+3. 允许用户彻底删除已删除历史（二次确认、真正从持久化数据移除、不影响其他数据、
+   区分&quot;暂时删除&quot;与&quot;彻底删除&quot;、兼容旧版本残留）。
+4. 修复「计划开始时间」排程逻辑：当前 13:23、任务要求 15:30 时，应把 15:30 当作该任务的约束，
+   而不是仍按 14:00 的默认规则安排；未填时保持默认整点规则；填了必须真正读取；
+   与固定日程或其他任务冲突时按现有冲突逻辑处理；做不到要明确报告，不得静默忽略。
+5. 通知：先检查现有实现（权限、触发时机、异常处理、是否真的调用了创建通知），
+   只实现当前技术条件能直接支持的方案；评估 macOS 上 Safari/Chrome 与当前运行方式；
+   不支持的情况要写清限制，不得伪造成功，不得为此引入后端或大型依赖。
+
+修改前先检查工作区与现有实现；修改中最小范围修复、不得只改 UI 隐藏问题；
+修改后运行测试并汇报根因、改动文件、实际结果与未解决问题。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>新增 resetSystem（带确认与范围清理）；task.purge 彻底删除；plannedStartMinutes 从&quot;软过滤&quot;改成硬下界（排不下就报 planned_start_unreachable）；通知增加安全上下文/构造器/失败原因判断。</div>
+        <div class="chips"><a class="chip" href="33-2026-10-20-fa0c982.html">33</a></div>
+      </div>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">08. 收尾：真正的恢复出厂设置 + 通知限制说明</span>
+          <span class="tl-meta">2026-10-20 · 版本 34</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">本轮只处理两项，不新增其他功能，不大规模重构。
+
+一、修复偏好设置「危险操作」里的恢复出厂设置（目前无法使用，用户无法重置整个应用）
+1. 先检查实际实现（按钮、事件处理、数据清理、持久化）。
+2. 查明根本原因，修复实际逻辑，而不是只改按钮样式或提示文案。
+3. 点击后必须二次确认，明确确认后才执行。
+4. 恢复到首次使用状态：删除学习任务与其他任务、固定日程、休息与相关排程数据；
+   清除已删除历史及其关联数据；清除计划、候选计划与失效引用；重置用户改过的偏好（含主题）；
+   清除其他应重置的用户数据、缓存与状态。
+5. 检查项目实际使用的所有持久化位置，确保重新打开应用不会因旧数据复活。
+6. 保留程序代码、内置资源、默认配置与初始化逻辑，重置后应用必须能正常启动。
+7. 重置完成后所有界面同步更新，并给出明确成功反馈。
+8. 出错时不得显示成功，要给出合理错误反馈。
+要求：不要直接清空整个存储空间碰运气；不得影响其他功能；不要顺便改危险操作区其他操作的行为；
+历史版本/备份等数据要先确认用途，避免误删。
+
+二、通知设置：明确展示平台限制与使用条件
+在通知设置附近增加&quot;通知使用限制&quot;说明，用普通用户能懂的中文，重点限制直接展示，不要藏起来。
+至少检查并说明：iPhone/iPad 是否支持；macOS 取决于浏览器/运行方式/系统权限；
+浏览器权限被拒绝或系统禁用时的表现；普通网页的提醒依赖页面或浏览器继续运行；
+直接打开本地 HTML 文件的限制；当前没有 Service Worker 与后台推送，不得暗示具备该能力；
+以及代码检查发现的其它限制。当前环境明确不支持时要显示提示，不要只显示&quot;已开启&quot;。
+不引入新后端或额外平台权限，本轮不开发后台推送。
+
+三、工程约束：修改前检查工作区与数据；只改这两处；不把&quot;增加说明&quot;当成&quot;通知已修复&quot;；
+不把未验证的功能标成成功。完成后运行测试与构建并给出交付报告。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>新增 resetFactory（数据 + 设置 + 主题 + 壁纸 + 通知）；修复 await clearWallpaper 阻塞导致&quot;点了没反应&quot;；通知页写明环境与使用限制。</div>
+        <div class="chips"><a class="chip" href="34-2026-10-20-0e04e12.html">34</a></div>
+      </div>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">09. 把「专注花园」放进应用（先内嵌，再改独立窗口）</span>
+          <span class="tl-meta">2026-10-20 · 版本 35–36</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">1：我现在已经把我要部署进这个 app 的&quot;专注花园&quot;已经放进工作区了，你放进去吧。
+
+2：我想要专注花园有一个独立的窗口，而不是直接显示在网站里，我想要的是可以全屏使用。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>用 srcdoc 把单文件花园内联进应用（多文件版与单文件版都能用），侧边栏入口放在&quot;学习统计&quot;之后；随后改为独立窗口打开（按屏幕尺寸开窗、复用同一窗口名）。</div>
+        <div class="chips"><a class="chip" href="35-2026-10-20-46e02c5.html">35</a> <a class="chip" href="36-2026-10-20-6cd8545.html">36</a></div>
+      </div>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">10. 修复转盘动画：能判定结果但转盘不转</span>
+          <span class="tl-meta">2026-10-20 · 版本 37</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">请检查当前番茄钟项目中的奖励转盘功能。用户点击「开始抽奖」后，系统可以直接判定并显示中奖礼物，
+但转盘本身没有正常旋转，缺少真实、连续、流畅的旋转动画。
+
+一、先检查现有实现（transform/rotate 是否真的应用到 DOM、React 状态是否让动画还没开始就出结果、
+transition 是否被覆盖、组件是否被重新挂载、SVG 旋转中心与 transform-origin、定时器清理等）。
+不要只加等待时间或中奖动画掩盖问题。
+
+二、实现真正的旋转：从当前角度开始、至少 5–8 圈再减速、自然缓出、约 4–6 秒、
+连续无卡顿与跳转、扇区与文字不错位、重复抽奖不回到初始角度、平稳停下。
+
+三、结果与动画必须一致：保留现有中奖算法与权重；先定结果再算最终角度；
+指针停在中奖扇区内部；动画彻底结束后才显示结果；不能在动画结束后重新抽奖。
+
+四、交互：旋转期间禁止重复启动、按钮禁用、只允许一个动画、不得重复扣机会/写记录/弹窗；
+刷新要有合理恢复策略，不重复扣机会或重新随机。
+
+五、视觉反馈：启动/旋转/减速/停止各阶段清晰，停止后克制的完成反馈；深浅色都要清楚。
+
+六、测试验收：至少 5 圈、阶段清晰、指针正确、不同扇区都能正确停止、奖励数量变化后仍正常、
+禁用奖励后角度计算正确、快速点击不叠加、没机会不启动、刷新数据不丢、弹窗只出现一次、控制台无错误。
+
+请直接修改代码，不要只给原因或片段。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>根因：首次抽奖时长被算成 0（Y = w ? 4200 : 0），走&quot;直接跳到终点&quot;分支；修复为首次也 6 圈/4.2 秒，角度从当前值继续累加，结果延后到停稳后显示。</div>
+        <div class="chips"><a class="chip" href="37-2026-10-20-ff0959e.html">37</a></div>
+      </div>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#f3f0fa;color:#4a3a86;border-color:#d6cdee">工具</span>
+          <span class="tl-title">11. 版本画廊（第一次）：37 个历史版本</span>
+          <span class="tl-meta">2026-10-20 · 版本 38</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">你现在把所有的版本都像之前一样，整理到 versions 文件夹，还是统一通过 index.html 进行查看，
+注意标注出大改动的版本。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>用 git archive + 单文件构建导出 37 个可运行版本，并生成带&quot;重大/里程碑&quot;标注的索引页。</div>
+        <div class="chips"><a class="chip" href="38-2026-10-20-2b49049.html">38</a></div>
+      </div>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">12. 花园改内嵌常驻：切页不打断计时</span>
+          <span class="tl-meta">2026-10-21 · 版本 39</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">等下，你现在先暂时不考虑我刚才跟你说的东西……你可不可以直接把专注花园 html 做进这个软件，
+这次不是点击跳转，而是真正的套进了这个网站，跟复制粘贴一般，这样我后续可以将这两个 app 进行联动，
+后续有些设置也方便了，并且你不可以更改任何专注花园原有的任何功能，你可以直接照搬。
 
 （随后）B（同源 iframe），都可以，不要在新的窗口打开，然后我需要保证计时器效果一直有效。</pre>
-        </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">同源 iframe 常驻、切页不重建文档；用绝对时间戳保证计时不漂移。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="46-2026-10-22-731b773.html">46</a> <a class="vlink" href="47-2026-10-22-cacf243.html">47</a></div>
-        </div>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>改为同源 iframe 常驻（挂在宿主元素上，只切 hidden、从不重建 srcdoc）；切换页面不卸载文档，花园用绝对时间戳，计时不漂移。</div>
+        <div class="chips"><a class="chip" href="39-2026-10-21-a75047c.html">39</a></div>
       </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">13. 花园全屏 + 任务同步 + 一键专注</span>
-        <span class="rrange">3 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">点侧边栏「专注花园」→ 是否整块铺满内容区&quot;这一部分没有做到……我建议在专注花园里面添加一个按键可以返回 app，而且我现在需要联动两个 app 的数据，我想同步的是主 app 的学习任务到专注花园里面……系统自动就开始专注于学习任务开始计时……计时完毕之后主 app 自动显示完成的状态。</pre>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">13. 花园全屏 + 返回按钮 + 学习任务同步 + 一键专注</span>
+          <span class="tl-meta">2026-10-21 · 版本 40</span>
         </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">隐藏外壳全屏 + 返回按钮；任务同步；点「专注」自动开始；番茄数回显。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="48-2026-10-22-4203847.html">48</a> <a class="vlink" href="49-2026-10-22-87d866e.html">49</a> <a class="vlink" href="50-2026-10-22-7f0f253.html">50</a></div>
-        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">&quot;点侧边栏「专注花园」→ 是否整块铺满内容区&quot;这一部分没有做到，在显示时，左边的项目栏
+像首页、七日计划这些还在显示。而且我建议在专注花园里面添加一个按键可以返回 app，
+而且我现在需要联动两个 app 的数据，我想同步的是主 app 的学习任务到专注花园里面，
+这样我专注花园的计时器就可以计时学习任务，在进行学习任务这一步不需要用户自己手动开启，
+系统自动就开始专注于学习任务开始计时，不过用户也可以自己停止番茄钟界面的计时，
+同时，做任务的计时器转完之后记录一次番茄钟次数，最后记住主 app 的学习任务要和番茄钟同步。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>进入花园时隐藏外壳三块（全屏）+ 左上角浮动「返回应用」；任务同步进花园；点「专注」自动 reset→select→start；番茄数回显到任务列表。</div>
+        <div class="chips"><a class="chip" href="40-2026-10-21-8884442.html">40</a></div>
       </div>
-    </details>
-    <details class="round" open>
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">14. 开始时间严格生效（整点让位）</span>
-        <span class="rrange">2 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">目前针对于开始时间的设置还是没有实现……用户设置的几点几分开始，时间表就按照几点几分开始。（附完整规格：规划起点让位于任务开始时间、A-01~A-12 引擎断言、planned_start_delayed 诊断、ENGINE_VERSION 递增）</pre>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#f0f4ff;color:#2f4f9e;border-color:#c7d3f0">修复</span>
+          <span class="tl-title">14. 计划开始时间仍不生效（整点规则顶掉）</span>
+          <span class="tl-meta">2026-10-21 · 版本 41</span>
         </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">默认整点让位于任务开始时间；新增 planned_start_delayed；不可拆分任务按开始时刻之后的最长空档判定原因。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="51-2026-10-22-dfac3e1.html">51</a> <a class="vlink" href="52-2026-10-22-4f3cca2.html">52</a></div>
-        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">目前针对于开始时间的设置还是没有实现，你自己排查一下具体原因，具体的效果我说过了，
+用户设置的几点几分开始，时间表就按照几点几分开始。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>根因：短任务（&lt;30 分钟）被 H6 判成冲突导致整份计划为空；H6 放行&quot;任务自身总工作量就短于下限&quot;的情况，22:23 精确生效。</div>
+        <div class="chips"><a class="chip" href="41-2026-10-21-918e231.html">41</a></div>
       </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">15. 计时器搬进花园侧边栏（持久化/自动开始/二次确认）</span>
-        <span class="rrange">1 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">可以，你继续，然后我现在要求你的计时器在侧边栏像番茄钟那样的计时器，而不是右下角的小计时器。</pre>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#eef5f0;color:#2f6f4f;border-color:#c8ddd1">体验</span>
+          <span class="tl-title">15. 花园任务名显示开始时间 + 点专注按任务时长计时</span>
+          <span class="tl-meta">2026-10-21 · 版本 42</span>
         </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">侧边栏入口 + 整页计时；localStorage 持久化按 targetAt 恢复；到点待确认；提前结束二次确认。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="53-2026-10-22-5adeb87.html">53</a></div>
-        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">（承接上一条的延期项）麻烦把花园里的任务名带上开始时间；点「专注」进去的计时器要等于
+我在学习任务里设置的时长，比如 70 分钟的任务，点专注进去就是 70 分钟。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>同步时把 HH:mm 前缀写进花园任务名；autoStartFocus 先 settings/update 把 focusMinutes 改成任务时长。</div>
+        <div class="chips"><a class="chip" href="42-2026-10-21-d3f58de.html">42</a></div>
       </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">16. 指针朝下、每 1 个番茄、圆形计时盘</span>
-        <span class="rrange">2 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">（两个小任务）把专注花园奖励转盘的指针改成朝下；转盘抽奖规则支持「每 1 个番茄」获得一次机会。
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">16. 花园内新增「学习任务计时」分区</span>
+          <span class="tl-meta">2026-10-22 · 版本 43</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">（原始 prompt 未在本会话保留，以下为当轮要求的要点复述）
+· 在花园里建一个独立分区：有计时器，时长按学习任务走（不是固定 25 分钟）；
+· 提前结束是计时器的一个功能；
+· 计时结束记为完成一个番茄；
+· 不能改花园原有功能。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>零侵入注入面板（花园 document.body），按任务时长计时，提前结束计番茄，完成回写主应用。</div>
+        <div class="chips"><a class="chip" href="43-2026-10-22-f09728c.html">43</a></div>
+      </div>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">17. 开始时间严格生效（A/B 双需求规格）</span>
+          <span class="tl-meta">2026-10-22 · 版本 44–45</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">（原文在 3.3 处被截断，此处保留已收到的全部硬性要求）
 
-（随后）为花园内「学习任务计时」补齐番茄钟同款计时盘、正计时与背景音（附完整规格）。</pre>
-        </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">指针朝下；规则加 1；圆形计时盘（r=144/线宽 12）+ 倒计时/正计时双模式。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="54-2026-10-22-628afde.html">54</a> <a class="vlink" href="55-2026-10-22-64e8dd3.html">55</a></div>
-        </div>
+需求 A：任务开始时间严格生效
+1. 填了「开始时间」(plannedStartMinutes) 的任务，第一个学习片段必须**正好**从该时刻开始：
+   不取整、不前移、不因&quot;默认下一个整点&quot;顺延。
+2. 前提是该时刻可用；被固定日程/锁定时段/更高优先级任务/截止与依赖等占用时让位。
+3. 被占用时从占用结束后的第一分钟开始，并产生用户可见诊断，写明&quot;计划 HH:mm，实际 HH:mm，原因&quot;。
+4. 开始时间不改变优先级排序，也不是预留座位：禁止为了低优先级任务把更重要的任务推后。
+5. 优化/压缩阶段不得把该任务的片段移到开始时间之前。
+6. 未填开始时间的任务行为不变。
+7. 规划起点：未手动填写时，默认仍是&quot;下一个整点&quot;，但只要今天有任务的开始时间早于它且不早于现在，
+   起点必须改为这些任务中最早的开始时间；手动填写时以手动值为全局下界并给诊断；
+   任务开始时间已过去时按默认起点处理并提示。
+
+需求 B：花园内「学习任务计时」分区
+· 零侵入（同源 iframe + 注入面板 + window.parent.__plannerGardenApi），禁止改花园的 React 树与路由；
+· 清单只含 not_started / in_progress；显示任务名、开始时间、设定时长；按时间升序、无时间的排最后；
+· 计时时长 = 任务剩余工作量（plannedMinutes − priorCompleted − 已完成时段），
+  不是第一个片段长度，也不是固定 25 分钟。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>默认整点让位于任务开始时间；新增 planned_start_delayed 诊断；不可拆分任务按开始时刻之后的最长空档判定原因；ENGINE_VERSION 1.1.0；计时口径改为任务剩余工作量；完成回写幂等。</div>
+        <div class="chips"><a class="chip" href="44-2026-10-22-b8fead9.html">44</a> <a class="chip" href="45-2026-10-22-16d9092.html">45</a></div>
       </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">17. 计时盘从 0% 起、随机指针、完成发机会</span>
-        <span class="rrange">1 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">（规格）精修学习任务计时盘，并完善转盘输入、随机指针、任务奖励与计时页布局：0% 不再画最小圆弧、旋转放进 SVG 内部 &lt;g&gt;、指针在中奖扇区内随机、完成学习任务发一次机会、保留侧边栏、数字输入 1–100。</pre>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">18. 计时器的自动开始 / 提前结束 / 验收规格（3.4–3.7）</span>
+          <span class="tl-meta">2026-10-22 · 版本 46</span>
         </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">起点圆点 + 内部旋转；随机落点；spin/grant 幂等发放；侧边栏布局与 token 化。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="56-2026-10-22-31bdb58.html">56</a></div>
-        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">3.4：当任务开始时间到时间了，计算器自己自动开始，这个计时器只针对于学习任务，不管固定日程，
+并且不会出现多任务同时到点，因为系统已经排好时间了。
+
+3.5：提前结束就是提前完成计时器，算作番茄，需要二次确认。
+
+3.6：提前结束或者即使结束都算。
+
+3.7：（附验收规格）所有自动化测试必须使用固定时钟、固定 ID，禁止依赖真实时间、等待、网络与随机数；
+先红后绿：A-01、A-03、A-04、B-01/B-04、B-09 必须先失败再通过；
+断言落在具体分钟数、状态、原因码与调用次数上；
+A-01~A-17（引擎与预览链路）、B-01~B-21（计时数据与同步）、C-01~C-06（构建与产物）；
+浏览器手工验收 A-1~A-8、B-1~B-10；DoD 要求全量 fail 0、无依赖、文档同步、旧断言修改需逐条说明。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>侧边栏入口 + 整页计时；到点自动开始（页面内 15 秒检查）；提前结束二次确认；计时持久化（targetAt 绝对时间）；超时进入&quot;待确认&quot;不自动改数据。</div>
+        <div class="chips"><a class="chip" href="46-2026-10-22-731b773.html">46</a></div>
       </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">18. 已完成任务保留在时间表 + 依赖清理</span>
-        <span class="rrange">1 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">完成的学习任务保留在时间表里显示&quot;已完成&quot;，并从&quot;前置任务&quot;候选中彻底清除。（附完整规格：卡片状态任务优先、只留最早一块、dependsOn 清理同一事务）</pre>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#eef5f0;color:#2f6f4f;border-color:#c8ddd1">体验</span>
+          <span class="tl-title">19. 计时盘 / 指针 / 数字输入 / 背景音（多次小步迭代）</span>
+          <span class="tl-meta">2026-10-22 · 版本 47–49</span>
         </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">已完成卡片保留并只留最早一块；前置候选排除已完成/0 剩余；完成时清理他人 dependsOn。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="57-2026-10-22-585ae82.html">57</a></div>
-        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">（这几轮是连续的小指令，原文要点如下）
+· 转盘指针改成朝下；抽奖规则支持「每 1 个番茄」获得一次机会。
+· 为花园内「学习任务计时」补齐番茄钟同款计时盘、正计时与背景音：圆环用已完成进度
+  （不是剩余倒计时）、r=144/线宽 12/220ms 过渡、倒计时与正计时双模式、
+  暂停继续、模式切换保留已用时间、Web Audio 合成四种背景音与四种提示音、失败安静降级。
+· 精修：0% 不再画最小圆弧（改 12 点钟起点圆点）、旋转放进 SVG 内部 &lt;g rotate(-90 150 150)&gt;、
+  指针在中奖扇区内随机（5%–95%）、完成学习任务发一次转盘机会、保留侧边栏、规则改数字输入 1–100。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>指针朝下；规则加 1；圆形计时盘 + 双模式 + 暂停 + 恢复；随机落点；spin/grant 幂等发放；数字输入 1–100；独立 Web Audio 引擎（四音轨 + 四提示音 + 降级）。</div>
+        <div class="chips"><a class="chip" href="47-2026-10-22-cacf243.html">47</a> <a class="chip" href="48-2026-10-22-4203847.html">48</a> <a class="chip" href="49-2026-10-22-87d866e.html">49</a></div>
       </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">19. 数字输入 + 背景音与提示音</span>
-        <span class="rrange">1 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">（续上一轮）你继续。</pre>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">20. 已完成任务保留在时间表 + 前置任务清理</span>
+          <span class="tl-meta">2026-10-22 · 版本 50</span>
         </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">抽奖规则改数字输入 1–100；独立 Web Audio 引擎（四种背景音 + 四种提示音 + 降级）。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"><a class="vlink" href="58-2026-10-22-4586140.html">58</a></div>
-        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">通过专注花园的「学习任务计时」完成一个任务后：
+1. 七日学习规划器的时间表/看板会直接把这个任务的所有卡片隐藏，看起来像任务被删除了；
+2. 以后新建任务时，这个已完成任务仍然出现在「前置任务」候选列表里，属于残留数据。
+
+本次要修两件事：已完成任务继续保留在时间表里显示&quot;已完成&quot;，而不是消失；
+已完成任务不再出现在前置任务候选里，并清理它留在其它任务 dependsOn 里的残留引用。
+不要删除已完成任务本身，也不要删除它的历史记录；只是调整显示与依赖候选。
+
+时间表：已完成必须继续出现在日视图/周视图/首页；卡片状态以任务状态优先于时段状态；
+同一任务跨多天有多个块时只保留最早的一块（避免 2 小时任务显示成 8 小时）；
+已完成卡片要有 day-card--completed 视觉与&quot;已完成&quot;标签（紧凑模式也要能看到）；
+不再显示「完成」按钮，保留「详情」「删除任务」。
+
+前置任务：候选只含 not_started / in_progress；编辑旧任务保存时不得把无效依赖写回；
+任务完成时顺手把它从其它任务 dependsOn 移除，且与状态变更在同一事务；
+清理不是删除任务，也不要在&quot;已完成（历史）&quot;里隐藏它。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>deriveStatus 任务状态优先；shouldShowStudyCard 保留已完成；selectCompletedDisplayBlockIds 只留最早一块；day-card--completed 样式；listDependencyCandidates 过滤；完成时同一事务清理 dependsOn。</div>
+        <div class="chips"><a class="chip" href="50-2026-10-22-7f0f253.html">50</a></div>
       </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#f0f4ff;color:#2f4f9e;border-color:#c7d3f0">修复</span>
-        <span class="rname">20. 修「新建任务」点不开</span>
-        <span class="rrange">0 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#f0f4ff;color:#2f4f9e;border-color:#c7d3f0">修复</span>
+          <span class="tl-title">21. 修复「新建任务」点不开</span>
+          <span class="tl-meta">2026-10-22 · 版本 51</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
           <pre class="prompt">我发现现在我无法点击新建任务，导致我无法创建任务，你修复一下。</pre>
-        </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">taskForm 漏导入 listDependencyCandidates；顺带修复 components 漏导入 issueMessage。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"></div>
-        </div>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>taskForm 调用了 listDependencyCandidates 却没 import，只要已有任务就抛 ReferenceError；补导入并加回归测试；顺带修复 components.js 漏导入 issueMessage。</div>
+        <div class="chips"><a class="chip" href="51-2026-10-22-dfac3e1.html">51</a></div>
       </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#eef5f0;color:#2f6f4f;border-color:#c8ddd1">体验</span>
-        <span class="rname">21. 指针：先定住，再改阻尼抖动</span>
-        <span class="rrange">0 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#eef5f0;color:#2f6f4f;border-color:#c8ddd1">体验</span>
+          <span class="tl-title">22. 转盘指针：先定住，再改阻尼抖动</span>
+          <span class="tl-meta">2026-10-22 · 版本 52–54</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
           <pre class="prompt">我不需要专注花园里面的转盘功能，指针抽动，你只需要定住就行。
 
 （随后）或者你可以添加抖动效果，但是抖动会随着转动的速度，幅度下降。</pre>
-        </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">去掉抖动 → 改为 4.2 秒阻尼动画：幅度 7°→0.6°、周期 0.14s→1.09s。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"></div>
-        </div>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>先移除 pointer-tick 抖动；随后改为 4.2 秒阻尼关键帧：幅度 7°→0.6°、周期 0.14s→1.09s，停稳时几乎不动。</div>
+        <div class="chips"><a class="chip" href="52-2026-10-22-4f3cca2.html">52</a> <a class="chip" href="53-2026-10-22-5adeb87.html">53</a> <a class="chip" href="54-2026-10-22-628afde.html">54</a></div>
       </div>
-    </details>
-    <details class="round" open>
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">22. 液态玻璃材质 + 修复注释损坏</span>
-        <span class="rrange">0 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">（规格）为「七天学习规划器」加入 Apple 风格的液态玻璃质感，并提升整体高级感：分层材质、氛围色场、边缘光、鼠标高光、深浅色/壁纸/降级，禁止对 body/.app 使用 backdrop-filter。</pre>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">23. 液态玻璃材质升级</span>
+          <span class="tl-meta">2026-10-22 · 版本 55</span>
         </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">三层玻璃 + 环境色场 + 五套降级；**顺带修复 components.css 注释损坏导致 .app 网格规则被整条丢弃**。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"></div>
-        </div>
-      </div>
-    </details>
-    <details class="round" >
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">23. 文字溢出/截断修复</span>
-        <span class="rrange">0 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">（规格）修复界面中的文字溢出/截断问题，保留现有液态玻璃质感：先定位再按根因修，flex 补 min-width:0、grid 用 minmax(0,1fr)、按钮/输入框可收缩，禁止全局 overflow:hidden。</pre>
-        </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">文字安全层：收缩、单行省略+title、多行断词、看板两行截断、弹窗滚动。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"></div>
-        </div>
-      </div>
-    </details>
-    <details class="round" open>
-      <summary>
-        <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
-        <span class="rname">24. 统一完成链路 + 统计修复</span>
-        <span class="rrange">0 个版本</span>
-      </summary>
-      <div class="rbody">
-        <div class="block">
-          <div class="block__label">我给你的原始 prompt</div>
-          <pre class="prompt">（规格）修复&quot;计划页完成后前置任务残留 / 花园计时不计入统计 / 计时页仍显示已完成任务&quot;：把完成收敛成一条链路（记录实际时段 + 标记完成 + 取消剩余 + 清理依赖）。
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">（原文为分节规格，此处保留全部章节与硬性要求）
 
-（随后）你从失败的地方继续。</pre>
-        </div>
-        <div class="block">
-          <div class="block__label">解决了什么问题</div>
-          <p class="solved">completeTaskAtomic 原子完成；花园计时写入 completed 时段并计入统计；过滤 0 剩余；应用预览后刷新花园面板。</p>
-        </div>
-        <div class="block">
-          <div class="block__label">对应版本</div>
-          <div class="vlinks"></div>
-        </div>
-      </div>
-    </details>
+目标：在不改变信息架构、不牺牲可读性和性能的前提下，把偏&quot;平面工具&quot;的界面升级为
+有层次、有材质感的 Apple Liquid Glass 风格。
 
-  <h2>全部版本</h2>
+边界：
+· 可读性优先——禁止对 body / .app / .app-main 或整页容器使用 backdrop-filter；
+  玻璃只作用于离散表面；正文卡片用高不透明度 tint；正文对比度达 WCAG AA；
+  壁纸开启时玻璃更不透明（+6%~10%）。
+· 性能优先——同屏模糊的大表面不超过 5–6 个；不对 blur 值做动画；移动端降到 10–14px。
+· 不改：不引入依赖/字体/图片；不改信息架构与业务逻辑；不改花园 iframe；不手工编辑 dist。
+
+设计系统：新增 --glass-* 令牌（blur/saturate/bg/bg-strong/border/highlight/shadow/radius/noise），
+浅色、深色、壁纸三种场景分别覆盖，并提供 rgba 回退。
+
+分层：Tier 0 背景 + 氛围色场；Tier 1 外壳（品牌区/顶栏/侧边栏，真模糊 18–24px）；
+Tier 2 内容卡片（不模糊，tint + 内高光 + 细边框 + 轻阴影）；Tier 3 浮层（弹窗/Toast，24–30px）。
+
+材质四层：半透明底色、模糊+饱和（含 -webkit-）、边缘光（1px 外描边 + 顶部内高光 + 底部内暗边）、外层投影。
+
+交互：hover 上浮 1px、按压 scale(0.985)；玻璃高光跟随鼠标（委托 pointermove + rAF 节流，
+只对 [data-glass] 更新 --glass-x/--glass-y，触摸与减少动态效果时关闭）。
+
+降级：@supports not (backdrop-filter)、prefers-reduced-transparency、prefers-reduced-motion、
+forced-colors、打印；320/375/768/1024/1440 与 200% 缩放都要检查，不产生横向滚动条。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>三层玻璃 + 氛围色场 + 边缘光 + 五套降级 + 鼠标高光；**顺带修复 components.css 注释损坏导致 .app 网格规则被整条丢弃**（真实浏览器里布局是坏的）。</div>
+        <div class="chips"><a class="chip" href="55-2026-10-22-64e8dd3.html">55</a></div>
+      </div>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">24. 文字溢出/截断修复</span>
+          <span class="tl-meta">2026-10-22 · 版本 56</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">（原文为分节规格，此处保留全部章节与硬性要求）
+
+目标：所有文字都必须落在自己的容器内——该换行的换行，该省略的省略，该滚动的滚动；
+不破坏液态玻璃；不靠 body{overflow:hidden} 或给所有东西加 overflow:hidden 掩盖问题。
+
+先定位：320/375/768/1024/1440 与 200% 缩放，用 DevTools 检查横向滚动、
+超出视口右边界的元素、叶子文字 scrollWidth &gt; clientWidth，并做长文本压力测试。
+
+修复原则：
+· flex/grid 文字子项补 min-width: 0；grid 用 minmax(0,1fr)；文字容器补 max-width: 100%。
+· 单行文字：overflow hidden + ellipsis + nowrap + min-width 0 + max-width 100%，并补 title。
+· 多行：-webkit-line-clamp + overflow-wrap: anywhere；重要正文不得 nowrap。
+· 长单词/连续字符：overflow-wrap: anywhere；中文正文不用 break-all。
+· 按钮：max-width 100%、操作区允许 normal 换行、按钮组 flex-wrap。
+· 输入框：min-width 0 / max-width 100%，日期时间控件显式 min-width 0，textarea 可纵向 resize。
+· 固定高度看板卡片：标题单行/两行省略、标签可换行且省略、按钮不压文字、不破坏&quot;5 分钟一格&quot;。
+· 玻璃伪元素：pointer-events: none，文字在高光之上，不改变容器尺寸。
+
+排查清单覆盖顶栏、侧边栏、页面标题、卡片头、任务行、统计、看板卡片、表单、输入框、
+表单底部、弹窗、Toast、设置页。不要把所有文字都改成省略号；截断必须可回溯（title/aria-label）。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>文字安全层：收缩声明、单行省略 + title、多行断词、看板两行截断（并显式覆盖继承的 nowrap）、按钮换行、输入框可收缩、弹窗不超视口、禁止全局 overflow hidden。</div>
+        <div class="chips"><a class="chip" href="56-2026-10-22-31bdb58.html">56</a></div>
+      </div>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#fdecea;color:#b3261e;border-color:#f3c0bb">重大</span>
+          <span class="tl-title">25. 统一完成链路：记录时段 / 标记完成 / 清理依赖</span>
+          <span class="tl-meta">2026-10-22 · 版本 57–58</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">三件事大概率是同一个数据链路问题：
+1. 计划页点「完成」只完成了&quot;时段&quot;，没有完成&quot;任务&quot;——任务状态仍是 not_started/in_progress，
+   所以还出现在前置任务候选里，花园清单也仍显示（剩余 0 被 Math.max(1, remaining) 兜成 1 分钟）。
+2. 花园计时完成只改了任务状态，没有写入学习记录——completeStudyTask 里 actualMinutes 被 void 丢弃，
+   而统计只统计 state === &#x27;completed&#x27; 的时段。
+要求：把&quot;完成任务&quot;收敛成一条统一链路：记录实际学习时段 + 标记任务完成 + 取消剩余时段 + 清理依赖，
+计划页和花园计时都走它。
+
+1. 计划页「完成」= 完成整个任务：同时提交 session.complete（写 actualMinutes）与 task.status→completed，
+   由 reconcile 取消剩余时段，并从其它任务 dependsOn 移除；顺序必须先时段后任务；
+   session.complete 失败则整体失败；仍走预览/确认链路；完成后刷新页面、表单候选与花园面板。
+2. 花园计时完成/提前完成都必须写入统计：优先复用任务已有未完成时段（listStudyTasks 增加 sessionId）；
+   没有时段时补一条合法 completed 记录（date/startMinutes/endMinutes 允许跨午夜、
+   plannedMinutes、actualMinutes、state、locked、source、时间戳）；实际分钟取真实用时，
+   最小 1、不超过剩余；原子提交；幂等（已完成直接返回 already）。
+3. 前置候选与花园清单过滤&quot;已完成 / 0 剩余&quot;：候选要同时满足状态有效与 remainingMinutes &gt; 0
+   （建议用 listTaskViews）；花园只列剩余 &gt; 0 的任务，不能造&quot;1 分钟&quot;假任务；返回 sessionId。
+4. 刷新：计划页完成/应用预览后，若花园 iframe 已存在要刷新面板清单，不要只依赖重新进入花园。
+
+约束：不删已完成任务与历史；不改排程引擎优先级；不引入依赖；所有完成路径走同一个服务；
+时间计算复用 domain/time.js；实际分钟必须校验（不得负数、0 长度、超过 8 小时）。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>completeTaskAtomic：复用或补登 completed 时段 → 标记完成 → reconcile 取消剩余 → 清理依赖，一次 commit 原子提交；花园计时计入统计；过滤 0 剩余；应用预览后即时刷新花园面板；补齐跨午夜记录与刷新测试。</div>
+        <div class="chips"><a class="chip" href="57-2026-10-22-585ae82.html">57</a> <a class="chip" href="58-2026-10-22-4586140.html">58</a></div>
+      </div>
+    </li>
+    <li class="tl-item">
+      <div class="tl-dot" aria-hidden="true"></div>
+      <div class="tl-card">
+        <div class="tl-head">
+          <span class="tag" style="background:#f3f0fa;color:#4a3a86;border-color:#d6cdee">工具</span>
+          <span class="tl-title">26. 版本画廊：从 0 到 1 的时间线展示</span>
+          <span class="tl-meta">2026-10-22 · 版本 59</span>
+        </div>
+        <details class="tl-details" >
+          <summary>我给你的原始 prompt（点开）</summary>
+          <pre class="prompt">现在我要展示从 0 到 1 的完整过程，还是像之前那样放进 version 里面，然后标注出重大的变化，
+并且在旁边写出来我跟你说的 prompt（需要原版我跟你说的 prompt），然后再写出来解决了什么问题。
+
+（随后）现在你继续做我从 0~1 的展示部分，你可以通过时间表来展示，
+现在我给你发一些我给你 prompt，以助于你完成 prompt 填写这一板块。
+你展示可以就按照这几个版本展示。</pre>
+        </details>
+        <div class="solved"><span class="solved__label">解决了什么</span>把 58 个应用版本按时间线重排，每段挂上原始 prompt 与&quot;解决了什么&quot;，并保留完整版本表。</div>
+        <div class="chips"><a class="chip" href="59-2026-10-22-db9ec23.html">59</a></div>
+      </div>
+    </li>
+  </ul>
+
+  <h2>全部版本（59）</h2>
   <table>
     <thead><tr><th>#</th><th>版本说明</th><th>提交</th><th>日期</th><th>大小</th></tr></thead>
     <tbody>
-      <tr>
-        <td class="n">1</td>
-        <td><a href="01-2026-10-16-1c5b995.html">阶段 1：基础项目、核心数据模型、基础校验逻辑与项目文档</a></td>
-        <td class="s">1c5b995</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">303 KB</td>
-      </tr>
-      <tr>
-        <td class="n">2</td>
-        <td><a href="02-2026-10-16-931868a.html">阶段 1 收尾：界面冒烟测试发现的缺陷修复与文档同步</a></td>
-        <td class="s">931868a</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">303 KB</td>
-      </tr>
-      <tr>
-        <td class="n">3</td>
-        <td><a href="03-2026-10-16-45a0b60.html">阶段 2：无 AI 排程引擎、差异预览闭环、硬约束校验与引擎级测试</a></td>
-        <td class="s">45a0b60</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">472 KB</td>
-      </tr>
-      <tr>
-        <td class="n">4</td>
-        <td><a href="04-2026-10-16-983577d.html">阶段 2 收尾：修复局部优化与休息块重叠缺陷，补充回归测试与文档</a></td>
-        <td class="s">983577d</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">475 KB</td>
-      </tr>
-      <tr>
-        <td class="n">5</td>
-        <td><a href="05-2026-10-16-0e26457.html">阶段 3：草稿变更层、预览交互闭环、时段与固定活动管理、每日视图、图形化设置、窗口滚动</a></td>
-        <td class="s">0e26457</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">567 KB</td>
-      </tr>
-      <tr>
-        <td class="n">6</td>
-        <td><a href="06-2026-10-16-a72b9d7.html">阶段 3 收尾：修复确认预览时的任务 ID 映射缺陷，补充回归测试与文档</a></td>
-        <td class="s">a72b9d7</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">570 KB</td>
-      </tr>
-      <tr>
-        <td class="n">7</td>
-        <td><a href="07-2026-10-16-a83a5bf.html">阶段 4：学习计时工作台、计时持久化、清理入口、导入两步校验与存储面板</a></td>
-        <td class="s">a83a5bf</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">601 KB</td>
-      </tr>
-      <tr>
-        <td class="n">8</td>
-        <td><a href="08-2026-10-16-de4cdb5.html">阶段 5：合并写入路径、计时实时刷新、键盘与可访问性、交付文档定稿</a></td>
-        <td class="s">de4cdb5</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">605 KB</td>
-      </tr>
-      <tr>
-        <td class="n">9</td>
-        <td><a href="09-2026-10-16-9288f83.html">修复核心规划流程：无改动重排误报为全部重排、空任务谎报完整可行、内部枚举与开发痕迹上屏</a></td>
-        <td class="s">9288f83</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">620 KB</td>
-      </tr>
-      <tr>
-        <td class="n">10</td>
-        <td><a href="10-2026-10-16-bc35357.html">新增首页/外观主题与壁纸/通知提醒/番茄钟/奖励转盘/学习统计，修复打包器导出别名缺陷</a></td>
-        <td class="s">bc35357</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">817 KB</td>
-      </tr>
-      <tr>
-        <td class="n">11</td>
-        <td><a href="11-2026-10-16-28cb265.html">为新增功能补齐测试（计时精度、通知去重、奖励防重复、统计口径），修正每日简报与即将开始重复提醒的问题</a></td>
-        <td class="s">28cb265</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">818 KB</td>
-      </tr>
-      <tr>
-        <td class="n">12</td>
-        <td><a href="12-2026-10-16-0206a31.html">修复预览页确认应用/放弃修改按钮调用不存在的方法；新增端到端点击测试与接口审计</a></td>
-        <td class="s">0206a31</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">818 KB</td>
-      </tr>
-      <tr>
-        <td class="n">13</td>
-        <td><a href="13-2026-10-16-1272c05.html">新增任务已完成/剩余时长声明与每任务安排时间展示；修复 createTask 缺失字段</a></td>
-        <td class="s">1272c05</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">824 KB</td>
-      </tr>
-      <tr>
-        <td class="n">14</td>
-        <td><a href="14-2026-10-16-7640669.html">新增成就反馈与存储容量提醒；更新文档至 v1.0.0（README/CHANGELOG/ARCHITECTURE/验收清单）</a></td>
-        <td class="s">7640669</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">829 KB</td>
-      </tr>
-      <tr>
-        <td class="n">15</td>
-        <td><a href="15-2026-10-16-459ba8f.html">新增固定专注功能栏（跨页面可见可控）与成就反馈；补齐文档</a></td>
-        <td class="s">459ba8f</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">834 KB</td>
-      </tr>
-      <tr>
-        <td class="n">16</td>
-        <td><a href="16-2026-10-16-11ab484.html">新增移动端响应式布局与视觉系统回归测试</a></td>
-        <td class="s">11ab484</td>
-        <td class="d">2026-10-16</td>
-        <td class="d">836 KB</td>
-      </tr>
-      <tr>
-        <td class="n">17</td>
-        <td><a href="17-2026-10-17-7e1bd03.html">修复任务与计划时段的数据一致性：完成任务/改工作量/改已完成后同步取消超出时段；加载旧数据时安全修复而非显示空白</a></td>
-        <td class="s">7e1bd03</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">850 KB</td>
-      </tr>
-      <tr>
-        <td class="n">18</td>
-        <td><a href="18-2026-10-17-6ce7851.html">修复壁纸不显示（背景层从未创建）并移除显示方式设置；完整移除缓冲时间功能，兼容旧计划中的缓冲块</a></td>
-        <td class="s">6ce7851</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">848 KB</td>
-      </tr>
-      <tr>
-        <td class="n">19</td>
-        <td><a href="19-2026-10-17-c1a2e64.html">移除番茄钟与奖励转盘：页面、服务、路由、入口、状态字段、通知类型与相关样式；保留普通学习记录统计</a></td>
-        <td class="s">c1a2e64</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">749 KB</td>
-      </tr>
-      <tr>
-        <td class="n">20</td>
-        <td><a href="20-2026-10-17-4ed947d.html">重设每日视图为日期为列、任务为内容的日程概览，替换原时间轴网格；补充排序与状态测试</a></td>
-        <td class="s">4ed947d</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">757 KB</td>
-      </tr>
-      <tr>
-        <td class="n">21</td>
-        <td><a href="21-2026-10-17-c2a1d6c.html">更新文档至 1.1.0：数据一致性修复、壁纸修复、功能精简与每日视图重设</a></td>
-        <td class="s">c2a1d6c</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">757 KB</td>
-      </tr>
-      <tr>
-        <td class="n">22</td>
-        <td><a href="22-2026-10-17-be807aa.html">不再把任务全部完成当成数据警告（正常状态不应弹警告横幅）</a></td>
-        <td class="s">be807aa</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">757 KB</td>
-      </tr>
-      <tr>
-        <td class="n">23</td>
-        <td><a href="23-2026-10-17-d0cd0ea.html">修复壁纸层级（负 z-index）与卡片 backdrop-filter 造成的发蒙/遮挡；统一任务名称 10 字符上限</a></td>
-        <td class="s">d0cd0ea</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">761 KB</td>
-      </tr>
-      <tr>
-        <td class="n">24</td>
-        <td><a href="24-2026-10-17-0870336.html">七天计划改为日期列看板（删除时间列与所有时间刻度）；新增休息时间实体与跨午夜拆分、卡片网格尺寸与任务删除/完成入口</a></td>
-        <td class="s">0870336</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">800 KB</td>
-      </tr>
-      <tr>
-        <td class="n">25</td>
-        <td><a href="25-2026-10-17-3dd9871.html">首页与每日视图统一为看板卡片；彻底删除时间轴组件、样式与尺寸变量；固定日程页新增休息时间管理</a></td>
-        <td class="s">3dd9871</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">796 KB</td>
-      </tr>
-      <tr>
-        <td class="n">26</td>
-        <td><a href="26-2026-10-17-89be691.html">跨夜休息片段结束于午夜时显示 24:00；补充界面级测试</a></td>
-        <td class="s">89be691</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">797 KB</td>
-      </tr>
-      <tr>
-        <td class="n">27</td>
-        <td><a href="27-2026-10-17-1352887.html">更新文档至 1.2.0：背景层级、任务删除与完成隐藏、跨周重复、名称上限、网格基准、休息时间</a></td>
-        <td class="s">1352887</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">797 KB</td>
-      </tr>
-      <tr>
-        <td class="n">28</td>
-        <td><a href="28-2026-10-17-f512421.html">核心修复：历史记录不再锁定时间（区分容量/冲突两层）；修复孤立时段无法修复；新增规划开始时间与不排过去规则</a></td>
-        <td class="s">f512421</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">806 KB</td>
-      </tr>
-      <tr>
-        <td class="n">29</td>
-        <td><a href="29-2026-10-17-03de665.html">修复休息保存无响应（ui 服务作用域错误）；新增「设置休息」今晚/每周两模式、科目管理、柱状图重做、删除可学习时间区块</a></td>
-        <td class="s">03de665</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">852 KB</td>
-      </tr>
-      <tr>
-        <td class="n">30</td>
-        <td><a href="30-2026-10-17-7b32449.html">补第三轮回归测试；修复优化器把片段回填到规划起点之前的问题</a></td>
-        <td class="s">7b32449</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">852 KB</td>
-      </tr>
-      <tr>
-        <td class="n">31</td>
-        <td><a href="31-2026-10-17-7faeaf7.html">更新文档至 1.3.0</a></td>
-        <td class="s">7faeaf7</td>
-        <td class="d">2026-10-17</td>
-        <td class="d">852 KB</td>
-      </tr>
-      <tr>
-        <td class="n">32</td>
-        <td><a href="32-2026-10-20-e65e72f.html">第四轮：修复计划延迟到16:00（根因是遗留的每天7小时默认窗口）与截止时间失效；任务列表只显示有效任务；可选属性与计划开始时间；删除跟随系统主题；新增自动生成预览开关</a></td>
-        <td class="s">e65e72f</td>
-        <td class="d">2026-10-20</td>
-        <td class="d">878 KB</td>
-      </tr>
-      <tr>
-        <td class="n">33</td>
-        <td><a href="33-2026-10-20-fa0c982.html">第五轮：新增重置系统与彻底删除任务历史；计划开始时间改为真实下界；修复通知可用性判断（安全上下文/Safari 构造器/失败原因）；顺带修复 describeDraftOps 误插代码</a></td>
-        <td class="s">fa0c982</td>
-        <td class="d">2026-10-20</td>
-        <td class="d">898 KB</td>
-      </tr>
-      <tr>
-        <td class="n">34</td>
-        <td><a href="34-2026-10-20-0e04e12.html">收尾：新增真正的「恢复出厂设置」（数据+设置+主题+壁纸+通知）；修复异步壁纸清理阻塞重置的问题；新增通知使用限制说明</a></td>
-        <td class="s">0e04e12</td>
-        <td class="d">2026-10-20</td>
-        <td class="d">909 KB</td>
-      </tr>
-      <tr>
-        <td class="n">35</td>
-        <td><a href="35-2026-10-20-46e02c5.html">内嵌「专注花园」独立应用：侧边栏入口（学习统计之后）+ iframe srcdoc + 新窗口打开；新增内联构建脚本与一致性测试</a></td>
-        <td class="s">46e02c5</td>
-        <td class="d">2026-10-20</td>
-        <td class="d">1393 KB</td>
-      </tr>
-      <tr>
-        <td class="n">36</td>
-        <td><a href="36-2026-10-20-6cd8545.html">专注花园改为独立窗口打开（侧边栏点击直接开窗，可全屏使用）；启动器页不再内嵌 iframe</a></td>
-        <td class="s">6cd8545</td>
-        <td class="d">2026-10-20</td>
-        <td class="d">1398 KB</td>
-      </tr>
-      <tr>
-        <td class="n">37</td>
-        <td><a href="37-2026-10-20-ff0959e.html">修复专注花园奖励转盘动画：首次不再0秒、每次至少6圈并从当前角度累加、结果延后到停止后显示；新增幂等补丁脚本与数值验证测试</a></td>
-        <td class="s">ff0959e</td>
-        <td class="d">2026-10-20</td>
-        <td class="d">1398 KB</td>
-      </tr>
-      <tr>
-        <td class="n">38</td>
-        <td><a href="38-2026-10-20-2b49049.html">重建 versions/：补齐全部 37 个历史版本并在索引页标注重大改动与里程碑</a></td>
-        <td class="s">2b49049</td>
-        <td class="d">2026-10-20</td>
-        <td class="d">1398 KB</td>
-      </tr>
-      <tr>
-        <td class="n">39</td>
-        <td><a href="39-2026-10-21-a75047c.html">专注花园改为内嵌常驻 iframe（同源、零修改），移除新窗口；切换页面不重建文档以保证计时不中断</a></td>
-        <td class="s">a75047c</td>
-        <td class="d">2026-10-21</td>
-        <td class="d">1427 KB</td>
-      </tr>
-      <tr>
-        <td class="n">40</td>
-        <td><a href="40-2026-10-21-8884442.html">花园全屏化（隐藏侧栏+返回按钮）；学习任务与番茄钟联动：任务同步、一键自动开始、番茄数回显</a></td>
-        <td class="s">8884442</td>
-        <td class="d">2026-10-21</td>
-        <td class="d">1442 KB</td>
-      </tr>
-      <tr>
-        <td class="n">41</td>
-        <td><a href="41-2026-10-21-918e231.html">计划开始时间精确生效：修复短任务被判 H6 冲突导致计划为空</a></td>
-        <td class="s">918e231</td>
-        <td class="d">2026-10-21</td>
-        <td class="d">1443 KB</td>
-      </tr>
-      <tr>
-        <td class="n">42</td>
-        <td><a href="42-2026-10-21-d3f58de.html">花园任务名显示计划开始时间；点专注时按任务时长设置计时器（70 分钟任务=70 分钟番茄）</a></td>
-        <td class="s">d3f58de</td>
-        <td class="d">2026-10-21</td>
-        <td class="d">1444 KB</td>
-      </tr>
-      <tr>
-        <td class="n">43</td>
-        <td><a href="43-2026-10-22-f09728c.html">花园内新增「学习任务计时」分区：按任务时长计时、提前结束、完成回写主应用</a></td>
-        <td class="s">f09728c</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1457 KB</td>
-      </tr>
-      <tr>
-        <td class="n">44</td>
-        <td><a href="44-2026-10-22-b8fead9.html">排程：规划起点让位于任务指定开始时间；新增 planned_start_delayed 诊断；ENGINE_VERSION 1.1.0</a></td>
-        <td class="s">b8fead9</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1461 KB</td>
-      </tr>
-      <tr>
-        <td class="n">45</td>
-        <td><a href="45-2026-10-22-16d9092.html">开始时间严格生效（整点让位/顺延诊断/不可拆分原因）；计时口径改为任务剩余工作量并幂等回写</a></td>
-        <td class="s">16d9092</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1466 KB</td>
-      </tr>
-      <tr>
-        <td class="n">46</td>
-        <td><a href="46-2026-10-22-731b773.html">计时器搬进花园侧边栏（整页）；新增持久化、到点自动开始、提前结束二次确认</a></td>
-        <td class="s">731b773</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1477 KB</td>
-      </tr>
-      <tr>
-        <td class="n">47</td>
-        <td><a href="47-2026-10-22-cacf243.html">转盘指针改为朝下；抽奖规则支持每 1 个番茄（新增 2 条幂等补丁）</a></td>
-        <td class="s">cacf243</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1477 KB</td>
-      </tr>
-      <tr>
-        <td class="n">48</td>
-        <td><a href="48-2026-10-22-4203847.html">学习任务计时：新增番茄钟同款圆形计时盘与倒计时/正计时双模式（含暂停、模式切换、进度恢复）</a></td>
-        <td class="s">4203847</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1492 KB</td>
-      </tr>
-      <tr>
-        <td class="n">49</td>
-        <td><a href="49-2026-10-22-87d866e.html">计时盘从 0% 起（起点圆点+内部旋转）；计时页保留侧边栏；转盘随机指针；完成学习任务发放一次机会</a></td>
-        <td class="s">87d866e</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1497 KB</td>
-      </tr>
-      <tr>
-        <td class="n">50</td>
-        <td><a href="50-2026-10-22-7f0f253.html">已完成任务保留在时间表并显示已完成（只留最早一块）；前置任务候选与依赖清理</a></td>
-        <td class="s">7f0f253</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1502 KB</td>
-      </tr>
-      <tr>
-        <td class="n">51</td>
-        <td><a href="51-2026-10-22-dfac3e1.html">抽奖规则改为数字输入（1–100）；新增背景音与完成提示音的独立 Web Audio 引擎</a></td>
-        <td class="s">dfac3e1</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1517 KB</td>
-      </tr>
-      <tr>
-        <td class="n">52</td>
-        <td><a href="52-2026-10-22-4f3cca2.html">修复新建任务点不开：taskForm 漏导入 listDependencyCandidates；顺带修复 components 漏导入 issueMessage</a></td>
-        <td class="s">4f3cca2</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1517 KB</td>
-      </tr>
-      <tr>
-        <td class="n">53</td>
-        <td><a href="53-2026-10-22-5adeb87.html">转盘指针去掉抽动动画，保持定住</a></td>
-        <td class="s">5adeb87</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1517 KB</td>
-      </tr>
-      <tr>
-        <td class="n">54</td>
-        <td><a href="54-2026-10-22-628afde.html">转盘指针改为阻尼式抖动：幅度与频率随转动减速衰减</a></td>
-        <td class="s">628afde</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1519 KB</td>
-      </tr>
-      <tr>
-        <td class="n">55</td>
-        <td><a href="55-2026-10-22-64e8dd3.html">液态玻璃材质：分层玻璃、氛围色场、边缘光与降级；修复 components.css 注释损坏导致 .app 规则被丢弃</a></td>
-        <td class="s">64e8dd3</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1537 KB</td>
-      </tr>
-      <tr>
-        <td class="n">56</td>
-        <td><a href="56-2026-10-22-31bdb58.html">文字安全层：修掉 flex 不收缩、按钮 nowrap、输入框固有宽度等溢出根因</a></td>
-        <td class="s">31bdb58</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1542 KB</td>
-      </tr>
-      <tr>
-        <td class="n">57</td>
-        <td><a href="57-2026-10-22-585ae82.html">统一完成任务链路：记录实际时段+标记完成+清理依赖；花园计时计入统计；过滤 0 剩余任务</a></td>
-        <td class="s">585ae82</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1550 KB</td>
-      </tr>
-      <tr>
-        <td class="n">58</td>
-        <td><a href="58-2026-10-22-4586140.html">收尾：应用预览后即时刷新花园面板；补齐跨午夜记录与刷新测试</a></td>
-        <td class="s">4586140</td>
-        <td class="d">2026-10-22</td>
-        <td class="d">1551 KB</td>
-      </tr>
+      <tr><td class="n">1</td><td><a href="01-2026-10-16-1c5b995.html">阶段 1：基础项目、核心数据模型、基础校验逻辑与项目文档</a></td>
+        <td class="s">1c5b995</td><td class="d">2026-10-16</td><td class="d">303 KB</td></tr>
+      <tr><td class="n">2</td><td><a href="02-2026-10-16-931868a.html">阶段 1 收尾：界面冒烟测试发现的缺陷修复与文档同步</a></td>
+        <td class="s">931868a</td><td class="d">2026-10-16</td><td class="d">303 KB</td></tr>
+      <tr><td class="n">3</td><td><a href="03-2026-10-16-45a0b60.html">阶段 2：无 AI 排程引擎、差异预览闭环、硬约束校验与引擎级测试</a></td>
+        <td class="s">45a0b60</td><td class="d">2026-10-16</td><td class="d">472 KB</td></tr>
+      <tr><td class="n">4</td><td><a href="04-2026-10-16-983577d.html">阶段 2 收尾：修复局部优化与休息块重叠缺陷，补充回归测试与文档</a></td>
+        <td class="s">983577d</td><td class="d">2026-10-16</td><td class="d">475 KB</td></tr>
+      <tr><td class="n">5</td><td><a href="05-2026-10-16-0e26457.html">阶段 3：草稿变更层、预览交互闭环、时段与固定活动管理、每日视图、图形化设置、窗口滚动</a></td>
+        <td class="s">0e26457</td><td class="d">2026-10-16</td><td class="d">567 KB</td></tr>
+      <tr><td class="n">6</td><td><a href="06-2026-10-16-a72b9d7.html">阶段 3 收尾：修复确认预览时的任务 ID 映射缺陷，补充回归测试与文档</a></td>
+        <td class="s">a72b9d7</td><td class="d">2026-10-16</td><td class="d">570 KB</td></tr>
+      <tr><td class="n">7</td><td><a href="07-2026-10-16-a83a5bf.html">阶段 4：学习计时工作台、计时持久化、清理入口、导入两步校验与存储面板</a></td>
+        <td class="s">a83a5bf</td><td class="d">2026-10-16</td><td class="d">601 KB</td></tr>
+      <tr><td class="n">8</td><td><a href="08-2026-10-16-de4cdb5.html">阶段 5：合并写入路径、计时实时刷新、键盘与可访问性、交付文档定稿</a></td>
+        <td class="s">de4cdb5</td><td class="d">2026-10-16</td><td class="d">605 KB</td></tr>
+      <tr><td class="n">9</td><td><a href="09-2026-10-16-9288f83.html">修复核心规划流程：无改动重排误报为全部重排、空任务谎报完整可行、内部枚举与开发痕迹上屏</a></td>
+        <td class="s">9288f83</td><td class="d">2026-10-16</td><td class="d">620 KB</td></tr>
+      <tr><td class="n">10</td><td><a href="10-2026-10-16-bc35357.html">新增首页/外观主题与壁纸/通知提醒/番茄钟/奖励转盘/学习统计，修复打包器导出别名缺陷</a></td>
+        <td class="s">bc35357</td><td class="d">2026-10-16</td><td class="d">817 KB</td></tr>
+      <tr><td class="n">11</td><td><a href="11-2026-10-16-28cb265.html">为新增功能补齐测试（计时精度、通知去重、奖励防重复、统计口径），修正每日简报与即将开始重复提醒的问题</a></td>
+        <td class="s">28cb265</td><td class="d">2026-10-16</td><td class="d">818 KB</td></tr>
+      <tr><td class="n">12</td><td><a href="12-2026-10-16-0206a31.html">修复预览页确认应用/放弃修改按钮调用不存在的方法；新增端到端点击测试与接口审计</a></td>
+        <td class="s">0206a31</td><td class="d">2026-10-16</td><td class="d">818 KB</td></tr>
+      <tr><td class="n">13</td><td><a href="13-2026-10-16-1272c05.html">新增任务已完成/剩余时长声明与每任务安排时间展示；修复 createTask 缺失字段</a></td>
+        <td class="s">1272c05</td><td class="d">2026-10-16</td><td class="d">824 KB</td></tr>
+      <tr><td class="n">14</td><td><a href="14-2026-10-16-7640669.html">新增成就反馈与存储容量提醒；更新文档至 v1.0.0（README/CHANGELOG/ARCHITECTURE/验收清单）</a></td>
+        <td class="s">7640669</td><td class="d">2026-10-16</td><td class="d">829 KB</td></tr>
+      <tr><td class="n">15</td><td><a href="15-2026-10-16-459ba8f.html">新增固定专注功能栏（跨页面可见可控）与成就反馈；补齐文档</a></td>
+        <td class="s">459ba8f</td><td class="d">2026-10-16</td><td class="d">834 KB</td></tr>
+      <tr><td class="n">16</td><td><a href="16-2026-10-16-11ab484.html">新增移动端响应式布局与视觉系统回归测试</a></td>
+        <td class="s">11ab484</td><td class="d">2026-10-16</td><td class="d">836 KB</td></tr>
+      <tr><td class="n">17</td><td><a href="17-2026-10-17-7e1bd03.html">修复任务与计划时段的数据一致性：完成任务/改工作量/改已完成后同步取消超出时段；加载旧数据时安全修复而非显示空白</a></td>
+        <td class="s">7e1bd03</td><td class="d">2026-10-17</td><td class="d">850 KB</td></tr>
+      <tr><td class="n">18</td><td><a href="18-2026-10-17-6ce7851.html">修复壁纸不显示（背景层从未创建）并移除显示方式设置；完整移除缓冲时间功能，兼容旧计划中的缓冲块</a></td>
+        <td class="s">6ce7851</td><td class="d">2026-10-17</td><td class="d">848 KB</td></tr>
+      <tr><td class="n">19</td><td><a href="19-2026-10-17-c1a2e64.html">移除番茄钟与奖励转盘：页面、服务、路由、入口、状态字段、通知类型与相关样式；保留普通学习记录统计</a></td>
+        <td class="s">c1a2e64</td><td class="d">2026-10-17</td><td class="d">749 KB</td></tr>
+      <tr><td class="n">20</td><td><a href="20-2026-10-17-4ed947d.html">重设每日视图为日期为列、任务为内容的日程概览，替换原时间轴网格；补充排序与状态测试</a></td>
+        <td class="s">4ed947d</td><td class="d">2026-10-17</td><td class="d">757 KB</td></tr>
+      <tr><td class="n">21</td><td><a href="21-2026-10-17-c2a1d6c.html">更新文档至 1.1.0：数据一致性修复、壁纸修复、功能精简与每日视图重设</a></td>
+        <td class="s">c2a1d6c</td><td class="d">2026-10-17</td><td class="d">757 KB</td></tr>
+      <tr><td class="n">22</td><td><a href="22-2026-10-17-be807aa.html">不再把任务全部完成当成数据警告（正常状态不应弹警告横幅）</a></td>
+        <td class="s">be807aa</td><td class="d">2026-10-17</td><td class="d">757 KB</td></tr>
+      <tr><td class="n">23</td><td><a href="23-2026-10-17-d0cd0ea.html">修复壁纸层级（负 z-index）与卡片 backdrop-filter 造成的发蒙/遮挡；统一任务名称 10 字符上限</a></td>
+        <td class="s">d0cd0ea</td><td class="d">2026-10-17</td><td class="d">761 KB</td></tr>
+      <tr><td class="n">24</td><td><a href="24-2026-10-17-0870336.html">七天计划改为日期列看板（删除时间列与所有时间刻度）；新增休息时间实体与跨午夜拆分、卡片网格尺寸与任务删除/完成入口</a></td>
+        <td class="s">0870336</td><td class="d">2026-10-17</td><td class="d">800 KB</td></tr>
+      <tr><td class="n">25</td><td><a href="25-2026-10-17-3dd9871.html">首页与每日视图统一为看板卡片；彻底删除时间轴组件、样式与尺寸变量；固定日程页新增休息时间管理</a></td>
+        <td class="s">3dd9871</td><td class="d">2026-10-17</td><td class="d">796 KB</td></tr>
+      <tr><td class="n">26</td><td><a href="26-2026-10-17-89be691.html">跨夜休息片段结束于午夜时显示 24:00；补充界面级测试</a></td>
+        <td class="s">89be691</td><td class="d">2026-10-17</td><td class="d">797 KB</td></tr>
+      <tr><td class="n">27</td><td><a href="27-2026-10-17-1352887.html">更新文档至 1.2.0：背景层级、任务删除与完成隐藏、跨周重复、名称上限、网格基准、休息时间</a></td>
+        <td class="s">1352887</td><td class="d">2026-10-17</td><td class="d">797 KB</td></tr>
+      <tr><td class="n">28</td><td><a href="28-2026-10-17-f512421.html">核心修复：历史记录不再锁定时间（区分容量/冲突两层）；修复孤立时段无法修复；新增规划开始时间与不排过去规则</a></td>
+        <td class="s">f512421</td><td class="d">2026-10-17</td><td class="d">806 KB</td></tr>
+      <tr><td class="n">29</td><td><a href="29-2026-10-17-03de665.html">修复休息保存无响应（ui 服务作用域错误）；新增「设置休息」今晚/每周两模式、科目管理、柱状图重做、删除可学习时间区块</a></td>
+        <td class="s">03de665</td><td class="d">2026-10-17</td><td class="d">852 KB</td></tr>
+      <tr><td class="n">30</td><td><a href="30-2026-10-17-7b32449.html">补第三轮回归测试；修复优化器把片段回填到规划起点之前的问题</a></td>
+        <td class="s">7b32449</td><td class="d">2026-10-17</td><td class="d">852 KB</td></tr>
+      <tr><td class="n">31</td><td><a href="31-2026-10-17-7faeaf7.html">更新文档至 1.3.0</a></td>
+        <td class="s">7faeaf7</td><td class="d">2026-10-17</td><td class="d">852 KB</td></tr>
+      <tr><td class="n">32</td><td><a href="32-2026-10-20-e65e72f.html">第四轮：修复计划延迟到16:00（根因是遗留的每天7小时默认窗口）与截止时间失效；任务列表只显示有效任务；可选属性与计划开始时间；删除跟随系统主题；新增自动生成预览开关</a></td>
+        <td class="s">e65e72f</td><td class="d">2026-10-20</td><td class="d">878 KB</td></tr>
+      <tr><td class="n">33</td><td><a href="33-2026-10-20-fa0c982.html">第五轮：新增重置系统与彻底删除任务历史；计划开始时间改为真实下界；修复通知可用性判断（安全上下文/Safari 构造器/失败原因）；顺带修复 describeDraftOps 误插代码</a></td>
+        <td class="s">fa0c982</td><td class="d">2026-10-20</td><td class="d">898 KB</td></tr>
+      <tr><td class="n">34</td><td><a href="34-2026-10-20-0e04e12.html">收尾：新增真正的「恢复出厂设置」（数据+设置+主题+壁纸+通知）；修复异步壁纸清理阻塞重置的问题；新增通知使用限制说明</a></td>
+        <td class="s">0e04e12</td><td class="d">2026-10-20</td><td class="d">909 KB</td></tr>
+      <tr><td class="n">35</td><td><a href="35-2026-10-20-46e02c5.html">内嵌「专注花园」独立应用：侧边栏入口（学习统计之后）+ iframe srcdoc + 新窗口打开；新增内联构建脚本与一致性测试</a></td>
+        <td class="s">46e02c5</td><td class="d">2026-10-20</td><td class="d">1393 KB</td></tr>
+      <tr><td class="n">36</td><td><a href="36-2026-10-20-6cd8545.html">专注花园改为独立窗口打开（侧边栏点击直接开窗，可全屏使用）；启动器页不再内嵌 iframe</a></td>
+        <td class="s">6cd8545</td><td class="d">2026-10-20</td><td class="d">1398 KB</td></tr>
+      <tr><td class="n">37</td><td><a href="37-2026-10-20-ff0959e.html">修复专注花园奖励转盘动画：首次不再0秒、每次至少6圈并从当前角度累加、结果延后到停止后显示；新增幂等补丁脚本与数值验证测试</a></td>
+        <td class="s">ff0959e</td><td class="d">2026-10-20</td><td class="d">1398 KB</td></tr>
+      <tr><td class="n">38</td><td><a href="38-2026-10-20-2b49049.html">重建 versions/：补齐全部 37 个历史版本并在索引页标注重大改动与里程碑</a></td>
+        <td class="s">2b49049</td><td class="d">2026-10-20</td><td class="d">1398 KB</td></tr>
+      <tr><td class="n">39</td><td><a href="39-2026-10-21-a75047c.html">专注花园改为内嵌常驻 iframe（同源、零修改），移除新窗口；切换页面不重建文档以保证计时不中断</a></td>
+        <td class="s">a75047c</td><td class="d">2026-10-21</td><td class="d">1427 KB</td></tr>
+      <tr><td class="n">40</td><td><a href="40-2026-10-21-8884442.html">花园全屏化（隐藏侧栏+返回按钮）；学习任务与番茄钟联动：任务同步、一键自动开始、番茄数回显</a></td>
+        <td class="s">8884442</td><td class="d">2026-10-21</td><td class="d">1442 KB</td></tr>
+      <tr><td class="n">41</td><td><a href="41-2026-10-21-918e231.html">计划开始时间精确生效：修复短任务被判 H6 冲突导致计划为空</a></td>
+        <td class="s">918e231</td><td class="d">2026-10-21</td><td class="d">1443 KB</td></tr>
+      <tr><td class="n">42</td><td><a href="42-2026-10-21-d3f58de.html">花园任务名显示计划开始时间；点专注时按任务时长设置计时器（70 分钟任务=70 分钟番茄）</a></td>
+        <td class="s">d3f58de</td><td class="d">2026-10-21</td><td class="d">1444 KB</td></tr>
+      <tr><td class="n">43</td><td><a href="43-2026-10-22-f09728c.html">花园内新增「学习任务计时」分区：按任务时长计时、提前结束、完成回写主应用</a></td>
+        <td class="s">f09728c</td><td class="d">2026-10-22</td><td class="d">1457 KB</td></tr>
+      <tr><td class="n">44</td><td><a href="44-2026-10-22-b8fead9.html">排程：规划起点让位于任务指定开始时间；新增 planned_start_delayed 诊断；ENGINE_VERSION 1.1.0</a></td>
+        <td class="s">b8fead9</td><td class="d">2026-10-22</td><td class="d">1461 KB</td></tr>
+      <tr><td class="n">45</td><td><a href="45-2026-10-22-16d9092.html">开始时间严格生效（整点让位/顺延诊断/不可拆分原因）；计时口径改为任务剩余工作量并幂等回写</a></td>
+        <td class="s">16d9092</td><td class="d">2026-10-22</td><td class="d">1466 KB</td></tr>
+      <tr><td class="n">46</td><td><a href="46-2026-10-22-731b773.html">计时器搬进花园侧边栏（整页）；新增持久化、到点自动开始、提前结束二次确认</a></td>
+        <td class="s">731b773</td><td class="d">2026-10-22</td><td class="d">1477 KB</td></tr>
+      <tr><td class="n">47</td><td><a href="47-2026-10-22-cacf243.html">转盘指针改为朝下；抽奖规则支持每 1 个番茄（新增 2 条幂等补丁）</a></td>
+        <td class="s">cacf243</td><td class="d">2026-10-22</td><td class="d">1477 KB</td></tr>
+      <tr><td class="n">48</td><td><a href="48-2026-10-22-4203847.html">学习任务计时：新增番茄钟同款圆形计时盘与倒计时/正计时双模式（含暂停、模式切换、进度恢复）</a></td>
+        <td class="s">4203847</td><td class="d">2026-10-22</td><td class="d">1492 KB</td></tr>
+      <tr><td class="n">49</td><td><a href="49-2026-10-22-87d866e.html">计时盘从 0% 起（起点圆点+内部旋转）；计时页保留侧边栏；转盘随机指针；完成学习任务发放一次机会</a></td>
+        <td class="s">87d866e</td><td class="d">2026-10-22</td><td class="d">1497 KB</td></tr>
+      <tr><td class="n">50</td><td><a href="50-2026-10-22-7f0f253.html">已完成任务保留在时间表并显示已完成（只留最早一块）；前置任务候选与依赖清理</a></td>
+        <td class="s">7f0f253</td><td class="d">2026-10-22</td><td class="d">1502 KB</td></tr>
+      <tr><td class="n">51</td><td><a href="51-2026-10-22-dfac3e1.html">抽奖规则改为数字输入（1–100）；新增背景音与完成提示音的独立 Web Audio 引擎</a></td>
+        <td class="s">dfac3e1</td><td class="d">2026-10-22</td><td class="d">1517 KB</td></tr>
+      <tr><td class="n">52</td><td><a href="52-2026-10-22-4f3cca2.html">修复新建任务点不开：taskForm 漏导入 listDependencyCandidates；顺带修复 components 漏导入 issueMessage</a></td>
+        <td class="s">4f3cca2</td><td class="d">2026-10-22</td><td class="d">1517 KB</td></tr>
+      <tr><td class="n">53</td><td><a href="53-2026-10-22-5adeb87.html">转盘指针去掉抽动动画，保持定住</a></td>
+        <td class="s">5adeb87</td><td class="d">2026-10-22</td><td class="d">1517 KB</td></tr>
+      <tr><td class="n">54</td><td><a href="54-2026-10-22-628afde.html">转盘指针改为阻尼式抖动：幅度与频率随转动减速衰减</a></td>
+        <td class="s">628afde</td><td class="d">2026-10-22</td><td class="d">1519 KB</td></tr>
+      <tr><td class="n">55</td><td><a href="55-2026-10-22-64e8dd3.html">液态玻璃材质：分层玻璃、氛围色场、边缘光与降级；修复 components.css 注释损坏导致 .app 规则被丢弃</a></td>
+        <td class="s">64e8dd3</td><td class="d">2026-10-22</td><td class="d">1537 KB</td></tr>
+      <tr><td class="n">56</td><td><a href="56-2026-10-22-31bdb58.html">文字安全层：修掉 flex 不收缩、按钮 nowrap、输入框固有宽度等溢出根因</a></td>
+        <td class="s">31bdb58</td><td class="d">2026-10-22</td><td class="d">1542 KB</td></tr>
+      <tr><td class="n">57</td><td><a href="57-2026-10-22-585ae82.html">统一完成任务链路：记录实际时段+标记完成+清理依赖；花园计时计入统计；过滤 0 剩余任务</a></td>
+        <td class="s">585ae82</td><td class="d">2026-10-22</td><td class="d">1550 KB</td></tr>
+      <tr><td class="n">58</td><td><a href="58-2026-10-22-4586140.html">收尾：应用预览后即时刷新花园面板；补齐跨午夜记录与刷新测试</a></td>
+        <td class="s">4586140</td><td class="d">2026-10-22</td><td class="d">1551 KB</td></tr>
+      <tr><td class="n">59</td><td><a href="59-2026-10-22-db9ec23.html">版本画廊：补齐 58 个版本，索引改为阶段视图（原始 prompt + 解决了什么）</a></td>
+        <td class="s">db9ec23</td><td class="d">2026-10-22</td><td class="d">1551 KB</td></tr>
     </tbody>
   </table>
 
   <note>
-    <b>关于「原始 prompt」：</b>第 1–2 阶段发生在本次会话的上下文之外（早期对话已被压缩），
-    因此那两段只保留提交信息与产出，不编造 prompt；其余阶段的 prompt 为当时对话中的原文，
-    超长规格为节选（保留标题与硬性要求），未改动语义。<br>
-    <b>数据隔离：</b>这些文件以 file:// 打开，与你平时用的应用是不同的存储位置，随便点开不会影响现在的任务与计划。<br>
-    <b>标注说明：</b>「重大」= 功能体系或架构性变化；「修复」= 缺陷修复；「体验」= 手感/视觉调整；「工具」= 版本画廊本身。
+    <b>关于原文：</b>标注"原文为分节规格"的条目，保留了全部章节标题与硬性要求（原文过长，逐字全文会超过页面可读长度）；
+    其余为当时的原文。第 9 段（开始时间规格）在对话中传递时于 3.3 处中断，页面如实保留了已收到的部分。<br>
+    <b>数据隔离：</b>这些文件以 file:// 打开，与你平时用的应用是不同的存储位置，点开不会影响现在的任务与计划。<br>
+    <b>标签：</b>地基 = 从零搭建；重大 = 功能体系或架构性变化；修复 = 缺陷；体验 = 手感/视觉；工具 = 版本画廊本身。
   </note>
 </div>
 </body>
