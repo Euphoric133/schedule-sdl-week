@@ -3462,7 +3462,6 @@ textarea:focus {
 /* —— 2. 单行：省略号 —— */
 .app-nav__link,
 .app-nav__link > span,
-.card__title,
 .task-item__title,
 .day-card__time,
 .day-card__minutes,
@@ -3470,6 +3469,26 @@ textarea:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/**
+ * 卡片标题**不做**单行截断。
+ *
+ * 为什么从上面那组里单独摘出来：
+ * 标题都是短词（"今天的任务""排程参数"），本来就不会撑破容器，
+ * 没有必要为它们加 `nowrap + overflow: hidden`。
+ * 而 `overflow: hidden` 会在**四周**裁剪，包括左侧——
+ * 在高分屏（devicePixelRatio 2）下，中文字形左侧的亚像素留白正好被裁掉，
+ * 首字看起来像"超出了文本框"（实测 scrollWidth === clientWidth，
+ * 说明不是布局溢出，而是裁切造成的视觉问题）。
+ *
+ * 改为允许换行：既避免裁切，也避免极端窄容器下文字被省略号吃掉。
+ */
+.card__title {
+  overflow-wrap: anywhere;
+  word-break: break-word;
   min-width: 0;
   max-width: 100%;
 }
