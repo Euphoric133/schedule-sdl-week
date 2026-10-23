@@ -539,3 +539,86 @@ test('问候缓存键：同一天同一份上下文稳定，任务变化后变�
   assert.equal(a, b, '同一状态生成的上下文必须一致，否则缓存永远不命中');
   assert.ok(widget.mountAiAssistant, '组件仍然导出 mountAiAssistant');
 });
+
+/* ------------------------------------------------------------------ *
+ * AI 能看到更完整的应用数据（今日进度 + 历史聚合）
+ * ------------------------------------------------------------------ */
+
+const { buildScheduleContext, buildStructuredContext, buildHistorySummary, buildTodayProgress } =
+  await import('../../src/ai/chatClient.js');
+
+function stateWithHistory() {
+  const T = '2025-10-15';
+  const base = { id: '', title: '', subject: '数学', plannedMinutes: 60, priorCompletedMinutes: null,
+    deadlineDate: '2025-10-20', deadlineTime: '23:00', importance: 3, difficulty: 3, procrastination: 3,
+    splittable: true, minChunkMinutes: 30, maxChunkMinutes: 60, plannedStartMinutes: null, dependsOn: [], note: '',
+    status: 'completed', createdAt: T, updatedAt: T, startedAt: null, completedAt: T, cancelledAt: null, deletedAt: null };
+  return {
+    settings: {},
+    tasks: [
+      { ...base, id: 'm1', title: '数学1' },
+      { ...base, id: 'm2', title: '数学2' },
+      { ...base, id: 'm3', title: '数学3' },
+      { ...base, id: 'todo', title: '数学作业', status: 'not_started' },
+    ],
+    sessions: [
+      { id: 's1', taskId: 'm1', date: '2025-10-12', startMinutes: 1140, endMinutes: 1230, plannedMinutes: 60, actualMinutes: 90, state: 'completed' },
+      { id: 's2', taskId: 'm2', date: '2025-10-13', startMinutes: 1140, endMinutes: 1230, plannedMinutes: 60, actualMinutes: 90, state: 'completed' },
+      { id: 's3', taskId: 'm3', date: '2025-10-14', startMinutes: 1140, endMinutes: 1230, plannedMinutes: 60, actualMinutes: 90, state: 'completed' },
+    ],
+  };
+}
+
+test('buildHistorySummary：按科目聚合，不发原始记录', () => {
+  const history = buildHistorySummary(stateWithHistory());
+  assert.equal(history.length, 1);
+  const math = history[0];
+  assert.equal(math.subject, '数学');
+  assert.equal(math.sampleCount, 3);
+  assert.equal(math.meanPlannedMinutes, 60);
+  assert.equal(math.meanActualMinutes, 90);
+  assert.equal(math.tendency, 'underestimated');
+  // 聚合结果里不应出现单条记录的字段
+  assert.equal('title' in math, false);
+  assert.equal('samples' in math, false);
+});
+
+test('buildTodayProgress：只统计当天，不含其它日期', () => {
+  const progress = buildTodayProgress(stateWithHistory(), { date: '2025-10-12' });
+  assert.equal(progress.completedCount, 1);
+  assert.equal(progress.completedMinutes, 90);
+});
+
+test('buildScheduleContext：只有历史、没有待办时仍然给出上下文（不再返回空串）', () => {
+  /**
+   * 这是本次修复的核心：旧逻辑在"没有待办任务"时返回 ''，
+   * 于是 AI 对"我最近效率怎么样"只能回答"看不到"。
+   */
+  const s = stateWithHistory();
+  s.tasks = s.tasks.filter((t) => t.status === 'completed');
+  const context = buildScheduleContext(s, { date: '2025-10-15' });
+  assert.ok(context.length > 0, '应仍有内容可发');
+  assert.match(context, /历史用时/);
+  assert.match(context, /数学/);
+  assert.match(context, /当前没有未完成的任务/);
+});
+
+test('buildScheduleContext：包含今日进度与待办任务', () => {
+  const context = buildScheduleContext(stateWithHistory(), { date: '2025-10-15' });
+  assert.match(context, /今日进度/);
+  assert.match(context, /待办任务/);
+  assert.match(context, /数学作业/);
+});
+
+test('buildScheduleContext：完全没有任何数据时才返回空串', () => {
+  assert.equal(buildScheduleContext({ tasks: [], sessions: [] }, { date: '2025-10-15' }), '');
+});
+
+test('buildStructuredContext：带上 history 与 todayProgress 字段', () => {
+  const ctx = buildStructuredContext(stateWithHistory(), { date: '2025-10-15' });
+  assert.ok(ctx);
+  assert.ok(Array.isArray(ctx.history));
+  assert.equal(ctx.history[0].subject, '数学');
+  assert.ok(ctx.todayProgress);
+  assert.equal(ctx.todayProgress.date, '2025-10-15');
+});

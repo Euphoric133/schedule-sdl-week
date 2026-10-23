@@ -22,6 +22,8 @@
  * 或 Cloudflare Worker（跨域，需要 CORS）。写死其中一个，
  * 换平台就得改代码——而地址属于部署配置，不该混进业务代码。
  */
+import { collectSamples, calibrateStats } from './calibration.js';
+
 export const NETLIFY_ENDPOINT = '/.netlify/functions/ai-chat';
 
 export function resolveEndpoint(explicit) {
@@ -52,6 +54,60 @@ const DEFAULT_TIMEOUT_MS = 25_000;
  * @returns {string}
  */
 /**
+ * 历史用时聚合：**只发统计结果，不发原始记录**。
+ *
+ * 为什么这样做：
+ * - 原始记录体积大，免费额度下 token 是硬约束；
+ * - 聚合数字（"数学最近 5 次平均多用 25 分钟"）已经足够让 AI 解释规律，
+ *   而"逐条记录"反而容易让模型挑几条随意发挥。
+ *
+ * 复用 calibration.js 的统计函数：那里已经定义了"实际用时"的口径
+ * （完成任务时段 + 用户手工声明的已完成），不另立一套算法。
+ *
+ * @param {object} state
+ * @returns {Array<{subject, sampleCount, meanPlannedMinutes, meanActualMinutes, meanDiffMinutes, tendency}>}
+ */
+export function buildHistorySummary(state) {
+  try {
+    const samples = collectSamples(state);
+    if (samples.length === 0) return [];
+    const { subjects } = calibrateStats(samples);
+    // 只取前 5 个科目：再多对回答没有帮助，只会烧 token
+    return subjects.slice(0, 5).map((item) => ({
+      subject: item.subject,
+      sampleCount: item.sampleCount,
+      meanPlannedMinutes: item.meanPlannedMinutes,
+      meanActualMinutes: item.meanActualMinutes,
+      meanDiffMinutes: item.meanDiffMinutes,
+      tendency: item.tendency,
+      reliable: item.reliable,
+    }));
+  } catch {
+    // 统计失败不能连累对话：宁可少一段信息，也不要让整个请求挂掉
+    return [];
+  }
+}
+
+/**
+ * 今日进度：让 AI 知道"今天已经学了多少、还剩多少"。
+ *
+ * 只统计当天已完成的时段，不推断任何未记录的内容。
+ */
+export function buildTodayProgress(state, now) {
+  const date = now?.date ?? null;
+  const sessions = Array.isArray(state?.sessions) ? state.sessions : [];
+  const todays = sessions.filter((session) => session.date === date && session.state !== 'cancelled');
+  const completed = todays.filter((session) => session.state === 'completed');
+  return {
+    date,
+    completedCount: completed.length,
+    completedMinutes: completed.reduce((sum, session) => sum + (session.actualMinutes ?? session.plannedMinutes ?? 0), 0),
+    plannedMinutes: todays.reduce((sum, session) => sum + (session.plannedMinutes ?? 0), 0),
+    remainingCount: todays.filter((session) => session.state === 'flexible' || session.state === 'in_progress').length,
+  };
+}
+
+/**
  * 结构化日程上下文：给 AI 一份**带 id 的**任务清单。
  *
  * 为什么必须带 id：功能一的提议要求写 taskId，程序据此校验"这个任务真的存在"。
@@ -69,11 +125,28 @@ export function buildStructuredContext(state, now) {
   const tasks = Array.isArray(state?.tasks) ? state.tasks : [];
   const sessions = Array.isArray(state?.sessions) ? state.sessions : [];
   const active = tasks.filter((task) => task.status === 'not_started' || task.status === 'in_progress');
-  if (active.length === 0) return null;
+  const history = buildHistorySummary(state);
+  const progress = buildTodayProgress(state, now);
+
+  /**
+   * 不再"没有待办就返回 null"。
+   *
+   * 旧逻辑只看待办任务，于是"任务都做完了"时上下文为空，
+   * AI 对"我最近效率怎么样"这类问题只能回答"看不到"——
+   * 而它本可以依据历史统计分析。现在只要有**任何**可用信息就发。
+   */
+  const hasAnything =
+    active.length > 0 ||
+    history.length > 0 ||
+    progress.completedCount > 0 ||
+    sessions.some((session) => session.date === progress.date);
+  if (!hasAnything) return null;
 
   const entry = {
     date: now?.date ?? null,
     latestSleepMinutes: Number.isInteger(state?.settings?.latestSleepMinutes) ? state.settings.latestSleepMinutes : null,
+    todayProgress: progress,
+    history,
     tasks: [],
     todaySessions: [],
   };
@@ -108,26 +181,67 @@ export function buildStructuredContext(state, now) {
 export function buildScheduleContext(state, now) {
   const tasks = Array.isArray(state?.tasks) ? state.tasks : [];
   const sessions = Array.isArray(state?.sessions) ? state.sessions : [];
-  if (tasks.length === 0) return '';
 
   const active = tasks.filter((task) => task.status === 'not_started' || task.status === 'in_progress');
-  if (active.length === 0) return '';
+  const history = buildHistorySummary(state);
+  const progress = buildTodayProgress(state, now);
+
+  /**
+   * 旧逻辑在"没有待办任务"时直接返回空串，导致 AI 对任何问题都答"看不到"。
+   * 但"任务都做完了"恰恰是最需要看历史的时候（"我最近效率怎么样"）。
+   * 现在只要有任何一项信息就构造上下文。
+   */
+  const hasAnything = active.length > 0 || history.length > 0 || progress.completedCount > 0;
+  if (!hasAnything) return '';
 
   const today = now?.date ?? '';
   const lines = [];
   lines.push(`今天：${today}`);
 
-  // 只列最近的 8 个任务，按截止时间排序：更多信息对回答没有帮助，只会烧 token
-  const sorted = [...active].sort((a, b) => `${a.deadlineDate}${a.deadlineTime}`.localeCompare(`${b.deadlineDate}${b.deadlineTime}`));
-  for (const task of sorted.slice(0, 8)) {
-    const done = sessions
-      .filter((session) => session.taskId === task.id && session.state === 'completed')
-      .reduce((sum, session) => sum + (session.actualMinutes ?? session.plannedMinutes ?? 0), 0);
-    const remaining = Math.max(0, (task.plannedMinutes ?? 0) - done);
-    lines.push(
-      `- ${task.title}（${task.subject}）：剩余约 ${remaining} 分钟，截止 ${task.deadlineDate} ${task.deadlineTime}，重要度 ${task.importance}/5`,
-    );
+  // —— 今日进度 ——
+  if (progress.completedCount > 0 || progress.plannedMinutes > 0) {
+    const parts = [];
+    if (progress.completedCount > 0) parts.push(`已完成 ${progress.completedCount} 段，共 ${progress.completedMinutes} 分钟`);
+    if (progress.plannedMinutes > 0) parts.push(`今日计划 ${progress.plannedMinutes} 分钟`);
+    if (progress.remainingCount > 0) parts.push(`还有 ${progress.remainingCount} 段待完成`);
+    lines.push(`今日进度：${parts.join('，') || '暂无记录'}`);
+  } else {
+    lines.push('今日进度：今天还没有学习记录');
   }
+
+  // —— 待办任务（最多 8 个）——
+  if (active.length > 0) {
+    lines.push('待办任务：');
+    const sorted = [...active].sort((a, b) =>
+      `${a.deadlineDate}${a.deadlineTime}`.localeCompare(`${b.deadlineDate}${b.deadlineTime}`),
+    );
+    for (const task of sorted.slice(0, 8)) {
+      const done = sessions
+        .filter((session) => session.taskId === task.id && session.state === 'completed')
+        .reduce((sum, session) => sum + (session.actualMinutes ?? session.plannedMinutes ?? 0), 0);
+      const remaining = Math.max(0, (task.plannedMinutes ?? 0) - done);
+      lines.push(
+        `- ${task.title}（${task.subject}）：剩余约 ${remaining} 分钟，截止 ${task.deadlineDate} ${task.deadlineTime}，重要度 ${task.importance}/5`,
+      );
+    }
+    if (active.length > 8) lines.push(`（另有 ${active.length - 8} 个任务未列出）`);
+  } else {
+    lines.push('待办任务：当前没有未完成的任务（都已完成或已删除）。');
+  }
+
+  // —— 历史用时（按科目聚合，不发原始记录）——
+  if (history.length > 0) {
+    lines.push('历史用时（按科目聚合）：');
+    for (const item of history) {
+      const label =
+        item.tendency === 'underestimated' ? '常被低估' : item.tendency === 'overestimated' ? '常被高估' : '基本准确';
+      const reliability = item.reliable ? '' : '（样本较少，仅供参考）';
+      lines.push(
+        `- ${item.subject}：${item.sampleCount} 次，平均预计 ${item.meanPlannedMinutes} 分钟 / 实际 ${item.meanActualMinutes} 分钟，${label}${reliability}`,
+      );
+    }
+  }
+
   return lines.join('\n');
 }
 

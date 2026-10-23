@@ -387,7 +387,14 @@ test('buildScheduleContext：只包含进行中的任务，且不超过 8 条', 
   const context = buildScheduleContext({ tasks, sessions: [] }, { date: '2026-10-22' });
   assert.ok(context.includes('今天：2026-10-22'));
   assert.ok(!context.includes('任务0'), '已完成的任务不应进入上下文');
-  assert.equal(context.split('\n').length - 1, 8);
+  /**
+   * 按**任务条目**计数，而不是按行数——
+   * 上下文现在还包含「今日进度」「历史用时」等区块，
+   * 用总行数断言会被这些区块误伤（测试意图一直是"最多 8 个任务"）。
+   */
+  const taskLines = context.split('\n').filter((line) => line.startsWith('- 任务'));
+  assert.equal(taskLines.length, 8, `应只列 8 个任务，实际 ${taskLines.length}`);
+  assert.ok(context.includes('另有 3 个任务未列出'), '超出部分应如实说明（12 条里 1 条已完成，剩 11 条待办，列 8 条）');
 });
 
 test('buildScheduleContext：没有任务时返回空串（避免无意义的上行流量）', () => {
