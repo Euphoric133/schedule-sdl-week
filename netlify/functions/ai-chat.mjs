@@ -180,7 +180,23 @@ async function handle(req) {
 
   const model = readEnv('GEMINI_MODEL') || DEFAULT_MODEL;
   const fallbackModel = readEnv('GEMINI_MODEL_FALLBACK') || DEFAULT_FALLBACK_MODEL;
-  const upstream = await callGemini({ apiKey, model, messages: parsed.messages, fallbackModel });
+  /**
+   * 把前端发来的日程上下文真正交给模型。
+   *
+   * 这里曾经漏掉 `contextText`：请求体里的 context 被接收了、却从未传进
+   * callGemini，于是 withContext 拿到的是默认空串——模型永远看不到用户数据，
+   * 只能回答"我这里看不到你的任务"。这是实测中反复出现该症状的根因。
+   *
+   * 兼容两种形态：字符串（气泡用的文本摘要）与对象（结构化上下文）。
+   */
+  const rawContext = body.value?.context;
+  const contextText =
+    typeof rawContext === 'string'
+      ? rawContext
+      : rawContext && typeof rawContext === 'object'
+        ? JSON.stringify(rawContext)
+        : '';
+  const upstream = await callGemini({ apiKey, model, messages: parsed.messages, contextText, fallbackModel });
 
   if (!upstream.ok) {
     console.error('[ai-chat] upstream', upstream.status, upstream.code);

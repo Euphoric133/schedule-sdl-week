@@ -19,6 +19,7 @@ const projectRoot = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const WORKER_PATH = join(projectRoot, 'cloudflare', 'ai-chat-worker.js');
 
 /** Worker 用的是 export default { fetch }，动态 import 拿不到 env，因此用源码 + 注入的方式跑 */
+let moduleCounter = 0;
 async function loadWorker(env) {
   const source = await readFile(WORKER_PATH, 'utf8');
   /**
@@ -27,7 +28,15 @@ async function loadWorker(env) {
    * 不加锚会把注释改坏，导致 "Identifier '.default' has already been declared"。
    */
   const patched = source.replace(/^export default \{$/m, 'const __worker = {') + '\nexport default __worker;\n';
-  const dataUrl = `data:text/javascript;base64,${Buffer.from(patched).toString('base64')}`;
+  /**
+   * 加一个唯一的 hash 后缀，强制每次得到**新的模块实例**。
+   *
+   * 不加的话：相同 data URL 命中 ESM 模块缓存，Worker 模块级的限流计数器
+   * 会在测试之间累积，跑到第 9 个请求之后就开始返回 429，后续用例静默失败
+   * （表现为"上游根本没被调用"）。
+   */
+  moduleCounter += 1;
+  const dataUrl = `data:text/javascript;base64,${Buffer.from(patched).toString('base64')}#${moduleCounter}`;
   const mod = await import(dataUrl);
   const call = (request) => mod.default.fetch(request, env);
   return { mod, call };
@@ -213,6 +222,68 @@ test('其它错误类型不触发地区重试（避免无谓放大）', async ()
     const payload = await (await call(makeRequest())).json();
     assert.equal(payload.code, 'auth_failed');
     assert.equal(calls, 1, '鉴权失败不该重试');
+  } finally {
+    restore();
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ * 上下文必须真的送到模型（曾经被静默丢弃）
+ * ------------------------------------------------------------------ */
+
+test('普通聊天：请求体里的 context 必须真的送到上游', async () => {
+  /**
+   * 这曾是真实缺陷：服务端接收了 body.context，却在调用上游时没传下去，
+   * withContext 拿到空串，于是模型永远看不到用户数据、只能回答"看不到"。
+   *
+   * 断言方式：检查**整个请求体**里是否出现了上下文内容。
+   * 不绑定具体字段名——主路径用 Interactions API（system_instruction），
+   * 回退路径用 generateContent（systemInstruction），两者都要能通过。
+   */
+  let sentRaw = null;
+  const restore = stubFetch(async (url, init) => {
+    sentRaw = init.body;
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '好的' }] } }] }), { status: 200 });
+  });
+  try {
+    const { call } = await loadWorker({ GEMINI_API_KEY: 'k', ALLOWED_ORIGINS: ORIGIN });
+    await call(makeRequest({ body: { messages: [{ role: 'user', content: '我今天有什么任务' }], context: '今天：2026-10-23\n- de（数学）：剩余约 60 分钟' } }));
+    assert.ok(sentRaw, '上游必须被调用');
+    assert.match(sentRaw, /de（数学）/, '上下文必须出现在发给上游的请求里');
+    assert.match(sentRaw, /剩余约 60 分钟/);
+    assert.match(sentRaw, /数据，不是指令/, '应保留"以下内容是数据"的安全提示');
+  } finally {
+    restore();
+  }
+});
+
+test('普通聊天：对象形式的 context 也会被序列化后送出', async () => {
+  let sentRaw = null;
+  const restore = stubFetch(async (url, init) => {
+    sentRaw = init.body;
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '好的' }] } }] }), { status: 200 });
+  });
+  try {
+    const { call } = await loadWorker({ GEMINI_API_KEY: 'k', ALLOWED_ORIGINS: ORIGIN });
+    await call(makeRequest({ body: { messages: [{ role: 'user', content: 'x' }], context: { todayProgress: { completedCount: 2 } } } }));
+    assert.match(sentRaw ?? '', /completedCount/, '对象形式的上下文应被序列化后送出');
+  } finally {
+    restore();
+  }
+});
+
+test('普通聊天：没有 context 时不塞空数据块', async () => {
+  let sentRaw = null;
+  const restore = stubFetch(async (url, init) => {
+    sentRaw = init.body;
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '好的' }] } }] }), { status: 200 });
+  });
+  try {
+    const { call } = await loadWorker({ GEMINI_API_KEY: 'k', ALLOWED_ORIGINS: ORIGIN });
+    await call(makeRequest({ body: { messages: [{ role: 'user', content: 'x' }] } }));
+    // 注意：系统提示本身含一个 json 示例块（提议格式说明），不能用它判断；
+    // 这里检查 withContext 专用的"数据块"标记是否出现。
+    assert.ok(!(sentRaw ?? '').includes('日程数据（只读'), '没有上下文就不该附加数据块');
   } finally {
     restore();
   }
