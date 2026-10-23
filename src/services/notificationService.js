@@ -406,9 +406,23 @@ export function createNotificationService({ appearanceService, now, clock }) {
 
     // 2) 下一项学习即将开始
     if (prefs.types[NOTIFICATION_TYPE.SESSION_SOON]) {
+      /**
+       * 候选时段：**包含"此刻正好开始"的那一段**（>= 而不是 >）。
+       *
+       * 为什么必须是 >=：用户把提前时间设成 0（「准时提醒（开始时）」）时，
+       * 触发条件是 `minutesUntil <= 0`。而旧代码用严格大于过滤，
+       * 使得 minutesUntil 最小也是 1，于是 0 分钟这个选项**永远不可能触发**——
+       * 这是一个真实缺陷：界面上能选，但选了不生效。
+       *
+       * 改为 >= 之后：
+       * - advance = 0 → 在开始时刻那一分钟内触发一次（检查每 30 秒跑一次，能捕获到）；
+       * - advance > 0 → 行为与之前一致（1..N 分钟内触发），开始那一刻也会触发，
+       *   但同一时段的去重键会阻止重复通知。
+       * 已经开始过去的时段（minutesUntil < 0）仍然被排除，不会事后补发。
+       */
       const upcoming = (context.sessions ?? [])
         .filter((session) => session.date === current.date && session.state === 'flexible' && !session.locked)
-        .filter((session) => session.startMinutes > current.minutes)
+        .filter((session) => session.startMinutes >= current.minutes)
         .sort((a, b) => a.startMinutes - b.startMinutes)[0];
 
       if (upcoming) {

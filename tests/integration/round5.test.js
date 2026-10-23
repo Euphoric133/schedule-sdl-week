@@ -760,3 +760,130 @@ test('通知页：不支持的环境不会只显示"已开启"', async () => {
     globalThis.isSecureContext = originals.secure;
   }
 });
+
+/* ------------------------------------------------------------------ *
+ * 「准时提醒（开始时）」必须真的能触发
+ * ------------------------------------------------------------------ */
+
+function withNotificationHarness({ advanceMinutes, nowMinutes, sessions }) {
+  const sent = [];
+  const originals = {
+    Notification: globalThis.Notification,
+    secure: globalThis.isSecureContext,
+    localStorage: globalThis.localStorage,
+  };
+  /**
+   * 去重记录（ledger）存在 localStorage 里。
+   * Node 测试环境没有它，不装桩的话每次读到的都是空记录，
+   * 去重就永远"不生效"——那是测试环境缺失，不是产品缺陷。
+   */
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: (key) => store.delete(key),
+    clear: () => store.clear(),
+  };
+  globalThis.isSecureContext = true;
+  globalThis.Notification = function Notification(title, options) {
+    sent.push({ title, options });
+    this.close = () => {};
+  };
+  globalThis.Notification.permission = 'granted';
+
+  const appearance = {
+    getPreferences: () => ({
+      appearance: { theme: 'light', wallpaper: { enabled: false } },
+      notifications: {
+        enabled: true,
+        permission: 'granted',
+        advanceMinutes,
+        quietHours: { enabled: false, startMinutes: 0, endMinutes: 0 },
+        types: { session_soon: true, plan_start: false, daily_summary: false },
+      },
+    }),
+  };
+  const service = createNotificationService({
+    appearanceService: appearance,
+    now: () => ({ date: '2025-10-16', minutes: nowMinutes }),
+    clock: () => '2025-10-16T10:00:00.000Z',
+  });
+  const restore = () => {
+    if (originals.Notification === undefined) delete globalThis.Notification;
+    else globalThis.Notification = originals.Notification;
+    if (originals.secure === undefined) delete globalThis.isSecureContext;
+    else globalThis.isSecureContext = originals.secure;
+    if (originals.localStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = originals.localStorage;
+  };
+  return { service, sent, restore, context: { sessions } };
+}
+
+function sessionFixture(startMinutes) {
+  return {
+    id: 'sess-1',
+    taskId: 'task-1',
+    date: '2025-10-16',
+    startMinutes,
+    endMinutes: startMinutes + 60,
+    plannedMinutes: 60,
+    state: 'flexible',
+    locked: false,
+  };
+}
+
+test('通知：advanceMinutes=0（准时提醒）在开始时刻真的会触发', () => {
+  /**
+   * 这是修复的真实缺陷：旧代码用 `startMinutes > current.minutes` 过滤，
+   * 使 minutesUntil 最小为 1，而 0 分钟的触发条件是 `minutesUntil <= 0`，
+   * 于是"准时提醒"这个选项在界面上能选、却永远收不到通知。
+   */
+  const start = 10 * 60;
+  const h = withNotificationHarness({ advanceMinutes: 0, nowMinutes: start, sessions: [sessionFixture(start)] });
+  try {
+    const result = h.service.check(h.context);
+    assert.equal(result.fired, 1, '开始那一刻应发出提醒');
+    assert.equal(h.sent.length, 1);
+    assert.match(h.sent[0].title, /马上开始学习/);
+  } finally {
+    h.restore();
+  }
+});
+
+test('通知：advanceMinutes=0 在开始前 1 分钟不触发（避免提前打扰）', () => {
+  const start = 10 * 60;
+  const h = withNotificationHarness({ advanceMinutes: 0, nowMinutes: start - 1, sessions: [sessionFixture(start)] });
+  try {
+    const result = h.service.check(h.context);
+    assert.equal(result.fired, 0, '提前 1 分钟时不该提醒');
+    assert.equal(h.sent.length, 0);
+  } finally {
+    h.restore();
+  }
+});
+
+test('通知：提前 10 分钟仍然按原行为触发（没有被改坏）', () => {
+  const start = 10 * 60;
+  const h = withNotificationHarness({ advanceMinutes: 10, nowMinutes: start - 5, sessions: [sessionFixture(start)] });
+  try {
+    const result = h.service.check(h.context);
+    assert.equal(result.fired, 1);
+    assert.match(h.sent[0].title, /10 分钟后开始学习/);
+  } finally {
+    h.restore();
+  }
+});
+
+test('通知：同一时段不会重复提醒（去重键生效）', () => {
+  const start = 10 * 60;
+  const h = withNotificationHarness({ advanceMinutes: 0, nowMinutes: start, sessions: [sessionFixture(start)] });
+  try {
+    const first = h.service.check(h.context);
+    const second = h.service.check(h.context);
+    assert.equal(first.fired, 1);
+    assert.equal(second.fired, 0, '同一时段第二次检查不应再发');
+    assert.equal(h.sent.length, 1, '总共只能有一条');
+  } finally {
+    h.restore();
+  }
+});
