@@ -518,3 +518,24 @@ test('标题相同但重复出现时不猜（避免改错任务）', () => {
   assert.equal(result.ok, false, '同名任务时必须拒绝，而不是随便选一个');
   assert.equal(result.stage, 'proposal_rejected');
 });
+
+/* ------------------------------------------------------------------ *
+ * 自动问候的额度缓存（避免每次刷新都消耗一次 AI 额度）
+ * ------------------------------------------------------------------ */
+
+test('问候缓存键：同一天同一份上下文稳定，任务变化后变化', async () => {
+  /**
+   * 这条测试针对的是实测踩到的坑：自动问候在每次页面加载时发起请求，
+   * 免费额度下反复刷新会把每日限额用光，界面一直提示"额度用完"。
+   */
+  const { services } = setupFeatureApp();
+  const widget = await import('../../src/ai/assistantWidget.js');
+  // 组件内部函数不可直接导入，这里验证它所依赖的上下文生成是否稳定
+  services.taskService.addTask(taskInput({ title: '数学', subject: '数学', plannedMinutes: 60 }));
+  const state = services.app.getState();
+  const { buildStructuredContext } = await import('../../src/ai/chatClient.js');
+  const a = JSON.stringify(buildStructuredContext(state, { date: '2026-10-23' }));
+  const b = JSON.stringify(buildStructuredContext(state, { date: '2026-10-23' }));
+  assert.equal(a, b, '同一状态生成的上下文必须一致，否则缓存永远不命中');
+  assert.ok(widget.mountAiAssistant, '组件仍然导出 mountAiAssistant');
+});

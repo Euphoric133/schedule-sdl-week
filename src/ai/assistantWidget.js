@@ -195,11 +195,72 @@ export function mountAiAssistant({ root, app, now, send = sendMessage }) {
    * 失败时静默（用户可能根本不想用助手，不该在首屏弹错误）；
    * 只有用户主动打开面板时才看得到失败原因。
    */
+  /**
+   * 自动问候的缓存。
+   *
+   * 为什么必须缓存：问候是**页面加载时自动发起的请求**，每次刷新都会消耗一次
+   * AI 额度。免费额度下反复刷新测试很容易把每日限额用光
+   * （实测就这样踩过：界面一直提示"额度用完，请几分钟后再试"）。
+   *
+   * 策略：同一天内、同一份任务摘要（任务增删改会改变摘要）就复用上次结果，
+   * 不再发请求。这样刷新页面、切页面回来都不会重复消耗额度。
+   */
+  function greetingCacheKey() {
+    try {
+      const ctx = context();
+      const raw = typeof ctx === 'string' ? ctx : JSON.stringify(ctx);
+      // 简单哈希，避免把整段上下文塞进 localStorage 的键里
+      let hash = 0;
+      for (let i = 0; i < raw.length; i += 1) {
+        hash = (hash * 31 + raw.charCodeAt(i)) | 0;
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      return `studyPlanner:ai:greeting:${today}:${hash}`;
+    } catch {
+      return null;
+    }
+  }
+
+  function readGreetingCache() {
+    const key = greetingCacheKey();
+    if (!key) return null;
+    try {
+      const raw = globalThis.localStorage?.getItem(key);
+      return typeof raw === 'string' && raw.trim() ? raw : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeGreetingCache(text) {
+    const key = greetingCacheKey();
+    if (!key) return;
+    try {
+      globalThis.localStorage?.setItem(key, text);
+    } catch {
+      // 隐私模式 / 配额满：写不进去就算了，不影响功能
+    }
+  }
+
   async function runOpener() {
     const prompt = '用两三句话告诉我，根据我今天的任务和截止时间，最需要注意什么。不要列清单，不要复述我的任务。';
+
+    const cached = readGreetingCache();
+    if (cached) {
+      messages.push({ role: 'user', content: prompt }, { role: 'assistant', content: cached });
+      if (!open) {
+        badge.hidden = false;
+        badge.textContent = '1';
+      }
+      renderMessages();
+      return { ok: true, reply: cached, fromCache: true };
+    }
+
     const result = await send({ messages: [{ role: 'user', content: prompt }], context: context() });
     if (result.ok) {
-      messages.push({ role: 'user', content: prompt }, { role: 'assistant', content: stripProposalBlock(result.reply) });
+      const shown = stripProposalBlock(result.reply);
+      messages.push({ role: 'user', content: prompt }, { role: 'assistant', content: shown });
+      writeGreetingCache(shown);
       if (!open) {
         badge.hidden = false;
         badge.textContent = '1';
