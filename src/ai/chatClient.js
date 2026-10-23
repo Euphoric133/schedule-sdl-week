@@ -23,6 +23,7 @@
  * 换平台就得改代码——而地址属于部署配置，不该混进业务代码。
  */
 import { collectSamples, calibrateStats } from './calibration.js';
+import { formatMinutes } from '../domain/time.js';
 
 export const NETLIFY_ENDPOINT = '/.netlify/functions/ai-chat';
 
@@ -93,6 +94,61 @@ export function buildHistorySummary(state) {
  *
  * 只统计当天已完成的时段，不推断任何未记录的内容。
  */
+/**
+ * 「此刻在做什么、这个时段还剩多久」——**由程序算好，不让模型自己减**。
+ *
+ * 为什么必须有它：用户把任务排在 09:42、时长 60 分钟，到 10:00 问"还剩多久"，
+ * 正确答案是 42 分钟（10:42 结束）。但只把"剩余工作量 60 分钟"发给模型时，
+ * 它只能回答 60——因为它根本不知道现在几点、这一段从什么时候开始。
+ *
+ * 这里做两件事：
+ * 1. 找出**当前正在进行**的时段，算出这一段还剩多少分钟；
+ * 2. 找出**下一段**，算出还有多久开始。
+ *
+ * 注意：剩余工作量（还要学多少）与当前时段剩余（这一段还有多久结束）
+ * 是两个不同的概念，都提供给模型，让它在回答时分清语境。
+ *
+ * @returns {{nowTime: string|null, current: object|null, next: object|null, todayTotal: number}}
+ */
+export function buildNowFocus(state, now) {
+  const date = now?.date ?? null;
+  const nowMinutes = Number.isInteger(now?.minutes) ? now.minutes : null;
+  const sessions = Array.isArray(state?.sessions) ? state.sessions : [];
+  const todays = sessions
+    .filter((session) => session.date === date && session.state !== 'cancelled')
+    .sort((a, b) => a.startMinutes - b.startMinutes);
+
+  const result = { nowTime: nowMinutes === null ? null : formatMinutes(nowMinutes), current: null, next: null, todayTotal: todays.length };
+  if (nowMinutes === null) return result;
+
+  const current = todays.find(
+    (session) => session.startMinutes <= nowMinutes && nowMinutes < session.endMinutes,
+  );
+  if (current) {
+    result.current = {
+      start: formatMinutes(current.startMinutes),
+      end: formatMinutes(current.endMinutes),
+      remainingMinutes: Math.max(0, current.endMinutes - nowMinutes),
+      elapsedMinutes: Math.max(0, nowMinutes - current.startMinutes),
+      totalMinutes: current.endMinutes - current.startMinutes,
+      state: current.state,
+      taskId: current.taskId,
+    };
+  }
+
+  const next = todays.find((session) => session.startMinutes > nowMinutes);
+  if (next) {
+    result.next = {
+      start: formatMinutes(next.startMinutes),
+      end: formatMinutes(next.endMinutes),
+      minutesUntil: next.startMinutes - nowMinutes,
+      taskId: next.taskId,
+    };
+  }
+
+  return result;
+}
+
 export function buildTodayProgress(state, now) {
   const date = now?.date ?? null;
   const sessions = Array.isArray(state?.sessions) ? state.sessions : [];
@@ -127,6 +183,7 @@ export function buildStructuredContext(state, now) {
   const active = tasks.filter((task) => task.status === 'not_started' || task.status === 'in_progress');
   const history = buildHistorySummary(state);
   const progress = buildTodayProgress(state, now);
+  const focus = buildNowFocus(state, now);
 
   /**
    * 不再"没有待办就返回 null"。
@@ -139,13 +196,23 @@ export function buildStructuredContext(state, now) {
     active.length > 0 ||
     history.length > 0 ||
     progress.completedCount > 0 ||
+    focus.current !== null ||
+    focus.next !== null ||
     sessions.some((session) => session.date === progress.date);
   if (!hasAnything) return null;
 
   const entry = {
     date: now?.date ?? null,
+    nowTime: focus.nowTime,
     latestSleepMinutes: Number.isInteger(state?.settings?.latestSleepMinutes) ? state.settings.latestSleepMinutes : null,
     todayProgress: progress,
+    /**
+     * 「此刻在做什么、这一段还剩多久」。
+     * 与 todayProgress 的区别：progress 是"今天整体进度"，
+     * focus 是"眼下这一段还剩多少时间"，用来回答"还剩多久"。
+     */
+    currentFocus: focus.current,
+    nextSession: focus.next,
     history,
     tasks: [],
     todaySessions: [],
@@ -185,6 +252,7 @@ export function buildScheduleContext(state, now) {
   const active = tasks.filter((task) => task.status === 'not_started' || task.status === 'in_progress');
   const history = buildHistorySummary(state);
   const progress = buildTodayProgress(state, now);
+  const focus = buildNowFocus(state, now);
 
   /**
    * 旧逻辑在"没有待办任务"时直接返回空串，导致 AI 对任何问题都答"看不到"。
@@ -197,6 +265,29 @@ export function buildScheduleContext(state, now) {
   const today = now?.date ?? '';
   const lines = [];
   lines.push(`今天：${today}`);
+  if (focus.nowTime) lines.push(`现在：${focus.nowTime}`);
+
+  /**
+   * 「此刻进度」单独成段，并直接给出算好的分钟数。
+   *
+   * 这段是为了回答"还剩多久"这类问题：模型如果只拿到"剩余工作量 60 分钟"，
+   * 就会忽略已经开始的时间。这里把"这一段的剩余分钟"算好写清楚，
+   * 并在同一行提示优先使用该数字，避免模型自己推算。
+   */
+  if (focus.current) {
+    const c = focus.current;
+    const taskTitle = tasks.find((task) => task.id === c.taskId)?.title;
+    lines.push(
+      `正在进行的时段：${taskTitle ? `${taskTitle}　` : ''}${c.start}–${c.end}，共 ${c.totalMinutes} 分钟，已过去 ${c.elapsedMinutes} 分钟，**还剩 ${c.remainingMinutes} 分钟**。`,
+    );
+    lines.push('（若被问到"还剩多久"，请使用上面这个"还剩 N 分钟"，不要用任务的总时长或剩余工作量回答。）');
+  } else if (focus.next) {
+    const n = focus.next;
+    const taskTitle = tasks.find((task) => task.id === n.taskId)?.title;
+    lines.push(`下一段：${taskTitle ? `${taskTitle}　` : ''}${n.start} 开始（还有 ${n.minutesUntil} 分钟）。`);
+  } else if (now?.minutes != null) {
+    lines.push('当前没有正在进行或今天稍后的学习时段。');
+  }
 
   // —— 今日进度 ——
   if (progress.completedCount > 0 || progress.plannedMinutes > 0) {

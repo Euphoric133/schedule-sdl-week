@@ -622,3 +622,52 @@ test('buildStructuredContext：带上 history 与 todayProgress 字段', () => {
   assert.ok(ctx.todayProgress);
   assert.equal(ctx.todayProgress.date, '2025-10-15');
 });
+
+/* ------------------------------------------------------------------ *
+ * 「还剩多久」必须按当前时刻算，而不是报任务总时长
+ * ------------------------------------------------------------------ */
+
+const { buildNowFocus } = await import('../../src/ai/chatClient.js');
+
+function focusState() {
+  const T = '2025-10-15';
+  return {
+    settings: {},
+    tasks: [{ id: 't1', title: '数学练习', subject: '数学', plannedMinutes: 60, priorCompletedMinutes: null,
+      deadlineDate: '2025-10-15', deadlineTime: '23:00', importance: 3, difficulty: 3, procrastination: 3,
+      splittable: true, minChunkMinutes: 30, maxChunkMinutes: 60, plannedStartMinutes: null, dependsOn: [], note: '',
+      status: 'not_started', createdAt: T, updatedAt: T, startedAt: null, completedAt: null, cancelledAt: null, deletedAt: null }],
+    // 09:42 开始，60 分钟 → 10:42 结束
+    sessions: [{ id: 's1', taskId: 't1', date: T, startMinutes: 9 * 60 + 42, endMinutes: 10 * 60 + 42, plannedMinutes: 60, state: 'flexible' }],
+  };
+}
+
+test('buildNowFocus：进行中的时段按当前时刻算出剩余分钟（09:42+60min，10:00 时还剩 42 分钟）', () => {
+  const focus = buildNowFocus(focusState(), { date: '2025-10-15', minutes: 10 * 60 });
+  assert.equal(focus.nowTime, '10:00');
+  assert.ok(focus.current, '应识别出正在进行的时段');
+  assert.equal(focus.current.remainingMinutes, 42, '60 - (60-42) = 42');
+  assert.equal(focus.current.elapsedMinutes, 18);
+  assert.equal(focus.current.start, '09:42');
+  assert.equal(focus.current.end, '10:42');
+});
+
+test('buildNowFocus：时段尚未开始时给出"还有多久开始"，不算剩余', () => {
+  const focus = buildNowFocus(focusState(), { date: '2025-10-15', minutes: 9 * 60 + 30 });
+  assert.equal(focus.current, null);
+  assert.ok(focus.next);
+  assert.equal(focus.next.minutesUntil, 12);
+});
+
+test('buildNowFocus：时段已结束后不再报"进行中"', () => {
+  const focus = buildNowFocus(focusState(), { date: '2025-10-15', minutes: 11 * 60 });
+  assert.equal(focus.current, null);
+  assert.equal(focus.next, null);
+});
+
+test('buildScheduleContext：上下文里直接给出算好的"还剩 N 分钟"，并提示不要用总时长', () => {
+  const context = buildScheduleContext(focusState(), { date: '2025-10-15', minutes: 10 * 60 });
+  assert.match(context, /\*\*还剩 42 分钟\*\*/, '必须给出计算后的剩余分钟');
+  assert.match(context, /不要用任务的总时长/, '必须提示模型不要拿 60 分钟回答');
+  assert.match(context, /现在：10:00/, '必须告诉模型现在几点');
+});
