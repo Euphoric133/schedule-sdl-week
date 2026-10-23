@@ -200,3 +200,16 @@ test('架构文档必须写明引擎不依赖 AI 代码', async () => {
   const text = await readFile(join(projectRoot, 'ARCHITECTURE.md'), 'utf8');
   assert.ok(/engine\/?[^\n]*不[^\n]*import[^\n]*AI/i.test(text) || /不 import 任何 AI 代码/.test(text), '应声明引擎不依赖 AI');
 });
+
+
+test('外观页的隐私说明必须如实提到 AI 会外发数据', async () => {
+  /**
+   * 曾经这句写的是"应用不会把任何内容上传到外部服务器，也没有任何网络请求"，
+   * 加入 AI 助手之后就不成立了（对话与任务摘要会发给 Gemini）。
+   * 这类声明是用户做决定的依据，必须与实现一致。
+   */
+  const text = await readFile(join(projectRoot, 'src', 'ui', 'pages', 'appearance.js'), 'utf8');
+  assert.match(text, /AI 助手/, '应说明使用 AI 助手时会外发数据');
+  assert.match(text, /没有其它网络请求/, '应保留"没有其它网络请求"的准确表述');
+  assert.ok(!/应用不会把任何内容上传到外部服务器，也没有任何网络请求/.test(text), '不得再出现"完全不联网"的绝对说法');
+});

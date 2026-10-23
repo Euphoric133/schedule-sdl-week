@@ -34,42 +34,60 @@ export function renderAppearance({ app, services }) {
   );
 
   /* ---------- 主题 ---------- */
+  /**
+   * 主题卡片的容器与重绘函数。
+   *
+   * 为什么需要**局部重绘**：main.js 里外观变化时**刻意不触发整页重渲染**
+   * （否则会丢掉表单里正在输入的内容、打断动画）。代价是页面不会自动跟着变，
+   * 于是切换主题后「当前使用」徽标仍停在旧卡片上——这是实测发现的缺陷。
+   *
+   * 这里只重建这一个容器：既让徽标与选中态跟上，又不影响页面其它部分的状态。
+   */
+  const themeOptionsHost = el('div.theme-options');
+
+  function renderThemeOptions() {
+    const current = services.appearanceService.getPreferences().appearance.theme;
+    themeOptionsHost.replaceChildren(
+      ...Object.values(THEME).map((theme) => {
+        const active = current === theme;
+        return el(
+          'button.theme-option',
+          {
+            type: 'button',
+            class: active ? 'is-active' : null,
+            'aria-pressed': active ? 'true' : 'false',
+            on: {
+              click: () => {
+                const result = services.appearanceService.setTheme(theme);
+                if (!result.ok) return toast(result.message ?? '切换主题失败。', 'error');
+                // 先刷新卡片状态，再提示——顺序反了会先看到旧徽标
+                renderThemeOptions();
+                toast(`已切换到「${THEME_LABELS_ZH[theme]}」主题。`, 'success', 3000);
+              },
+            },
+          },
+          [
+            el('div.theme-option__preview', { class: `theme-option__preview--${theme}` }, [
+              el('div.theme-option__swatch', {}),
+              el('div.theme-option__swatch', {}),
+              el('div.theme-option__swatch', {}),
+            ]),
+            el('div.theme-option__name', { text: THEME_LABELS_ZH[theme] }),
+            el('div.theme-option__desc', { text: THEME_DESCRIPTIONS[theme] }),
+            active ? el('div.theme-option__badge', {}, [pill('当前使用', 'success')]) : null,
+          ],
+        );
+      }),
+    );
+    return themeOptionsHost;
+  }
+
+  renderThemeOptions();
   nodes.push(
     card({
       title: '主题',
       hint: '切换后立即生效，所有页面、弹窗、表单与图表会一起适配',
-      body: el(
-        'div.theme-options',
-        {},
-        Object.values(THEME).map((theme) => {
-          const active = appearance.theme === theme;
-          return el(
-            'button.theme-option',
-            {
-              type: 'button',
-              class: active ? 'is-active' : null,
-              'aria-pressed': active ? 'true' : 'false',
-              on: {
-                click: () => {
-                  const result = services.appearanceService.setTheme(theme);
-                  if (!result.ok) return toast(result.message ?? '切换主题失败。', 'error');
-                  toast(`已切换到「${THEME_LABELS_ZH[theme]}」主题。`, 'success', 3000);
-                },
-              },
-            },
-            [
-              el('div.theme-option__preview', { class: `theme-option__preview--${theme}` }, [
-                el('div.theme-option__swatch', {}),
-                el('div.theme-option__swatch', {}),
-                el('div.theme-option__swatch', {}),
-              ]),
-              el('div.theme-option__name', { text: THEME_LABELS_ZH[theme] }),
-              el('div.theme-option__desc', { text: THEME_DESCRIPTIONS[theme] }),
-              active ? el('div.theme-option__badge', {}, [pill('当前使用', 'success')]) : null,
-            ],
-          );
-        }),
-      ),
+      body: themeOptionsHost,
     }),
   );
 
@@ -165,7 +183,7 @@ export function renderAppearance({ app, services }) {
       level: 'info',
       title: '关于隐私',
       message:
-        '壁纸、任务、日程与统计全部保存在你自己的浏览器里。应用不会把任何内容上传到外部服务器，也没有任何网络请求（本地开发服务器除外）。',
+        '壁纸、任务、日程与统计全部保存在你自己的浏览器里。除了你主动使用「AI 助手」时会把对话与最多 8 个进行中任务的标题、科目、截止时间、剩余时长发送给 AI 服务外，应用没有其它网络请求，也不会把数据上传到任何其它服务器。',
     }),
   );
 
