@@ -738,3 +738,70 @@ test('不设置最晚睡觉时间时，同一天的容量大于设置后的容�
   assert.ok(cappedDay.windowMinutes <= 210, `窗口应被截到 210 分钟以内，实际 ${cappedDay.windowMinutes}`);
 });
 
+
+/* ------------------------------------------------------------------ *
+ * 计划开始时间把任务卡死时，原因必须准确（不能误报"容量不足"）
+ * ------------------------------------------------------------------ */
+
+function everyDayWindow(start, end) {
+  const w = [{ startMinutes: start, endMinutes: end }];
+  return { 1: w, 2: w, 3: w, 4: w, 5: w, 6: w, 7: w };
+}
+
+test('计划开始时间之后只剩不足一段的时间时，原因报 planned_start_unreachable 而不是容量不足', () => {
+  /**
+   * 场景：任务 60 分钟，要求 22:00 之后开始，最晚睡觉 22:30。
+   * 每天从 22:00 起只剩 30 分钟连续空间，七天都放不下 60 分钟。
+   * 但七天总可用容量远超 60 分钟——报"容量不足"是误导。
+   */
+  const ctx = engineContext({
+    settings: {
+      studyWindows: everyDayWindow(8 * 60, 23 * 60),
+      latestSleepMinutes: 22 * 60 + 30,
+    },
+  });
+  ctx.addTask({ title: '数学作业', plannedMinutes: 60, deadlineDate: '2025-10-20', plannedStartMinutes: 22 * 60 });
+
+  const result = ctx.run();
+  const item = (result.unscheduled ?? []).find((u) => u.taskTitle === '数学作业');
+  assert.ok(item, '任务应出现在未安排列表里');
+  assert.equal(item.reasonCode, 'planned_start_unreachable', `实际原因: ${item.reasonCode}`);
+  assert.match(item.reasonText, /计划开始时间/);
+});
+
+test('真的容量不足时仍报容量不足，没被上面那条改动带偏', () => {
+  // 每天只有 30 分钟窗口，任务要 600 分钟 → 确实排不下
+  const ctx = engineContext({ settings: { studyWindows: everyDayWindow(9 * 60, 9 * 60 + 30) } });
+  ctx.addTask({ title: '大任务', plannedMinutes: 600, deadlineDate: '2025-10-25' });
+
+  const result = ctx.run();
+  const item = (result.unscheduled ?? []).find((u) => u.taskTitle === '大任务');
+  assert.ok(item, '任务应出现在未安排列表里');
+  /**
+   * 这一条只要求"不要被误报成 planned_start_unreachable"。
+   * 具体落到哪个容量类原因由 refineReason 决定，都是准确的：
+   * 本例的截止日期早于容量足够的时间点，所以报 deadline_too_close 是对的。
+   */
+  assert.notEqual(item.reasonCode, 'planned_start_unreachable', '这跟计划开始时间无关');
+  assert.ok(
+    ['insufficient_capacity', 'tail_too_small', 'deadline_too_close'].includes(item.reasonCode),
+    `应报容量/截止类原因，实际: ${item.reasonCode}`,
+  );
+});
+
+test('容量充足却仍不可行时，不再发出"超出可用容量"这条自相矛盾的诊断', () => {
+  const ctx = engineContext({
+    settings: {
+      studyWindows: everyDayWindow(8 * 60, 23 * 60),
+      latestSleepMinutes: 22 * 60 + 30,
+    },
+  });
+  ctx.addTask({ title: '数学作业', plannedMinutes: 60, deadlineDate: '2025-10-20', plannedStartMinutes: 22 * 60 });
+
+  const result = ctx.run();
+  const messages = (result.diagnostics ?? []).map((d) => d.message ?? '');
+  assert.ok(
+    !messages.some((m) => /超出七天窗口内的可用容量/.test(m)),
+    '容量其实充足，不应发出"超出容量"的诊断',
+  );
+});

@@ -449,8 +449,25 @@ export function run(input) {
     );
     const isAtomic = entry.task.splittable === false;
     const atomicNoSlot = isAtomic && longestSlot < entry.task.plannedMinutes;
+    /**
+     * 「计划开始时间」把自己卡死的情况。
+     *
+     * `longestSlot` 已经按该任务的开始时间下界裁剪过（见上方 floor），
+     * 所以如果它仍小于要排的分钟数、而任务又确实指定了开始时间，
+     * 那问题就出在这个下界上，而不是总容量。
+     *
+     * 具体例子：任务 60 分钟、要求 22:00 之后开始、最晚睡觉 22:30。
+     * 每天从 22:00 起只剩 30 分钟，七天都放不下 60 分钟——
+     * 但七天总可用容量有 1830 分钟，说"容量不足"是误导。
+     */
+    const startFloorNoRoom =
+      Number.isInteger(entry.task.plannedStartMinutes) && longestSlot > 0 && longestSlot < missing;
     // 原因要准确：如果"截止前剩余时间"本身就不够，就不能笼统地说"七天容量不足"
-    const baseReason = atomicNoSlot ? UNSCHEDULED_REASON.NON_SPLITTABLE_NO_SLOT : UNSCHEDULED_REASON.INSUFFICIENT_CAPACITY;
+    const baseReason = atomicNoSlot
+      ? UNSCHEDULED_REASON.NON_SPLITTABLE_NO_SLOT
+      : startFloorNoRoom
+        ? UNSCHEDULED_REASON.PLANNED_START_UNREACHABLE
+        : UNSCHEDULED_REASON.INSUFFICIENT_CAPACITY;
     const reasonCode = refineReason(entry.task, planned, baseReason);
     unscheduled.push(
       buildUnscheduled({
@@ -631,6 +648,8 @@ export function run(input) {
     taskById,
     now,
     policy,
+    // 传入容量明细：用于区分"真的没容量"与"计划开始时间把自己卡死了"
+    capacityDays,
   });
 
   const remainingAfter = [...remainingByTask.values()].reduce((sum, value) => sum + value, 0);
@@ -642,7 +661,20 @@ export function run(input) {
   }
 
   const overloadMinutes = computeOverload({ remainingByTask, capacityDays, placements });
-  if (overloadMinutes > 0) {
+  /**
+   * 只有**确实超出总容量**时才报「超载」。
+   *
+   * overloadMinutes 是"未排入的分钟数"，它大于 0 有两种完全不同的原因：
+   *   1. 真的排不下（需求 > 容量）→ 应报超载；
+   *   2. 容量充足、但被某个任务的**计划开始时间**卡住 → 已在未安排原因里
+   *      给出 `planned_start_unreachable`，再补一条"超出容量"就是自相矛盾
+   *      （实测就出现过：总容量 1830 分钟，却报"超出容量 60 分钟"）。
+   *
+   * 因此这里加上容量判断：可用容量不足时才发这条诊断。
+   */
+  const totalSchedulableMinutes = capacityDays.reduce((sum, day) => sum + (day.schedulableMinutes ?? 0), 0);
+  const exceedsCapacity = overloadMinutes > totalSchedulableMinutes;
+  if (overloadMinutes > 0 && exceedsCapacity) {
     diagnostics.push({
       code: DIAGNOSTIC_CODE.OVERLOAD,
       severity: 'warning',
@@ -939,7 +971,7 @@ function countPlacedMinutes(placements) {
 }
 
 /** 核账：只保留真正没有被排入的分钟数，避免报告与计划不一致 */
-function reconcileUnscheduled({ unscheduled, remainingByTask, placements, taskById, now, policy }) {
+function reconcileUnscheduled({ unscheduled, remainingByTask, placements, taskById, now, policy, capacityDays = [] }) {
   const placed = countPlacedMinutes(placements);
   const byTask = new Map();
   for (const item of unscheduled) {
@@ -958,7 +990,7 @@ function reconcileUnscheduled({ unscheduled, remainingByTask, placements, taskBy
     if (existing) {
       out.push({ ...existing, remainingMinutes: missing, gapMinutes: missing });
     } else {
-      const reasonCode = pickReasonCode({ task, missing, policy });
+      const reasonCode = pickReasonCode({ task, missing, policy, capacityDays });
       out.push({
         taskId,
         taskTitle: task.title,
@@ -976,11 +1008,59 @@ function reconcileUnscheduled({ unscheduled, remainingByTask, placements, taskBy
   return out.sort((a, b) => (a.taskId < b.taskId ? -1 : 1));
 }
 
-function pickReasonCode({ task, missing, policy }) {
+function pickReasonCode({ task, missing, policy, capacityDays = [] }) {
   if (task.splittable === false) return UNSCHEDULED_REASON.NON_SPLITTABLE_NO_SLOT;
   const minChunk = task.minChunkMinutes ?? policy.defaultMinChunkMinutes;
   if (missing < minChunk) return UNSCHEDULED_REASON.TAIL_TOO_SMALL;
+
+  /**
+   * 「计划开始时间」把自己卡死的情况。
+   *
+   * 场景：任务要求 22:00 之后才开始，而最晚睡觉时间是 22:30。
+   * 每天窗口被截到 22:30，从 22:00 算起只剩 30 分钟，放不下 60 分钟的片段。
+   * 结果七天里一个片段都放不下——但**总容量其实是够的**。
+   *
+   * 旧代码在这种情况下报 `insufficient_capacity`（"容量不足"），
+   * 对用户是误导：他明明有大把时间，只是被自己的开始时间限制住了。
+   * 这里改用专门的原因码（这个码早就定义过，但一直没被用上），
+   * 让预览页能说清真正的原因与该怎么改。
+   */
+  if (Number.isInteger(task.plannedStartMinutes) && isBlockedByPlannedStart({ task, needed: missing, capacityDays })) {
+    return UNSCHEDULED_REASON.PLANNED_START_UNREACHABLE;
+  }
+
   return UNSCHEDULED_REASON.INSUFFICIENT_CAPACITY;
+}
+
+/**
+ * 判断"是不是计划开始时间导致的放不下"。
+ *
+ * 判定方式：把每天的空闲区间按该任务的开始时间下界裁剪后，
+ * 统计**仍能容纳最短片段的连续空间**。如果所有天都没有这样的空间，
+ * 就说明是开始时间这个下界造成的，而不是总容量不足。
+ *
+ * 注意这是**诊断用途**的估算：它只在任务已经被判定为"排不下"之后运行，
+ * 不参与实际放置决策，因此不会影响排程结果本身。
+ */
+function isBlockedByPlannedStart({ task, needed, capacityDays }) {
+  const floor = task.plannedStartMinutes;
+  if (!Number.isInteger(floor)) return false;
+  /**
+   * 关键：比较的是**放不下的那部分工作量**（needed），而不是最短片段。
+   *
+   * 例如任务 60 分钟、下界 22:00、睡觉时间 22:30：
+   * 从下界起算每天只有 30 分钟连续空间，虽然 30 ≥ 最短片段 30，
+   * 但放不下 60 分钟的片段，任务依然排不进去。
+   * 用 minChunk 比较会把这种情况误判成"容量不足"，正是要修的误导。
+   */
+  let maxRoom = 0;
+  for (const day of capacityDays ?? []) {
+    for (const window of day.freeWindows ?? []) {
+      const start = Math.max(window.startMinutes, floor);
+      maxRoom = Math.max(maxRoom, window.endMinutes - start);
+    }
+  }
+  return maxRoom < needed;
 }
 
 /* ------------------------------------------------------------------ *

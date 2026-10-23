@@ -43,6 +43,8 @@ export const REASON_TEXT = Object.freeze({
   [UNSCHEDULED_REASON.DEPENDENCY_UNREACHABLE]: '前置任务已被取消或删除，该任务永远无法满足依赖条件。',
   [UNSCHEDULED_REASON.NON_SPLITTABLE_NO_SLOT]: '该任务不可拆分，但窗口内没有足够长的连续时段一次放下。',
   [UNSCHEDULED_REASON.DEADLINE_PASSED]: '截止时间已过，安排也无法按时完成。',
+  [UNSCHEDULED_REASON.PLANNED_START_UNREACHABLE]:
+    '该任务的「计划开始时间」之后没有足够长的连续时段：按这个时刻起算，每天的可用时间都短于它的最短学习时段。',
   [UNSCHEDULED_REASON.WINDOW_TOO_NARROW]: '允许学习的时间窗口为空或过窄。',
   [UNSCHEDULED_REASON.DAILY_CAP_REACHED]: '已触达每日学习上限或每日片段数上限。',
   [UNSCHEDULED_REASON.OVERLOADED]: '所有任务的剩余工作量之和超过了窗口内的可用容量。',
@@ -57,6 +59,8 @@ export const REASON_SUGGESTIONS = Object.freeze({
   [UNSCHEDULED_REASON.NON_SPLITTABLE_NO_SLOT]: ['allow_split', 'extend_window', 'move_deadline'],
   [UNSCHEDULED_REASON.DEADLINE_PASSED]: ['move_deadline', 'cancel_task'],
   [UNSCHEDULED_REASON.WINDOW_TOO_NARROW]: ['extend_window'],
+  // 建议：把开始时间提前、或延后睡觉时间——两条都直接对应这个原因
+  [UNSCHEDULED_REASON.PLANNED_START_UNREACHABLE]: ['earlier_start', 'extend_window', 'allow_split'],
   [UNSCHEDULED_REASON.DAILY_CAP_REACHED]: ['raise_daily_cap', 'extend_window'],
   [UNSCHEDULED_REASON.OVERLOADED]: ['accept_partial', 'extend_window', 'move_deadline', 'cancel_task'],
 });
