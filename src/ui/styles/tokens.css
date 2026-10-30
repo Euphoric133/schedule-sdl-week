@@ -287,6 +287,18 @@
   --solar-star: rgba(47, 111, 208, 0.32);
   --solar-star-glow: rgba(184, 145, 47, 0.28);
 
+  /* 星空三层：远景最淡，近景最亮；颜色分冷白/淡蓝/淡金三档 */
+  --solar-star-cool: rgba(120, 150, 200, 0.55);
+  --solar-star-blue: rgba(120, 175, 240, 0.6);
+  --solar-star-gold: rgba(214, 178, 94, 0.55);
+  --solar-star-near: rgba(235, 242, 252, 0.95);
+
+  /* 星云：很淡的晨光尘埃 */
+  --nebula-1: rgba(120, 165, 235, 0.09);
+  --nebula-2: rgba(96, 196, 178, 0.07);
+  --nebula-3: rgba(214, 178, 94, 0.06);
+  --galaxy-band: rgba(120, 165, 235, 0.05);
+
   /* 轨道线：足够淡，hover 时才提亮 */
   --solar-orbit-line: rgba(47, 111, 208, 0.16);
   --solar-orbit-line-hover: rgba(47, 111, 208, 0.42);
@@ -357,7 +369,16 @@
   --solar-mars: #cf735d;
   --solar-jupiter: #bb9060;
   --solar-saturn: #c2aa74;
-  --solar-uranus: #79c0ce;
+  --solar-uranus: #79c0ce;  --solar-star-cool: rgba(226, 236, 250, 0.9);
+  --solar-star-blue: rgba(170, 205, 255, 0.95);
+  --solar-star-gold: rgba(240, 214, 150, 0.9);
+  --solar-star-near: rgba(255, 255, 255, 1);
+
+  /* 深空星云：更低饱和度，避免霓虹感 */
+  --nebula-1: rgba(90, 130, 200, 0.1);
+  --nebula-2: rgba(70, 160, 150, 0.08);
+  --nebula-3: rgba(180, 150, 80, 0.07);
+  --galaxy-band: rgba(150, 180, 230, 0.06);
 }
 
 /* 跟随系统深色 */
@@ -403,6 +424,16 @@
     --solar-jupiter: #bb9060;
     --solar-saturn: #c2aa74;
     --solar-uranus: #79c0ce;
+     --solar-star-cool: rgba(226, 236, 250, 0.9);
+    --solar-star-blue: rgba(170, 205, 255, 0.95);
+    --solar-star-gold: rgba(240, 214, 150, 0.9);
+    --solar-star-near: rgba(255, 255, 255, 1);
+
+    /* 深空星云：更低饱和度，避免霓虹感 */
+    --nebula-1: rgba(90, 130, 200, 0.1);
+    --nebula-2: rgba(70, 160, 150, 0.08);
+    --nebula-3: rgba(180, 150, 80, 0.07);
+    --galaxy-band: rgba(150, 180, 230, 0.06);
   }
 }
 

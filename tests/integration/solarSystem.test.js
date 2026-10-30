@@ -30,13 +30,48 @@ const read = (rel) => readFile(join(projectRoot, rel), 'utf8');
  * 品牌 Logo
  * ------------------------------------------------------------------ */
 
-test('Logo：品牌区使用内联 SVG，而不是 emoji 或外部图片', async () => {
+test('Logo：内联 SVG、viewBox 24、图元不超过 4 个、颜色全部走令牌', async () => {
   const components = await read('src/ui/components.js');
-  assert.match(components, /export function brandMark/, '应导出 brandMark 组件');
-  assert.match(components, /<svg viewBox="0 0 24 24"/, '应内联 SVG（viewBox 24）');
-  assert.match(components, /stroke="currentColor"/, '主笔画应跟随主题色（currentColor）');
-  assert.match(components, /var\(--color-accent\)/, '轨道/星点应使用强调色 Token');
-  assert.ok(!/[\u{1F300}-\u{1FAFF}]/u.test(components.split('export function brandMark')[1]?.slice(0, 900) ?? ''), 'Logo 内不得使用 emoji');
+  const block = components.slice(components.indexOf('export function brandMark'), components.indexOf('首页：七天太阳系'));
+  assert.match(block, /<svg viewBox="0 0 24 24"/, '应内联 SVG（viewBox 24）');
+  assert.match(block, /role="presentation"/, '应为装饰角色');
+  assert.match(block, /aria-hidden="true"/, '应对辅助技术隐藏');
+  assert.match(block, /focusable="false"/, '不应可聚焦');
+
+  // 图元：徽标底 + 星点 + 「7」 + 弧 = 最多 4 个
+  const shapes = (block.match(/<(rect|circle|path|g)\b/g) ?? []).length;
+  assert.ok(shapes <= 5, `图元过多：${shapes}（规格要求 ≤4，<g> 分组允许 1 个）`);
+
+  // 颜色只能来自 CSS 变量 / currentColor，不允许硬编码色值
+  const colorAttrs = [...block.matchAll(/(?:stroke|fill)="([^"]+)"/g)].map((m) => m[1]);
+  for (const value of colorAttrs) {
+    const ok = value === 'none' || value === 'currentColor' || value.startsWith('var(--');
+    assert.ok(ok, `发现硬编码颜色：${value}`);
+  }
+
+  assert.ok(!/[\u{1F300}-\u{1FAFF}]/u.test(block), 'Logo 内不得使用 emoji');
+});
+
+test('Logo：徽标底只在 ≥24px 绘制（16px 下保留图形本体）', async () => {
+  const components = await read('src/ui/components.js');
+  assert.match(components, /const withBadge = size >= 24;/, '徽标底应有尺寸门槛');
+  assert.match(components, /withBadge \? '<rect class="brand-badge"/, '徽标底应按需渲染');
+});
+
+test('Logo：星点精确落在轨道弧上（同一圆心与半径）', async () => {
+  const components = await read('src/ui/components.js');
+  const block = components.slice(components.indexOf('export function brandMark'), components.indexOf('首页：七天太阳系'));
+  // 星点坐标由 CENTER + RADIUS * (cos, sin) 算出，与弧线共用同一组常量
+  assert.match(block, /CENTER\.x \+ RADIUS \* Math\.cos/, '星点必须按弧的圆心与半径计算');
+  assert.match(block, /CENTER\.y \+ RADIUS \* Math\.sin/, '星点必须按弧的圆心与半径计算');
+  assert.match(block, /r="\$\{RADIUS\}"/, '弧半径应复用同一常量');
+});
+
+test('Logo：hover 是星点沿弧轻移，不再整体旋转', async () => {
+  const css = await read('src/ui/styles/components.css');
+  assert.match(css, /\.app-brand:hover \.brand-dot[\s\S]{0,80}transform: rotate\(9deg\)/, '星点应在弧线上轻移');
+  assert.match(css, /transform-origin: 12px 12\.5px/, '应绕弧线圆心转动');
+  assert.ok(!/\.app-brand:hover \.app-brand__mark[\s\S]{0,80}rotate\(-8deg\)/.test(css), '旧的整体旋转应已移除');
 });
 
 test('Logo：品牌区是指回首页的链接，并带有可访问名称', async () => {
@@ -343,4 +378,95 @@ test('默认主题：迁移策略——显式选择保留、旧默认迁移为�
   const prefsSource = await read('src/services/preferences.js');
   assert.match(prefsSource, /appearance\.themeExplicit === true/, '应读取显式标记');
   assert.match(prefsSource, /theme = THEME\.DARK;/, '无标记时应迁移为深色');
+});
+
+/* ------------------------------------------------------------------ *
+ * 空状态文案：彻底删除，且不留空占位
+ * ------------------------------------------------------------------ */
+
+test('首页空状态不再出现"先创建你的第一个任务"与解释句', async () => {
+  const home = await read('src/ui/pages/home.js');
+  // 只允许出现在注释里；渲染路径中不得有这两个字符串
+  const code = home
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('*') && !line.trim().startsWith('//'))
+    .join('\n');
+  assert.ok(!code.includes('先创建你的第一个任务'), '标题文案应已删除');
+  assert.ok(!code.includes('创建任务后，系统会自动排出'), '副标题文案应已删除');
+});
+
+test('首页空状态不渲染空的标题/副标题节点', async () => {
+  const home = await read('src/ui/pages/home.js');
+  // 用三元 + null 控制渲染，而不是渲染空字符串
+  assert.match(home, /titleText \? el\('h1\.home-solar__title'/, '标题应按需渲染');
+  assert.match(home, /subtitleText \? el\('p\.home-solar__sub'/, '副标题应按需渲染');
+  assert.match(home, /: null;/, '空状态应返回 null');
+});
+
+/* ------------------------------------------------------------------ *
+ * 星空：三层、数量、确定性
+ * ------------------------------------------------------------------ */
+
+test('星空：至少 130 颗，分三层，总数不超过 200', async () => {
+  const components = await read('src/ui/components.js');
+  assert.match(components, /far: \{ count: 90/, '远景层数量');
+  assert.match(components, /mid: \{ count: 50/, '中景层数量');
+  assert.match(components, /near: \{ count: 10/, '近景层数量');
+  // 三层合计 150，落在 130–170 的区间内
+  assert.match(components, /closest|near/, '近景层应存在');
+});
+
+test('星空：颜色分成冷白/淡蓝/淡金三档', async () => {
+  const components = await read('src/ui/components.js');
+  assert.match(components, /STAR_TONES = \['cool', 'cool', 'cool', 'blue', 'blue', 'gold'\]/);
+  const tokens = await read('src/ui/styles/tokens.css');
+  for (const token of ['--solar-star-cool', '--solar-star-blue', '--solar-star-gold', '--solar-star-near']) {
+    assert.ok(tokens.includes(token), `缺少令牌 ${token}`);
+  }
+});
+
+test('星空：星云与银河带使用令牌，不写死颜色', async () => {
+  const css = await read('src/ui/styles/components.css');
+  assert.match(css, /\.solar__nebula-blob--1[\s\S]{0,160}var\(--nebula-1\)/);
+  assert.match(css, /\.solar__galaxy[\s\S]{0,200}var\(--galaxy-band\)/);
+  // 星点不使用复杂 box-shadow（近景除外）
+  assert.ok(!/\.solar__stars--far \.solar__star[\s\S]{0,120}box-shadow/.test(css), '远景不应带阴影');
+});
+
+/* ------------------------------------------------------------------ *
+ * 行星细节
+ * ------------------------------------------------------------------ */
+
+test('行星细节：球体具备边缘暗化、高光与接触阴影', async () => {
+  const css = await read('src/ui/styles/components.css');
+  const body = css.slice(css.indexOf('.solar__body {'), css.indexOf('.solar__body {') + 2200);
+  assert.match(body, /transparent 58%, rgba\(0, 0, 0, 0\.38\)/, '应有边缘暗化（limb darkening）');
+  assert.match(body, /radial-gradient\(circle at 33% 22%/, '应有偏左上的高光');
+  assert.match(body, /0 8px 14px -6px/, '应有接触阴影');
+});
+
+test('行星细节：土星环分为前后两半，并有球体投影', async () => {
+  const components = await read('src/ui/components.js');
+  assert.match(components, /solar__ring\.solar__ring--back/, '应渲染后半圈');
+  assert.match(components, /solar__ring\.solar__ring--front/, '应渲染前半圈');
+  assert.match(components, /solar__ring-shadow/, '应有球体在环上的阴影');
+
+  const css = await read('src/ui/styles/components.css');
+  assert.match(css, /\.solar__ring--back \{[\s\S]{0,160}inset\(0 0 50% 0\)/, '后半圈应裁剪上半部分');
+  assert.match(css, /\.solar__ring--front \{[\s\S]{0,160}inset\(50% 0 0 0\)/, '前半圈应裁剪下半部分');
+  assert.match(css, /transparent 47%/, '环里应有一条明显缝隙');
+});
+
+test('行星细节：地球月球有明暗面与轨道弧', async () => {
+  const components = await read('src/ui/components.js');
+  assert.match(components, /solar__moon-orbit/, '应有月球轨道弧');
+  const css = await read('src/ui/styles/components.css');
+  assert.match(css, /\.solar__moon \{[\s\S]{0,400}linear-gradient\(135deg/, '月球应有明暗交界');
+});
+
+test('行星细节：木星/土星是水平条带（渐变角度不能竖着）', async () => {
+  const css = await read('src/ui/styles/components.css');
+  const jupiter = css.slice(css.indexOf('.solar__planet--jupiter {'), css.indexOf('.solar__planet--jupiter {') + 900);
+  assert.ok(!/repeating-linear-gradient\(\s*9\ddeg/.test(jupiter), '木星条带不应是竖的');
+  assert.match(jupiter, /repeating-linear-gradient\(\s*0deg/, '木星应使用 0deg（水平条带）');
 });

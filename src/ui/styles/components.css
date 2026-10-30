@@ -4067,9 +4067,26 @@ dialog {
   letter-spacing: 0.02em;
 }
 
-.app-brand:hover .app-brand__mark,
-.app-brand:focus-visible .app-brand__mark {
-  transform: rotate(-8deg);
+/**
+ * hover/focus：不再整体旋转（容易显得轻浮），改成更克制的三件事：
+ * 1. 星点沿轨道弧轻移约 9°；
+ * 2. 轨道弧提亮；
+ * 3. 徽标底轻微提亮。
+ */
+.app-brand:hover .brand-dot,
+.app-brand:focus-visible .brand-dot {
+  transform: rotate(9deg);
+}
+
+.app-brand:hover .brand-arc,
+.app-brand:focus-visible .brand-arc {
+  stroke: var(--color-primary-hover);
+  opacity: 1;
+}
+
+.app-brand:hover .brand-badge,
+.app-brand:focus-visible .brand-badge {
+  fill: var(--brand-badge-fill-hover);
 }
 
 .app-brand__mark {
@@ -4078,8 +4095,23 @@ dialog {
 
 .app-brand__mark svg {
   display: block;
-  /* SVG 内是 1.6–2px 的细笔画，缩小到 16px 时依赖浏览器矢量渲染，不会糊边 */
+  /* SVG 内是 1.4–2px 的细笔画，缩小到 16px 时依赖浏览器矢量渲染，不会糊边 */
   overflow: visible;
+}
+
+/* 星点绕弧线圆心转动：以 viewBox 坐标为原点，避免用百分比导致偏移 */
+.brand-dot {
+  transform-box: view-box;
+  transform-origin: 12px 12.5px;
+  transition: transform 0.26s ease-out;
+}
+
+.brand-arc {
+  transition: stroke 0.26s ease-out, opacity 0.26s ease-out;
+}
+
+.brand-badge {
+  transition: fill 0.26s ease-out;
 }
 
 .app-brand__text {
@@ -4165,29 +4197,132 @@ dialog {
     linear-gradient(var(--solar-sky-blend), var(--solar-sky-1), var(--solar-sky-2));
 }
 
-/* —— 星点（装饰） —— */
+/* —— 星空：星云 + 三层星点（全部为装饰） —— */
 .solar__sky {
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 0;
+  overflow: hidden;
+}
+
+/* 星云：两三个大光斑 + 一条斜向银河带，透明度 4%–10% */
+.solar__nebula {
+  position: absolute;
+  inset: 0;
+}
+
+.solar__nebula-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(18px);
+}
+
+.solar__nebula-blob--1 {
+  width: 62%;
+  height: 78%;
+  left: -12%;
+  top: -18%;
+  background: radial-gradient(circle, var(--nebula-1) 0%, transparent 68%);
+}
+
+.solar__nebula-blob--2 {
+  width: 54%;
+  height: 66%;
+  right: -10%;
+  top: 8%;
+  background: radial-gradient(circle, var(--nebula-2) 0%, transparent 70%);
+}
+
+.solar__nebula-blob--3 {
+  width: 48%;
+  height: 52%;
+  left: 26%;
+  bottom: -16%;
+  background: radial-gradient(circle, var(--nebula-3) 0%, transparent 72%);
+}
+
+/* 银河带：一条很淡的斜向光带 */
+.solar__galaxy {
+  position: absolute;
+  left: -20%;
+  top: 38%;
+  width: 140%;
+  height: 26%;
+  rotate: -14deg;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--galaxy-band) 22%,
+    var(--galaxy-band) 62%,
+    transparent 100%
+  );
+  filter: blur(14px);
+  opacity: 0.9;
+}
+
+/* 星点容器：三层各自一个 div，方便按层调亮度 */
+.solar__stars {
+  position: absolute;
+  inset: 0;
 }
 
 .solar__star {
   position: absolute;
   border-radius: 50%;
-  background: var(--solar-star);
-  opacity: 0.75;
-  animation: solar-twinkle 7s ease-in-out infinite;
+  background: var(--star-tone, var(--solar-star-cool));
+  animation-name: solar-twinkle;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+/* 颜色分档：冷白 / 淡蓝 / 淡金 */
+.solar__star--cool {
+  --star-tone: var(--solar-star-cool);
+}
+.solar__star--blue {
+  --star-tone: var(--solar-star-blue);
+}
+.solar__star--gold {
+  --star-tone: var(--solar-star-gold);
+}
+
+/* 远景：暗、几乎不闪、无光晕 */
+.solar__stars--far .solar__star {
+  opacity: 0.35;
+}
+
+/* 中景：正常闪烁 */
+.solar__stars--mid .solar__star {
+  opacity: 0.7;
+}
+
+/* 近景：最亮，带柔和光晕，闪烁更慢 */
+.solar__stars--near .solar__star {
+  background: var(--solar-star-near);
+  opacity: 0.95;
+  box-shadow: 0 0 6px 1px color-mix(in srgb, var(--solar-star-near) 55%, transparent);
+  /* 近景闪烁更慢、幅度更小，避免抢注意力 */
+  animation-name: solar-twinkle-soft;
+}
+
+@keyframes solar-twinkle-soft {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 @keyframes solar-twinkle {
   0%,
   100% {
-    opacity: 0.32;
+    opacity: 0.28;
   }
   50% {
-    opacity: 0.9;
+    opacity: 1;
   }
 }
 
@@ -4358,20 +4493,33 @@ dialog {
 /* —— 球体：多层渐变做出体积与纹理 —— */
 .solar__body {
   position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
   border-radius: 50%;
   overflow: hidden;
+  /**
+   * 球体的层次（自上而下）：
+   * 1. 高光：左上偏上的一小块柔和亮斑，位置不在正上方，避免"塑料球"；
+   * 2. 明暗交界：右下的暗部，半径较大，形成半球阴影；
+   * 3. 边缘暗化（limb darkening）：紧贴球体边缘的一圈暗环，
+   *    这是"球感"的关键——没有它，圆形看起来就只是圆片；
+   * 4. 表面纹理（--planet-surface）；
+   * 5. 主色。
+   */
   background:
-    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.5) 0%, transparent 40%),
-    radial-gradient(circle at 72% 80%, rgba(0, 0, 0, 0.55) 0%, transparent 62%),
+    radial-gradient(circle at 33% 22%, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.16) 16%, transparent 34%),
+    radial-gradient(circle at 70% 76%, rgba(0, 0, 0, 0.58) 0%, transparent 60%),
+    radial-gradient(circle at 50% 50%, transparent 58%, rgba(0, 0, 0, 0.38) 100%),
     var(--planet-surface, none),
     var(--planet-color, var(--color-primary));
   box-shadow:
     inset -4px -6px 12px rgba(0, 0, 0, 0.5),
-    inset 2px 2px 6px rgba(255, 255, 255, 0.16),
-    0 6px 12px rgba(0, 0, 0, 0.28);
+    inset 2px 2px 6px rgba(255, 255, 255, 0.18),
+    /* 接触阴影：极淡、略偏下，让它"浮"在轨道上而不是贴纸 */
+    0 8px 14px -6px rgba(0, 0, 0, 0.55),
+    0 2px 4px rgba(0, 0, 0, 0.3);
   transition: transform 0.22s ease, box-shadow 0.22s ease;
 }
 
@@ -4520,12 +4668,11 @@ dialog {
 .solar__planet--venus {
   --planet-color: var(--solar-venus);
   --planet-glow: color-mix(in srgb, var(--solar-venus) 70%, transparent);
-  --planet-surface: repeating-linear-gradient(
-      104deg,
-      rgba(255, 255, 255, 0.16) 0 6px,
-      transparent 6px 16px
-    ),
-    radial-gradient(circle at 40% 30%, rgba(255, 255, 255, 0.3) 0%, transparent 52%);
+  /** 金星是"云层漩涡"而不是规则条纹：用几个偏移的椭圆亮斑叠出不规则感 */
+  --planet-surface: radial-gradient(ellipse 42% 14% at 34% 30%, rgba(255, 252, 236, 0.42) 0%, transparent 100%),
+    radial-gradient(ellipse 34% 11% at 66% 46%, rgba(255, 250, 228, 0.34) 0%, transparent 100%),
+    radial-gradient(ellipse 46% 12% at 46% 64%, rgba(255, 246, 214, 0.3) 0%, transparent 100%),
+    radial-gradient(ellipse 26% 9% at 72% 78%, rgba(255, 252, 240, 0.22) 0%, transparent 100%);
   --planet-texture: none;
   --planet-spin: 70s;
 }
@@ -4559,14 +4706,40 @@ dialog {
 /* 地球的月球：放在球体外部的兄弟元素里（否则会被 overflow: hidden 裁掉） */
 .solar__moon {
   position: absolute;
-  right: -16%;
-  top: 26%;
+  right: -18%;
+  top: 22%;
   width: 22%;
   height: 22%;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #f2f4f7, #b6bcc6 70%);
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.35);
+  /**
+   * 月球不能是纯灰点：朝向太阳的一侧（左上）亮，背光侧明显偏暗，
+   * 用一条斜向的明暗交界把它分成两半。
+   */
+  background:
+    radial-gradient(circle at 30% 28%, #ffffff 0%, #e8ecf2 26%, transparent 46%),
+    linear-gradient(135deg, #e6ebf2 0%, #c3cad6 38%, #6d7686 62%, #3f4754 100%);
+  box-shadow:
+    inset -2px -2px 4px rgba(0, 0, 0, 0.55),
+    0 0 6px rgba(255, 255, 255, 0.28);
   pointer-events: none;
+  z-index: 2;
+}
+
+/* 月球轨道弧：极淡的一小段，暗示月球在绕地球运行 */
+.solar__moon-orbit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 168%;
+  height: 78%;
+  translate: -50% -50%;
+  rotate: -22deg;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--solar-earth) 40%, transparent);
+  clip-path: polygon(18% 0, 100% 0, 100% 62%, 18% 62%);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* 火星：锈红 + 暗色玄武岩斑 + 白色极冠 + 淡红大气 */
@@ -4590,18 +4763,24 @@ dialog {
 .solar__planet--jupiter {
   --planet-color: var(--solar-jupiter);
   --planet-glow: color-mix(in srgb, var(--solar-jupiter) 70%, transparent);
+  /**
+   * 角度用 0deg：CSS 渐变的"角度"是**渐变方向**。
+   * 92deg 接近从左到右，条纹是竖的；0deg 是自下而上，条纹沿 y 变化，
+   * 才是我们要的"水平条带"。这里之前写反过，实测木星成了竖条纹。
+   */
   --planet-surface: repeating-linear-gradient(
-      92deg,
-      rgba(255, 255, 255, 0.16) 0 4px,
-      rgba(120, 80, 40, 0.18) 4px 9px,
-      rgba(255, 240, 210, 0.12) 9px 13px,
-      rgba(90, 60, 30, 0.16) 13px 18px
+      0deg,
+      rgba(255, 246, 232, 0.28) 0 5px,
+      rgba(150, 96, 52, 0.22) 5px 9px,
+      rgba(255, 238, 214, 0.2) 9px 15px,
+      rgba(112, 70, 36, 0.24) 15px 20px,
+      rgba(250, 240, 220, 0.16) 20px 28px
     ),
-    radial-gradient(ellipse 16% 10% at 64% 62%, rgba(190, 80, 50, 0.95) 0%, transparent 100%);
+    radial-gradient(ellipse 15% 9% at 63% 61%, rgba(196, 74, 44, 0.98) 0%, rgba(150, 52, 32, 0.9) 55%, transparent 100%);
   --planet-texture: repeating-linear-gradient(
-    100deg,
-    rgba(255, 255, 255, 0.08) 0 7px,
-    transparent 7px 15px
+    0deg,
+    rgba(255, 255, 255, 0.07) 0 9px,
+    transparent 9px 17px
   );
   --planet-spin: 45s;
 }
@@ -4611,10 +4790,11 @@ dialog {
   --planet-color: var(--solar-saturn);
   --planet-glow: color-mix(in srgb, var(--solar-saturn) 66%, transparent);
   --planet-surface: repeating-linear-gradient(
-    88deg,
-    rgba(255, 255, 255, 0.14) 0 5px,
-    rgba(140, 110, 60, 0.16) 5px 11px
-  );
+      0deg,
+      rgba(255, 250, 236, 0.2) 0 6px,
+      rgba(150, 120, 68, 0.16) 6px 12px,
+      rgba(252, 244, 226, 0.14) 12px 20px
+    );
   --planet-texture: none;
   --planet-spin: 100s;
 }
@@ -4623,24 +4803,63 @@ dialog {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 190%;
-  height: 46%;
+  width: 200%;
+  height: 52%;
   translate: -50% -50%;
-  rotate: -20deg;
+  rotate: -18deg;
   border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--solar-saturn) 75%, white 25%);
-  /* 用两层渐变做出"环有缝隙"的效果 */
+  pointer-events: none;
+  /**
+   * 环带用多层渐变做出 2–3 条亮度不同、且有一条明显缝隙的效果：
+   * 40%–44% 内环（亮）、44%–50% 缝隙（透明）、50%–62% 外环（较暗）。
+   */
   background: radial-gradient(
     ellipse at center,
-    transparent 40%,
-    color-mix(in srgb, var(--solar-saturn) 55%, transparent) 42%,
-    transparent 50%,
-    color-mix(in srgb, var(--solar-saturn) 40%, transparent) 56%,
+    transparent 38%,
+    color-mix(in srgb, var(--solar-saturn) 72%, white 28%) 40%,
+    color-mix(in srgb, var(--solar-saturn) 45%, transparent) 44%,
+    transparent 47%,
+    color-mix(in srgb, var(--solar-saturn) 50%, transparent) 52%,
+    color-mix(in srgb, var(--solar-saturn) 30%, transparent) 60%,
     transparent 64%
   );
-  box-shadow: 0 0 10px color-mix(in srgb, var(--solar-saturn) 35%, transparent);
+  border: 1px solid color-mix(in srgb, var(--solar-saturn) 55%, white 45%);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--solar-saturn) 28%, transparent);
+}
+
+/* 后半圈：被球体挡住的是"上半部分"——只保留下半边之前的区域 */
+.solar__ring--back {
+  clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%);
+  /* 用上半夜：视觉上环从球体后方绕出 */
+  clip-path: inset(0 0 50% 0);
+  z-index: 0;
+}
+
+/* 前半圈：盖在球体上，只保留下半部分 */
+.solar__ring--front {
+  clip-path: inset(50% 0 0 0);
+  z-index: 2;
+}
+
+/* 球体投在环上的弧形阴影 */
+.solar__ring-shadow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 190%;
+  height: 48%;
+  translate: -50% -50%;
+  rotate: -18deg;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at 50% 18%,
+    rgba(0, 0, 0, 0.45) 0%,
+    rgba(0, 0, 0, 0.22) 38%,
+    transparent 58%
+  );
+  clip-path: inset(50% 0 0 0);
   pointer-events: none;
-  z-index: 1;
+  z-index: 3;
 }
 
 /* 天王星：青蓝 + 极淡条带 + 细而垂直的环 + 柔和光晕 */
@@ -4649,8 +4868,8 @@ dialog {
   --planet-glow: color-mix(in srgb, var(--solar-uranus) 78%, transparent);
   --planet-surface: repeating-linear-gradient(
     0deg,
-    rgba(255, 255, 255, 0.1) 0 6px,
-    transparent 6px 14px
+    rgba(255, 255, 255, 0.07) 0 8px,
+    transparent 8px 18px
   );
   --planet-texture: none;
   --planet-spin: 120s;
@@ -4949,5 +5168,41 @@ dialog {
   .solar__chip {
     position: static;
     translate: none;
+  }
+}
+
+/* ==========================================================================
+   品牌徽标底（「七日环」的圆角方形）
+   ==========================================================================
+   只在 ≥24px 时绘制。颜色由令牌混出，不写死色值：
+   深色下是极淡的白色玻璃，浅色下是极淡的墨色，壁纸/玻璃背景都能保持对比。
+   ========================================================================== */
+
+:root {
+  --brand-badge-fill: color-mix(in srgb, var(--color-surface) 70%, transparent);
+  --brand-badge-fill-hover: color-mix(in srgb, var(--color-surface) 88%, transparent);
+}
+
+:root[data-theme='dark'] {
+  --brand-badge-fill: color-mix(in srgb, #ffffff 8%, transparent);
+  --brand-badge-fill-hover: color-mix(in srgb, #ffffff 16%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='system'],
+  :root:not([data-theme]) {
+    --brand-badge-fill: color-mix(in srgb, #ffffff 8%, transparent);
+    --brand-badge-fill-hover: color-mix(in srgb, #ffffff 16%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-dot {
+    transform: none !important;
+  }
+  .brand-dot,
+  .brand-arc,
+  .brand-badge {
+    transition: none;
   }
 }

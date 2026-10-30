@@ -62,20 +62,37 @@ export function renderHome({ app, services, now }) {
     gardenFocusMinutes,
   });
 
+  /**
+   * 顶部标题与副标题。
+   *
+   * 没有任何任务时两者都为 null（不渲染节点）：空状态只保留日期/问候、
+   * 太阳系与操作条，其余引导交给页面下方的卡片。
+   */
+  const titleText = running
+    ? '正在进行这一段学习'
+    : nextSession
+      ? `下一项：${taskById.get(nextSession.taskId)?.title ?? '学习任务'}`
+      : activeTasks.length > 0
+        ? '今天还没有安排'
+        : null;
+  const subtitleText = heroSubtitle({ running, nextSession, plan, preview, activeTasks, nowMinutes, taskById });
+
   nodes.push(
     el('section.home-solar', {}, [
       el('header.home-solar__head', {}, [
         el('p.home-solar__date', { text: `${formatDateWithWeekday(today)}　${greeting(nowMinutes)}` }),
-        el('h1.home-solar__title', {
-          text: running
-            ? '正在进行这一段学习'
-            : nextSession
-              ? `下一项：${taskById.get(nextSession.taskId)?.title ?? '学习任务'}`
-              : activeTasks.length > 0
-                ? '今天还没有安排'
-                : '先创建你的第一个任务',
-        }),
-        el('p.home-solar__sub', { text: heroSubtitle({ running, nextSession, plan, preview, activeTasks, nowMinutes, taskById }) }),
+        /**
+         * 空状态（没有任何任务）**不再渲染标题与副标题**。
+         *
+         * 以前的写法是"没有任务时显示「先创建你的第一个任务」+ 一句解释"，
+         * 但首页下方已经有「开始规划」「今天的任务」两块引导，顶部再重复一遍
+         * 只会让首屏多出两行字号很大的文案，把太阳系往下压。
+         *
+         * 这里是**真的不创建节点**，而不是隐藏或用空字符串占位——
+         * 空的 <h1>/<p> 仍会带来间距与无障碍噪音。
+         */
+        titleText ? el('h1.home-solar__title', { text: titleText }) : null,
+        subtitleText ? el('p.home-solar__sub', { text: subtitleText }) : null,
       ]),
       solarSystem(solarModel),
       /* 操作条：主要按钮放在太阳系之外，不塞进行星内部 */
@@ -375,7 +392,8 @@ function heroSubtitle({ running, nextSession, plan, preview, activeTasks, nowMin
       ? `当前计划覆盖 ${plan.windowStart} → ${plan.windowEnd}，今天没有剩下的时段。`
       : `有 ${activeTasks.length} 个待办任务，点右侧「生成七天计划」开始排程。`;
   }
-  return '创建任务后，系统会自动排出一份七天学习计划（不使用任何 AI，规则完全可解释）。';
+  // 空状态：不再重复"先建任务"的解释（页面下方已有引导卡片）
+  return null;
 }
 
 function remainingText(task, state) {

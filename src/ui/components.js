@@ -380,15 +380,48 @@ export function barChart({ days, height = 150, emptyText = '还没有可以统�
  * 轨道与星点用 `--color-accent`。绝不写死颜色值。
  */
 export function brandMark({ size = 24 } = {}) {
+  /**
+   * 「七日环」——品牌标识。
+   *
+   * 几何（viewBox 24×24，全部对齐到 0.5 网格，避免半像素毛边）：
+   * - 徽标底：x2 y2 w20 h20，圆角 6.5；**只在 ≥24px 时绘制**，
+   *   因为 16px 下它会把图形糊成一团（规格允许 16px 去掉徽标底）。
+   * - 「7」：M7 7.5 H16 L9.5 16.5，线宽 2，圆头圆角。
+   * - 轨道弧：圆心 (12, 12.5)、半径 7 的圆弧，从 322° 顺时针扫 188°，
+   *   也就是**从右上方出发、从「7」下方绕过、收在左下方**。
+   *   （SVG 的 circle 是顺时针、角度递增——选择起始角时容易写反，
+   *     早期版本就扫到了上方，和「7」交叉。）
+   * - 星点：r1.75，圆心精确落在弧上 334° 处，距弧端约 1.5 单位。
+   *
+   * 颜色全部来自令牌：7 用 currentColor（继承主题文字色）、
+   * 弧用 --color-primary、点用 --color-accent、底用 --color-surface 的混色。
+   */
+  const RADIUS = 7;
+  const CENTER = { x: 12, y: 12.5 };
+  const CIRC = 2 * Math.PI * RADIUS;
+  const ARC_SPAN_DEG = 188;
+  const ARC_LEN = (CIRC * ARC_SPAN_DEG) / 360;
+  const ARC_START_DEG = 322;
+  const DOT_DEG = 334;
+
+  const dotX = (CENTER.x + RADIUS * Math.cos((DOT_DEG * Math.PI) / 180)).toFixed(2);
+  const dotY = (CENTER.y + RADIUS * Math.sin((DOT_DEG * Math.PI) / 180)).toFixed(2);
+  const withBadge = size >= 24;
+
   return el('span.app-brand__mark', {
     html: `
 <svg viewBox="0 0 24 24" width="${size}" height="${size}" role="presentation"
      aria-hidden="true" focusable="false" fill="none">
-  <path d="M6.4 6.6 H17.4 L9.6 17.6"
+  ${withBadge ? '<rect class="brand-badge" x="2" y="2" width="20" height="20" rx="6.5" fill="var(--brand-badge-fill)" />' : ''}
+  <g class="brand-dot">
+    <circle cx="${dotX}" cy="${dotY}" r="1.75" fill="var(--color-accent)" />
+  </g>
+  <path class="brand-seven" d="M7 7.5 H16 L9.5 16.5"
         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M4.6 16.2 A10 10 0 0 1 18.9 9.1"
-        stroke="var(--color-accent)" stroke-width="1.5" stroke-linecap="round" opacity="0.85" />
-  <circle cx="19.4" cy="8.6" r="1.7" fill="var(--color-accent)" />
+  <circle class="brand-arc" cx="${CENTER.x}" cy="${CENTER.y}" r="${RADIUS}"
+          stroke="var(--color-primary)" stroke-width="1.4" stroke-linecap="round"
+          stroke-dasharray="${ARC_LEN.toFixed(2)} 999"
+          transform="rotate(${ARC_START_DEG} ${CENTER.x} ${CENTER.y})" />
 </svg>`.trim(),
   });
 }
@@ -400,25 +433,68 @@ export function brandMark({ size = 24 } = {}) {
 /**
  * 星点位置（确定性）。
  *
- * 为什么不用 Math.random：首页每次渲染都必须一致，否则
- * 切换页面前后星图会跳变；测试也无法稳定断言。
- * 这里用一个固定的小表 + 线性同余生成，输出完全可复现。
+ * 为什么不用 Math.random：首页每次渲染都必须一致，否则切换页面后星图会跳变，
+ * 测试也无法稳定断言。这里用固定种子的线性同余生成，输出完全可复现。
+ *
+ * 三层结构（远景 / 中景 / 近景）是"纵深"的来源：
+ * - 远景数量最多、最小、最暗，几乎不闪；
+ * - 中景正常闪烁、颜色略有差异；
+ * - 近景只有十来颗，最大最亮，带柔和光晕，闪烁更慢。
+ *
+ * 总量控制在 150 颗左右（规格要求 130–170，不超过 200 个 DOM 节点）。
  */
-function buildStars(count) {
-  const stars = [];
-  let seed = 20261030;
-  const next = () => {
-    seed = (seed * 1103515245 + 12345) % 2147483648;
-    return seed / 2147483648;
+const STAR_LAYERS = Object.freeze({
+  far: { count: 90, min: 0.6, max: 1.2, duration: [9, 12] },
+  mid: { count: 50, min: 1.2, max: 2, duration: [7, 10] },
+  near: { count: 10, min: 2, max: 3, duration: [6, 8] },
+});
+
+/** 三色分布：冷白为主，淡蓝与淡金点缀 */
+const STAR_TONES = ['cool', 'cool', 'cool', 'blue', 'blue', 'gold'];
+
+function createSeededRandom(seed) {
+  let state = seed;
+  return () => {
+    state = (state * 1103515245 + 12345) % 2147483648;
+    return state / 2147483648;
   };
-  for (let i = 0; i < count; i += 1) {
-    const x = Number((next() * 100).toFixed(2));
-    const y = Number((next() * 100).toFixed(2));
-    const size = Number((0.8 + next() * 1.6).toFixed(2));
-    const delay = Number((next() * 8).toFixed(2));
-    stars.push({ x, y, size, delay, key: i });
+}
+
+export function buildStars(seed = 20261030) {
+  const next = createSeededRandom(seed);
+  const pick = (min, max) => min + next() * (max - min);
+  const stars = [];
+
+  for (const [layer, spec] of Object.entries(STAR_LAYERS)) {
+    for (let i = 0; i < spec.count; i += 1) {
+      stars.push({
+        layer,
+        tone: STAR_TONES[Math.floor(next() * STAR_TONES.length)],
+        x: Number(pick(0, 100).toFixed(2)),
+        y: Number(pick(0, 100).toFixed(2)),
+        size: Number(pick(spec.min, spec.max).toFixed(2)),
+        duration: Number(pick(spec.duration[0], spec.duration[1]).toFixed(1)),
+        delay: Number(pick(0, 10).toFixed(2)),
+        key: `${layer}-${i}`,
+      });
+    }
   }
   return stars;
+}
+
+/**
+ * 星云层（纯装饰）。
+ *
+ * 用极低透明度的径向渐变做两三个大光斑 + 一条斜向银河带。
+ * 全部 CSS 渐变，不引入图片；透明度控制在 4%–10%，保证不压过行星与文字。
+ */
+function buildNebula() {
+  return el('div.solar__nebula', { 'aria-hidden': 'true' }, [
+    el('span.solar__nebula-blob.solar__nebula-blob--1'),
+    el('span.solar__nebula-blob.solar__nebula-blob--2'),
+    el('span.solar__nebula-blob.solar__nebula-blob--3'),
+    el('span.solar__galaxy'),
+  ]);
 }
 
 /**
@@ -438,22 +514,28 @@ function buildStars(count) {
  */
 export function solarSystem(model) {
   const { sun, planets, orbits = [] } = model;
-  const stars = buildStars(56);
+  const stars = buildStars();
 
-  const sky = el('div.solar__sky', { 'aria-hidden': 'true' });
-  for (const star of stars) {
-    sky.appendChild(
-      el('span.solar__star', {
-        style: {
-          left: `${star.x}%`,
-          top: `${star.y}%`,
-          width: `${star.size}px`,
-          height: `${star.size}px`,
-          animationDelay: `${star.delay}s`,
-        },
-      }),
-    );
-  }
+  const sky = el('div.solar__sky', { 'aria-hidden': 'true' }, [
+    buildNebula(),
+    /* 星点按层分组：CSS 用组选择器控制不同层的亮度与闪烁 */
+    ...['far', 'mid', 'near'].map((layer) =>
+      el(`div.solar__stars.solar__stars--${layer}`, {}, stars
+        .filter((star) => star.layer === layer)
+        .map((star) =>
+          el(`span.solar__star.solar__star--${star.layer}.solar__star--${star.tone}`, {
+            style: {
+              left: `${star.x}%`,
+              top: `${star.y}%`,
+              width: `${star.size}px`,
+              height: `${star.size}px`,
+              animationDelay: `${star.delay}s`,
+              animationDuration: `${star.duration}s`,
+            },
+          }),
+        )),
+    ),
+  ]);
 
   /**
    * 轨道尺寸由 SOLAR_ORBITS 驱动（宽度 2rx%、高度 2ry%）。
@@ -497,8 +579,15 @@ export function solarSystem(model) {
 
     // 土星环 / 天王星环 / 地球月球：必须放在球体**外部**的兄弟元素里，
     // 球体本身 overflow:hidden 会把它们裁掉
+    /**
+     * 土星环分前后两半：
+     * - 后半圈先插入（在球体之前，被球体遮住上半部分）；
+     * - 球体；
+     * - 前半圈最后插入（盖在球体上，但只保留下半部分，见 CSS 的 clip-path）。
+     * 这样环才会"绕到球体背后再绕回前面"，而不是像贴纸一样整圈压在球上。
+     */
     if (planet.planet === 'saturn') {
-      children.push(el('span.solar__ring', { 'aria-hidden': 'true' }));
+      children.push(el('span.solar__ring.solar__ring--back', { 'aria-hidden': 'true' }));
     }
     if (planet.planet === 'uranus') {
       children.push(el('span.solar__ring.solar__ring--vertical', { 'aria-hidden': 'true' }));
@@ -506,8 +595,16 @@ export function solarSystem(model) {
 
     children.push(el('span.solar__body', { 'aria-hidden': 'true' }));
 
+    if (planet.planet === 'saturn') {
+      children.push(el('span.solar__ring.solar__ring--front', { 'aria-hidden': 'true' }));
+      // 球体投在环上的阴影
+      children.push(el('span.solar__ring-shadow', { 'aria-hidden': 'true' }));
+    }
+
     if (planet.planet === 'earth') {
       children.push(el('span.solar__moon', { 'aria-hidden': 'true' }));
+      // 月球轨道弧：很淡的一小段，暗示它在绕地球
+      children.push(el('span.solar__moon-orbit', { 'aria-hidden': 'true' }));
     }
 
     children.push(
