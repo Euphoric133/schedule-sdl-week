@@ -4068,20 +4068,19 @@ dialog {
 }
 
 /**
- * hover/focus：不再整体旋转（容易显得轻浮），改成更克制的三件事：
- * 1. 星点沿轨道弧轻移约 9°；
- * 2. 轨道弧提亮；
- * 3. 徽标底轻微提亮。
+ * hover/focus：让指针"走一格"。
+ *
+ * 钟表品牌最自然的动效就是指针转动——比整体旋转克制，也更贴合语义。
+ * 只动 transform，260ms ease-out；减少动态效果时完全静止。
  */
-.app-brand:hover .brand-dot,
-.app-brand:focus-visible .brand-dot {
-  transform: rotate(9deg);
+.app-brand:hover .brand-hands,
+.app-brand:focus-visible .brand-hands {
+  transform: rotate(30deg);
 }
 
-.app-brand:hover .brand-arc,
-.app-brand:focus-visible .brand-arc {
+.app-brand:hover .brand-dial,
+.app-brand:focus-visible .brand-dial {
   stroke: var(--color-primary-hover);
-  opacity: 1;
 }
 
 .app-brand:hover .brand-badge,
@@ -4099,15 +4098,27 @@ dialog {
   overflow: visible;
 }
 
-/* 星点绕弧线圆心转动：以 viewBox 坐标为原点，避免用百分比导致偏移 */
-.brand-dot {
+/* 指针组绕表盘圆心转动：以 viewBox 坐标为原点，避免百分比导致偏移 */
+.brand-hands {
   transform-box: view-box;
-  transform-origin: 12px 12.5px;
+  transform-origin: 12px 12px;
   transition: transform 0.26s ease-out;
+  /* 4 分钟一圈、每格 1 秒：像真的在走，又慢到不会分散注意力 */
+  animation: brand-tick 240s steps(240, end) infinite;
 }
 
-.brand-arc {
-  transition: stroke 0.26s ease-out, opacity 0.26s ease-out;
+/* 极慢的走针：真正"在走"的钟才有生命感；一秒钟一小格，肉眼几乎察觉不到跳动 */
+@keyframes brand-tick {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.brand-dial {
+  transition: stroke 0.26s ease-out;
 }
 
 .brand-badge {
@@ -5197,11 +5208,12 @@ dialog {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .brand-dot {
+  .brand-hands {
+    animation: none;
     transform: none !important;
   }
-  .brand-dot,
-  .brand-arc,
+  .brand-hands,
+  .brand-dial,
   .brand-badge {
     transition: none;
   }

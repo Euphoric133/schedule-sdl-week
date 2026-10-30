@@ -381,47 +381,61 @@ export function barChart({ days, height = 150, emptyText = '还没有可以统�
  */
 export function brandMark({ size = 24 } = {}) {
   /**
-   * 「七日环」——品牌标识。
+   * 「七日钟」——产品定位是"把七天时间排明白"，所以用**钟表**作主体，
+   * 而不是数字 7：数字 7 只说明"七天"，钟表还说明了"时间"。
    *
-   * 几何（viewBox 24×24，全部对齐到 0.5 网格，避免半像素毛边）：
-   * - 徽标底：x2 y2 w20 h20，圆角 6.5；**只在 ≥24px 时绘制**，
-   *   因为 16px 下它会把图形糊成一团（规格允许 16px 去掉徽标底）。
-   * - 「7」：M7 7.5 H16 L9.5 16.5，线宽 2，圆头圆角。
-   * - 轨道弧：圆心 (12, 12.5)、半径 7 的圆弧，从 322° 顺时针扫 188°，
-   *   也就是**从右上方出发、从「7」下方绕过、收在左下方**。
-   *   （SVG 的 circle 是顺时针、角度递增——选择起始角时容易写反，
-   *     早期版本就扫到了上方，和「7」交叉。）
-   * - 星点：r1.75，圆心精确落在弧上 334° 处，距弧端约 1.5 单位。
+   * 几何（viewBox 24×24，全部对齐到 0.5 或整数，避免半像素毛边）：
+   * - 表盘：圆心 (12,12)、半径 8.6、描边 1.6（= --color-primary）；
+   * - 7 个刻度：每 51.43° 一个，从 r5.8 到 r7.4（= --color-accent）。
+   *   七个刻度才是"七日"，但只有 ≥24px 才画——16px 下会糊成毛边；
+   * - 指针：时针指向 10°（约 12 点过一点）、分针指向 120°（4 点方向），
+   *   即 12:20 姿态。这个角度在小尺寸下最容易读成"钟"，不会像对勾；
+   * - 中心点：r1.25（= --color-accent），压住两根指针的交点。
    *
-   * 颜色全部来自令牌：7 用 currentColor（继承主题文字色）、
-   * 弧用 --color-primary、点用 --color-accent、底用 --color-surface 的混色。
+   * 颜色全部来自令牌：表盘 --color-primary、指针 currentColor、
+   * 刻度与中心点 --color-accent、徽标底 --brand-badge-fill。
    */
-  const RADIUS = 7;
-  const CENTER = { x: 12, y: 12.5 };
-  const CIRC = 2 * Math.PI * RADIUS;
-  const ARC_SPAN_DEG = 188;
-  const ARC_LEN = (CIRC * ARC_SPAN_DEG) / 360;
-  const ARC_START_DEG = 322;
-  const DOT_DEG = 334;
+  const CENTER = 12;
+  const DIAL_R = 8.6;
+  const TICK_INNER = 5.8;
+  const TICK_OUTER = 7.4;
 
-  const dotX = (CENTER.x + RADIUS * Math.cos((DOT_DEG * Math.PI) / 180)).toFixed(2);
-  const dotY = (CENTER.y + RADIUS * Math.sin((DOT_DEG * Math.PI) / 180)).toFixed(2);
-  const withBadge = size >= 24;
+  /** 钟面角度（0 = 12 点，顺时针）→ 坐标 */
+  const pointOnDial = (deg, radius) => {
+    const rad = (deg * Math.PI) / 180;
+    return [CENTER + Math.sin(rad) * radius, CENTER - Math.cos(rad) * radius];
+  };
+
+  const ticks = Array.from({ length: 7 }, (_, index) => {
+    const deg = (index * 360) / 7;
+    const [x1, y1] = pointOnDial(deg, TICK_INNER);
+    const [x2, y2] = pointOnDial(deg, TICK_OUTER);
+    return `<path d="M${x1.toFixed(2)} ${y1.toFixed(2)} L${x2.toFixed(2)} ${y2.toFixed(2)}"
+      stroke="var(--color-accent)" stroke-width="1.3" stroke-linecap="round" />`;
+  }).join('\n  ');
+
+  const hand = (deg, length) => {
+    const [x, y] = pointOnDial(deg, length);
+    return `<path d="M${CENTER} ${CENTER} L${x.toFixed(2)} ${y.toFixed(2)}"
+      stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />`;
+  };
+
+  // 徽标底与刻度只在 ≥24px 时绘制，16px 保留最核心的"表盘 + 指针 + 中心点"
+  const detailed = size >= 24;
 
   return el('span.app-brand__mark', {
     html: `
 <svg viewBox="0 0 24 24" width="${size}" height="${size}" role="presentation"
      aria-hidden="true" focusable="false" fill="none">
-  ${withBadge ? '<rect class="brand-badge" x="2" y="2" width="20" height="20" rx="6.5" fill="var(--brand-badge-fill)" />' : ''}
-  <g class="brand-dot">
-    <circle cx="${dotX}" cy="${dotY}" r="1.75" fill="var(--color-accent)" />
+  ${detailed ? '<rect class="brand-badge" x="2" y="2" width="20" height="20" rx="6.5" fill="var(--brand-badge-fill)" />' : ''}
+  <circle class="brand-dial" cx="12" cy="12" r="${DIAL_R}"
+          stroke="var(--color-primary)" stroke-width="1.6" />
+  ${detailed ? ticks : ''}
+  <g class="brand-hands">
+    ${hand(10, 3.6)}
+    ${hand(120, 6.2)}
   </g>
-  <path class="brand-seven" d="M7 7.5 H16 L9.5 16.5"
-        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <circle class="brand-arc" cx="${CENTER.x}" cy="${CENTER.y}" r="${RADIUS}"
-          stroke="var(--color-primary)" stroke-width="1.4" stroke-linecap="round"
-          stroke-dasharray="${ARC_LEN.toFixed(2)} 999"
-          transform="rotate(${ARC_START_DEG} ${CENTER.x} ${CENTER.y})" />
+  <circle cx="12" cy="12" r="1.25" fill="var(--color-accent)" />
 </svg>`.trim(),
   });
 }

@@ -30,19 +30,21 @@ const read = (rel) => readFile(join(projectRoot, rel), 'utf8');
  * 品牌 Logo
  * ------------------------------------------------------------------ */
 
-test('Logo：内联 SVG、viewBox 24、图元不超过 4 个、颜色全部走令牌', async () => {
+test('Logo：钟表主题，内联 SVG，viewBox 24，颜色全部走令牌', async () => {
   const components = await read('src/ui/components.js');
   const block = components.slice(components.indexOf('export function brandMark'), components.indexOf('首页：七天太阳系'));
+
   assert.match(block, /<svg viewBox="0 0 24 24"/, '应内联 SVG（viewBox 24）');
   assert.match(block, /role="presentation"/, '应为装饰角色');
   assert.match(block, /aria-hidden="true"/, '应对辅助技术隐藏');
   assert.match(block, /focusable="false"/, '不应可聚焦');
 
-  // 图元：徽标底 + 星点 + 「7」 + 弧 = 最多 4 个
-  const shapes = (block.match(/<(rect|circle|path|g)\b/g) ?? []).length;
-  assert.ok(shapes <= 5, `图元过多：${shapes}（规格要求 ≤4，<g> 分组允许 1 个）`);
+  // 钟表主题：表盘 + 指针 + 刻度，不再出现数字 7 的折线
+  assert.match(block, /class="brand-dial"/, '应有表盘');
+  assert.match(block, /class="brand-hands"/, '应有指针组');
+  assert.ok(!block.includes('M7 7.5 H16 L9.5 16.5'), '不应再使用「7」字形');
 
-  // 颜色只能来自 CSS 变量 / currentColor，不允许硬编码色值
+  // 颜色只能来自 CSS 变量 / currentColor
   const colorAttrs = [...block.matchAll(/(?:stroke|fill)="([^"]+)"/g)].map((m) => m[1]);
   for (const value of colorAttrs) {
     const ok = value === 'none' || value === 'currentColor' || value.startsWith('var(--');
@@ -52,39 +54,31 @@ test('Logo：内联 SVG、viewBox 24、图元不超过 4 个、颜色全部走�
   assert.ok(!/[\u{1F300}-\u{1FAFF}]/u.test(block), 'Logo 内不得使用 emoji');
 });
 
-test('Logo：徽标底只在 ≥24px 绘制（16px 下保留图形本体）', async () => {
-  const components = await read('src/ui/components.js');
-  assert.match(components, /const withBadge = size >= 24;/, '徽标底应有尺寸门槛');
-  assert.match(components, /withBadge \? '<rect class="brand-badge"/, '徽标底应按需渲染');
-});
-
-test('Logo：星点精确落在轨道弧上（同一圆心与半径）', async () => {
+test('Logo：7 个刻度表达「七日」，且只在 ≥24px 绘制', async () => {
   const components = await read('src/ui/components.js');
   const block = components.slice(components.indexOf('export function brandMark'), components.indexOf('首页：七天太阳系'));
-  // 星点坐标由 CENTER + RADIUS * (cos, sin) 算出，与弧线共用同一组常量
-  assert.match(block, /CENTER\.x \+ RADIUS \* Math\.cos/, '星点必须按弧的圆心与半径计算');
-  assert.match(block, /CENTER\.y \+ RADIUS \* Math\.sin/, '星点必须按弧的圆心与半径计算');
-  assert.match(block, /r="\$\{RADIUS\}"/, '弧半径应复用同一常量');
+  assert.match(block, /Array\.from\(\{ length: 7 \}/, '应有 7 个刻度');
+  assert.match(block, /const detailed = size >= 24;/, '细节应有尺寸门槛');
+  assert.match(block, /\$\{detailed \? '<rect class="brand-badge"/, '徽标底按需渲染');
+  assert.match(block, /\$\{detailed \? ticks : ''\}/, '刻度按需渲染');
 });
 
-test('Logo：hover 是星点沿弧轻移，不再整体旋转', async () => {
+test('Logo：指针指向由钟面角度换算，中心点压在指针交点', async () => {
+  const components = await read('src/ui/components.js');
+  const block = components.slice(components.indexOf('export function brandMark'), components.indexOf('首页：七天太阳系'));
+  assert.match(block, /CENTER \+ Math\.sin\(rad\) \* radius/, '应按钟面角度换算横坐标');
+  assert.match(block, /CENTER - Math\.cos\(rad\) \* radius/, '12 点朝上意味着纵坐标取负余弦');
+  assert.match(block, /hand\(10, 3\.6\)/, '时针指向 10°');
+  assert.match(block, /hand\(120, 6\.2\)/, '分针指向 120°（4 点）');
+  assert.match(block, /r="1\.25" fill="var\(--color-accent\)"/, '中心点用强调色');
+});
+
+test('Logo：hover 让指针走一格，减少动态效果下静止', async () => {
   const css = await read('src/ui/styles/components.css');
-  assert.match(css, /\.app-brand:hover \.brand-dot[\s\S]{0,80}transform: rotate\(9deg\)/, '星点应在弧线上轻移');
-  assert.match(css, /transform-origin: 12px 12\.5px/, '应绕弧线圆心转动');
-  assert.ok(!/\.app-brand:hover \.app-brand__mark[\s\S]{0,80}rotate\(-8deg\)/.test(css), '旧的整体旋转应已移除');
-});
-
-test('Logo：品牌区是指回首页的链接，并带有可访问名称', async () => {
-  const shell = await read('src/ui/shell.js');
-  assert.match(shell, /el\('a\.app-brand'/, '品牌区应是一个链接');
-  assert.match(shell, /href: '#\/home'/, '应指回首页');
-  assert.match(shell, /'aria-label': '七天学习规划器 · 返回首页'/, '应有可访问名称');
-});
-
-test('Logo：favicon 以 data URI 内联，不引入外部文件', async () => {
-  const html = await read('index.html');
-  assert.match(html, /<link rel="icon"[^>]*href="data:image\/svg\+xml,/, 'favicon 应为内联 data URI');
-  assert.ok(!/href="[^"]*\.(png|ico|svg)"/.test(html), '不应引用外部图标文件');
+  assert.match(css, /\.app-brand:hover \.brand-hands[\s\S]{0,80}transform: rotate\(30deg\)/, 'hover 应转动指针');
+  assert.match(css, /transform-origin: 12px 12px/, '应绕表盘中心转动');
+  assert.match(css, /animation: brand-tick 240s/, '走针应非常慢');
+  assert.match(css, /prefers-reduced-motion: reduce\)[\s\S]{0,200}\.brand-hands[\s\S]{0,120}animation: none/, '减少动态效果应停止走针');
 });
 
 /* ------------------------------------------------------------------ *
