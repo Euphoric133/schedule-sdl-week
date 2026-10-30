@@ -68,8 +68,8 @@ test('Logo：指针指向由钟面角度换算，中心点压在指针交点', a
   const block = components.slice(components.indexOf('export function brandMark'), components.indexOf('首页：七天太阳系'));
   assert.match(block, /CENTER \+ Math\.sin\(rad\) \* radius/, '应按钟面角度换算横坐标');
   assert.match(block, /CENTER - Math\.cos\(rad\) \* radius/, '12 点朝上意味着纵坐标取负余弦');
-  assert.match(block, /hand\(10, 3\.6\)/, '时针指向 10°');
-  assert.match(block, /hand\(120, 6\.2\)/, '分针指向 120°（4 点）');
+  assert.match(block, /hand\(10, [\d.]+\)/, '时针指向 10°');
+  assert.match(block, /hand\(120, [\d.]+\)/, '分针指向 120°（4 点）');
   assert.match(block, /r="1\.25" fill="var\(--color-accent\)"/, '中心点用强调色');
 });
 
@@ -463,4 +463,31 @@ test('行星细节：木星/土星是水平条带（渐变角度不能竖着）'
   const jupiter = css.slice(css.indexOf('.solar__planet--jupiter {'), css.indexOf('.solar__planet--jupiter {') + 900);
   assert.ok(!/repeating-linear-gradient\(\s*9\ddeg/.test(jupiter), '木星条带不应是竖的');
   assert.match(jupiter, /repeating-linear-gradient\(\s*0deg/, '木星应使用 0deg（水平条带）');
+});
+
+test('Logo 几何：刻度与指针、表盘之间都留有净空（防止再次被遮挡）', async () => {
+  const components = await read('src/ui/components.js');
+  const block = components.slice(components.indexOf('export function brandMark'), components.indexOf('首页：七天太阳系'));
+
+  const num = (name) => {
+    const m = block.match(new RegExp(`const ${name} = ([\\d.]+);`));
+    assert.ok(m, `应能从代码里读到 ${name}`);
+    return Number(m[1]);
+  };
+  const tickInner = num('TICK_INNER');
+  const tickOuter = num('TICK_OUTER');
+  const dialR = num('DIAL_R');
+
+  const handLengths = [...block.matchAll(/hand\(\d+,\s*([\d.]+)\)/g)].map((m) => Number(m[1]));
+  assert.ok(handLengths.length >= 2, '应能读到两根指针的长度');
+  const longestHand = Math.max(...handLengths);
+
+  const dialStroke = 1.6;
+  const tickStroke = 1.3;
+  const dialInner = dialR - dialStroke / 2;
+  const tickOuterEdge = tickOuter + tickStroke / 2;
+  const tickInnerEdge = tickInner - tickStroke / 2;
+
+  assert.ok(tickOuterEdge < dialInner, `刻度外沿 ${tickOuterEdge} 会压住表盘线（内沿 ${dialInner}）`);
+  assert.ok(tickInnerEdge > longestHand, `刻度内沿 ${tickInnerEdge} 会被指针（长 ${longestHand}）遮住`);
 });

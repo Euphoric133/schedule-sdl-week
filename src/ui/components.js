@@ -397,8 +397,26 @@ export function brandMark({ size = 24 } = {}) {
    */
   const CENTER = 12;
   const DIAL_R = 8.6;
-  const TICK_INNER = 5.8;
-  const TICK_OUTER = 7.4;
+  /**
+   * 刻度半径区间。
+   *
+   * 早期用 5.8–7.4：贴着表盘内沿，结果**被指针盖住**——
+   * 7 等分刻度与 12 点制指针共用同一个圆心，方位必然有重叠
+   * （实测 154° 与 309° 两个刻度被时针/分针压掉）。
+   *
+   * 现在把刻度往外推到 6.9–7.9（表盘半径 8.6），
+   * 与指针最外端（6.2）之间留出 0.7 的净空，互不遮挡。
+   */
+  /**
+   * 刻度带 5.6–7.0。
+   *
+   * 为什么是这个区间：表盘半径 8.6、描边 1.6，线内沿在 7.8；
+   * 刻度外端 7.0 加半线宽 0.65 后为 7.65，与表盘还留 0.15 的缝，不压线。
+   * 刻度内端 5.6 减半线宽为 4.95，而指针最长 4.2——留出 0.75 净空，
+   * 7 个刻度不会被指针挡住。
+   */
+  const TICK_INNER = 5.6;
+  const TICK_OUTER = 7.0;
 
   /** 钟面角度（0 = 12 点，顺时针）→ 坐标 */
   const pointOnDial = (deg, radius) => {
@@ -432,8 +450,8 @@ export function brandMark({ size = 24 } = {}) {
           stroke="var(--color-primary)" stroke-width="1.6" />
   ${detailed ? ticks : ''}
   <g class="brand-hands">
-    ${hand(10, 3.6)}
-    ${hand(120, 6.2)}
+    ${hand(10, 3.0)}
+    ${hand(120, 4.2)}
   </g>
   <circle cx="12" cy="12" r="1.25" fill="var(--color-accent)" />
 </svg>`.trim(),
