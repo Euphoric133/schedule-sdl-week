@@ -11,7 +11,9 @@
  * 所有数字都来自真实记录（`statsService`），没有数据时显示引导而不是 0 值图表。
  */
 
-import { button, card, emptyState, notice, pill, progressBar, statTile } from '../components.js';
+import { button, card, emptyState, notice, pill, progressBar, solarSystem } from '../components.js';
+import { buildSolarSystemModel } from '../solarSystem.js';
+import { readGardenSnapshot } from '../../services/gardenSync.js';
 import { buildDayCards, renderBoard } from '../board.js';
 import { el, toast } from '../dom.js';
 import { SESSION_STATE } from '../../domain/session.js';
@@ -42,17 +44,42 @@ export function renderHome({ app, services, now }) {
 
   const nodes = [];
 
-  /* ---------- 问候 + 关键操作 ---------- */
+  /* ---------- 七天太阳系（导航 + 状态总览） ---------- */
+  /**
+   * 太阳系取代了原来的 hero 与四块统计磁贴：
+   * 它同时承担"今天怎么样"和"去哪儿"两件事，
+   * 原来的数字并入太阳与各行星，避免首页顶部重复堆叠。
+   */
+  const weekStats = services.statsService.weekly();
+  const gardenFocusMinutes = readGardenFocusMinutes(today);
+  const solarModel = buildSolarSystemModel({
+    state,
+    todayStats,
+    weekStats,
+    streak,
+    plan,
+    today,
+    gardenFocusMinutes,
+  });
+
   nodes.push(
-    el('header.home-hero', {}, [
-      el('div.home-hero__text', {}, [
-        el('p.home-hero__date', { text: `${formatDateWithWeekday(today)}　${greeting(nowMinutes)}` }),
-        el('h1.home-hero__title', {
-          text: running ? '正在进行这一段学习' : nextSession ? `下一项：${taskById.get(nextSession.taskId)?.title ?? '学习任务'}` : activeTasks.length > 0 ? '今天还没有安排' : '先创建你的第一个任务',
+    el('section.home-solar', {}, [
+      el('header.home-solar__head', {}, [
+        el('p.home-solar__date', { text: `${formatDateWithWeekday(today)}　${greeting(nowMinutes)}` }),
+        el('h1.home-solar__title', {
+          text: running
+            ? '正在进行这一段学习'
+            : nextSession
+              ? `下一项：${taskById.get(nextSession.taskId)?.title ?? '学习任务'}`
+              : activeTasks.length > 0
+                ? '今天还没有安排'
+                : '先创建你的第一个任务',
         }),
-        el('p.home-hero__sub', { text: heroSubtitle({ running, nextSession, plan, preview, activeTasks, nowMinutes, taskById }) }),
+        el('p.home-solar__sub', { text: heroSubtitle({ running, nextSession, plan, preview, activeTasks, nowMinutes, taskById }) }),
       ]),
-      el('div.home-hero__actions', {}, heroActions({ services, plan, activeTasks, running, nextSession, preview })),
+      solarSystem(solarModel),
+      /* 操作条：主要按钮放在太阳系之外，不塞进行星内部 */
+      el('div.home-solar__actions', {}, heroActions({ services, plan, activeTasks, running, nextSession, preview })),
     ]),
   );
 
@@ -68,46 +95,6 @@ export function renderHome({ app, services, now }) {
   }
 
   /* ---------- 今日进度（真实数据） ---------- */
-  const plannedMinutes = todaySessions.reduce((sum, session) => sum + session.plannedMinutes, 0);
-  const completedSessions = todaySessions.filter((session) => session.state === SESSION_STATE.COMPLETED);
-  const doneMinutes = completedSessions.reduce((sum, session) => sum + (session.actualMinutes ?? session.plannedMinutes), 0);
-  const weekStats = services.statsService.weekly();
-  const remainingToday = todaySessions
-    .filter((session) => session.state === SESSION_STATE.FLEXIBLE || session.state === SESSION_STATE.IN_PROGRESS)
-    .reduce((sum, session) => sum + session.plannedMinutes, 0);
-
-  nodes.push(
-    el('section.home-tiles', {}, [
-      statTile({
-        label: '今日已完成',
-        value: formatDuration(doneMinutes),
-        hint: `计划 ${formatDuration(plannedMinutes)}　·　${completedSessions.length}/${todaySessions.length} 段`,
-        progress: plannedMinutes > 0 ? doneMinutes / plannedMinutes : 0,
-        kind: 'primary',
-      }),
-      statTile({
-        label: '今天还剩',
-        value: formatDuration(remainingToday),
-        hint: remainingToday > 0 ? `还有 ${todaySessions.filter((s) => s.state === SESSION_STATE.FLEXIBLE).length} 个时段要完成` : '今天的时段都已完成',
-        kind: 'rest',
-        onClick: () => { globalThis.location.hash = '#/day'; },
-      }),
-      statTile({
-        label: '连续学习',
-        value: streak.current > 0 ? `${streak.current} 天` : '—',
-        hint: streak.activeDays > 0 ? `累计 ${streak.activeDays} 天有记录　·　最长 ${streak.longest} 天` : '完成第一段学习就开始记录',
-        kind: 'accent',
-        onClick: () => { globalThis.location.hash = '#/stats'; },
-      }),
-      statTile({
-        label: '本周完成',
-        value: formatDuration(weekStats.thisWeek.actualMinutes),
-        hint: `共 ${weekStats.thisWeek.completedSessions} 段　·　上周 ${formatDuration(weekStats.lastWeek.actualMinutes)}`,
-        kind: 'locked',
-        onClick: () => { globalThis.location.hash = '#/stats'; },
-      }),
-    ]),
-  );
 
   /* ---------- 规划入口 + 下一项 ---------- */
   const leftColumn = [];
@@ -424,3 +411,32 @@ function greeting(minutes) {
 }
 
 export { addDays };
+
+
+/**
+ * 今日专注分钟：来自专注花园的真实记录。
+ *
+ * 为什么单独写成一个函数并整体 try/catch：
+ * - 花园的数据存在它自己的存储里，主应用只读；
+ * - 存储不可用（隐私模式、数据损坏）时必须安静地退回 0，
+ *   不能让首页因为读不到花园数据而整页渲染失败；
+ * - 字段名做多重兼容（不同版本的花园记录用过不同键），
+ *   但**绝不估算**：认不出来就当没有记录。
+ */
+function readGardenFocusMinutes(today) {
+  try {
+    const snapshot = readGardenSnapshot();
+    const sessions = Array.isArray(snapshot?.sessions) ? snapshot.sessions : [];
+    let total = 0;
+    for (const session of sessions) {
+      const stamp = session?.completedAt ?? session?.endedAt ?? session?.startedAt ?? null;
+      if (typeof stamp !== 'string') continue;
+      if (!stamp.startsWith(today)) continue;
+      const minutes = Number(session?.durationMinutes ?? session?.minutes ?? session?.plannedMinutes ?? 0);
+      if (Number.isFinite(minutes) && minutes > 0) total += minutes;
+    }
+    return Math.round(total);
+  } catch {
+    return 0;
+  }
+}

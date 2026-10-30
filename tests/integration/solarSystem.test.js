@@ -1,0 +1,232 @@
+/**
+ * 首页「七天太阳系」与品牌 Logo 的验收测试。
+ *
+ * 这些断言覆盖的是"结构性承诺"，而不是视觉细节：
+ * - Logo 必须是内联 SVG（不是 emoji、不是图片请求）；
+ * - 太阳系必须承载 7 个核心模块，且都是真实链接；
+ * - 每个链接都要有可访问名称；
+ * - 数据模型在空数据 / 有计划 / 有统计时都不报错，且口径来自服务层；
+ * - 窄屏必须有降级布局（轨道列表），而不是把桌面轨道硬缩小。
+ */
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import {
+  SOLAR_BODIES,
+  SOLAR_ORBITS,
+  buildSolarSystemModel,
+  compactDuration,
+  planetPosition,
+} from '../../src/ui/solarSystem.js';
+
+const projectRoot = resolve(fileURLToPath(new URL('../../', import.meta.url)));
+const read = (rel) => readFile(join(projectRoot, rel), 'utf8');
+
+/* ------------------------------------------------------------------ *
+ * 品牌 Logo
+ * ------------------------------------------------------------------ */
+
+test('Logo：品牌区使用内联 SVG，而不是 emoji 或外部图片', async () => {
+  const components = await read('src/ui/components.js');
+  assert.match(components, /export function brandMark/, '应导出 brandMark 组件');
+  assert.match(components, /<svg viewBox="0 0 24 24"/, '应内联 SVG（viewBox 24）');
+  assert.match(components, /stroke="currentColor"/, '主笔画应跟随主题色（currentColor）');
+  assert.match(components, /var\(--color-accent\)/, '轨道/星点应使用强调色 Token');
+  assert.ok(!/[\u{1F300}-\u{1FAFF}]/u.test(components.split('export function brandMark')[1]?.slice(0, 900) ?? ''), 'Logo 内不得使用 emoji');
+});
+
+test('Logo：品牌区是指回首页的链接，并带有可访问名称', async () => {
+  const shell = await read('src/ui/shell.js');
+  assert.match(shell, /el\('a\.app-brand'/, '品牌区应是一个链接');
+  assert.match(shell, /href: '#\/home'/, '应指回首页');
+  assert.match(shell, /'aria-label': '七天学习规划器 · 返回首页'/, '应有可访问名称');
+});
+
+test('Logo：favicon 以 data URI 内联，不引入外部文件', async () => {
+  const html = await read('index.html');
+  assert.match(html, /<link rel="icon"[^>]*href="data:image\/svg\+xml,/, 'favicon 应为内联 data URI');
+  assert.ok(!/href="[^"]*\.(png|ico|svg)"/.test(html), '不应引用外部图标文件');
+});
+
+/* ------------------------------------------------------------------ *
+ * 太阳系结构
+ * ------------------------------------------------------------------ */
+
+test('太阳系：恰好承载 7 个核心模块，路由正确且互不重复', () => {
+  assert.equal(SOLAR_BODIES.length, 7);
+  const routes = SOLAR_BODIES.map((body) => body.route);
+  assert.deepEqual(
+    [...routes].sort(),
+    ['activities', 'ai', 'day', 'garden', 'stats', 'tasks', 'week'],
+    '7 个模块必须与约定一致',
+  );
+  assert.equal(new Set(routes).size, routes.length, '不允许重复路由');
+  // 设置、外观、通知、版本历史、预览不塞进太阳系
+  for (const excluded of ['settings', 'appearance', 'notifications', 'versions', 'preview']) {
+    assert.ok(!routes.includes(excluded), `${excluded} 不应做成行星`);
+  }
+});
+
+test('太阳系：轨道几何是确定的，且都落在舞台范围内', () => {
+  assert.equal(SOLAR_ORBITS.length, 3);
+  for (const body of SOLAR_BODIES) {
+    const pos = planetPosition(body.orbit, body.angle);
+    assert.ok(pos.x > 0 && pos.x < 100, `x 越界: ${pos.x}`);
+    assert.ok(pos.y > 0 && pos.y < 100, `y 越界: ${pos.y}`);
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ * 数据模型
+ * ------------------------------------------------------------------ */
+
+test('数据模型：空数据时给出可读的兜底文案，不抛异常', () => {
+  const model = buildSolarSystemModel({
+    state: { tasks: [], sessions: [], fixedActivities: [] },
+    todayStats: { scheduledMinutes: 0, actualMinutes: 0 },
+    weekStats: { thisWeek: { actualMinutes: 0 } },
+    streak: { current: 0 },
+    plan: null,
+    today: '2026-10-30',
+  });
+
+  assert.equal(model.planets.length, 7);
+  assert.equal(model.sun.value, '未安排');
+  assert.ok(model.sun.ariaLabel.includes('今日总览'));
+  const week = model.planets.find((p) => p.id === 'week');
+  assert.equal(week.value, '尚未生成');
+  assert.equal(week.detail, '去生成七天计划', '没有计划时应给下一步动作，而不是重复"尚未生成"');
+});
+
+test('数据模型：有计划与统计时使用真实数字', () => {
+  const model = buildSolarSystemModel({
+    state: {
+      tasks: [
+        { id: 't1', title: '数学', status: 'not_started', plannedMinutes: 90 },
+        { id: 't2', title: '英语', status: 'completed', plannedMinutes: 60 },
+      ],
+      sessions: [
+        { id: 's1', taskId: 't2', date: '2026-10-30', state: 'completed', plannedMinutes: 60, actualMinutes: 70 },
+        { id: 's2', taskId: 't1', date: '2026-10-30', state: 'flexible', plannedMinutes: 40 },
+      ],
+      fixedActivities: [{ id: 'f1' }, { id: 'f2' }],
+    },
+    todayStats: { scheduledMinutes: 100, actualMinutes: 50 },
+    weekStats: { thisWeek: { actualMinutes: 180 } },
+    streak: { current: 3 },
+    plan: { status: 'feasible', days: [{ studyMinutes: 60 }, { studyMinutes: 0 }, { studyMinutes: 30 }] },
+    today: '2026-10-30',
+    gardenFocusMinutes: 25,
+  });
+
+  assert.equal(model.sun.percent, 50, '50/100 应为 50%');
+  assert.match(model.sun.detail, /已完成/);
+
+  const byId = Object.fromEntries(model.planets.map((p) => [p.id, p]));
+  assert.equal(byId.tasks.value, '1 个待办', '已完成任务不计入待办');
+  assert.match(byId.tasks.detail, /剩余/);
+  assert.equal(byId.day.value, '2 个时段');
+  assert.equal(byId.week.detail, '完整可行');
+  assert.equal(byId.week.value, '2 天有安排', '只有 studyMinutes>0 的天数计入');
+  assert.equal(byId.stats.value, '3 小时');
+  assert.match(byId.stats.detail, /连续 3 天/);
+  assert.equal(byId.garden.value, '25 分钟');
+  assert.equal(byId.activities.value, '2 条');
+});
+
+test('数据模型：每个天体都有可访问名称，包含名称与数值', () => {
+  const model = buildSolarSystemModel({
+    state: { tasks: [], sessions: [], fixedActivities: [] },
+    todayStats: { scheduledMinutes: 0, actualMinutes: 0 },
+    weekStats: { thisWeek: { actualMinutes: 0 } },
+    streak: { current: 0 },
+    plan: null,
+    today: '2026-10-30',
+  });
+  for (const planet of model.planets) {
+    assert.ok(planet.ariaLabel.startsWith(planet.name), '可访问名称应以模块名开头');
+    assert.ok(planet.ariaLabel.includes(planet.value), '可访问名称应包含数值');
+    assert.equal(planet.href, `#/${planet.route}`);
+  }
+});
+
+test('compactDuration：分钟/小时的紧凑写法', () => {
+  assert.equal(compactDuration(0), '0 分钟');
+  assert.equal(compactDuration(45), '45 分钟');
+  assert.equal(compactDuration(60), '1 小时');
+  assert.equal(compactDuration(95), '1 小时 35 分');
+  assert.equal(compactDuration(-5), '0 分钟');
+});
+
+/* ------------------------------------------------------------------ *
+ * 组件与布局
+ * ------------------------------------------------------------------ */
+
+test('组件：太阳与行星都渲染为真实链接，并带 aria-label', async () => {
+  const components = await read('src/ui/components.js');
+  assert.match(components, /export function solarSystem/, '应导出 solarSystem 组件');
+  // 行星/太阳用模板字符串拼类名（`a.solar__planet--${planet}...`），因此匹配反引号
+  assert.match(components, /el\(\s*`a\.solar__planet/, '行星必须是 <a>');
+  assert.match(components, /el\(\s*'a\.solar__sun'/, '太阳必须是 <a>');
+  assert.match(components, /'aria-label': planet\.ariaLabel/, '行星需要可访问名称');
+  assert.match(components, /'aria-hidden': 'true'/, '星点/轨道应为装饰并隐藏于无障碍树');
+});
+
+test('样式：窄屏存在降级布局（轨道列表），不是把桌面轨道整体缩小', async () => {
+  const css = await read('src/ui/styles/components.css');
+  /**
+   * 注意：文件里有多处 `@media (max-width: 720px)`（例如液态玻璃的降级），
+   * 必须挑出**包含太阳系规则**的那一块，不能取第一个。
+   */
+  const blocks = css.split('@media (max-width: 720px)').slice(1);
+  /**
+   * 用「真正的规则」定位，而不是 `.solar__stage` 这个字符串：
+   * 文件开头的结构图注释里也出现过 .solar__stage / .solar__sky，
+   * 按字符串找会命中注释，导致断言永远过不了（这里踩过一次）。
+   */
+  const mobileBlock = blocks.find((block) => /\.solar__orbits\s*\{\s*\n\s*display:\s*none/.test(block));
+  assert.ok(mobileBlock, '应存在针对太阳系的 720px 断点');
+  // 星点与轨道写在同一个选择器组里，一起隐藏
+  assert.match(mobileBlock, /\.solar__sky[\s\S]{0,120}?display: none/, '窄屏应隐藏星点');
+  assert.match(mobileBlock, /\.solar__orbits[\s\S]{0,120}?display: none/, '窄屏应隐藏椭圆轨道');
+  assert.match(mobileBlock, /\.solar__stage[\s\S]{0,120}flex-direction: column/, '窄屏应切为纵向列表');
+  assert.match(mobileBlock, /\.solar__planet[\s\S]{0,200}position: static/, '窄屏行星应回到文档流');
+});
+
+test('样式：减少动态效果时太阳系静止', async () => {
+  const css = await read('src/ui/styles/components.css');
+  const reduceBlocks = css.split('@media (prefers-reduced-motion: reduce)');
+  const relevant = reduceBlocks.slice(1).join('');
+  assert.match(relevant, /\.solar__star[\s\S]{0,120}animation: none/, '减少动态效果时应停止闪烁');
+  assert.match(relevant, /\.solar__body[\s\S]{0,120}animation: none/, '减少动态效果时应停止呼吸');
+});
+
+/* ------------------------------------------------------------------ *
+ * 首页整合与回归
+ * ------------------------------------------------------------------ */
+
+test('首页：使用太阳系替换了 hero 与四块磁贴，同时保留关键操作', async () => {
+  const home = await read('src/ui/pages/home.js');
+  assert.match(home, /solarSystem\(solarModel\)/, '首页应渲染太阳系');
+  assert.match(home, /buildSolarSystemModel\(/, '首页应构建数据模型');
+  assert.ok(!home.includes('home-tiles'), '旧的磁贴区块应被移除');
+  assert.match(home, /home-solar__actions/, '操作条应保留在太阳系之外');
+  // 关键功能仍在
+  for (const feature of ['renderPlanCard', 'renderTodayList', 'renderWeekOverview']) {
+    assert.ok(home.includes(feature), `${feature} 不应因改版而丢失`);
+  }
+});
+
+test('首页：行星数据全部来自服务层，不自己另算统计', async () => {
+  const home = await read('src/ui/pages/home.js');
+  assert.match(home, /services\.statsService\.weekly\(\)/, '周统计应来自 statsService');
+  assert.match(home, /todayStats/, '今日统计应来自 statsService.today()');
+  // 太阳系模型模块本身不应 import 服务层（保持纯函数）
+  const model = await read('src/ui/solarSystem.js');
+  assert.ok(!/from '\.\.\/services\//.test(model), '数据模型模块不得依赖服务层');
+  assert.ok(!/document\.|localStorage/.test(model), '数据模型模块不得触碰 DOM 或存储');
+});

@@ -7,7 +7,7 @@
 
 import { append, clear, downloadText, el, startTicker, stopTicker, toast } from './dom.js';
 import { ROUTES, parseHash } from './router.js';
-import { button, notice } from './components.js';
+import { brandMark, button, notice } from './components.js';
 import { getGardenFrame, hideGardenFrame, showGardenFrame } from './gardenFrame.js';
 import {
   autoStartFocus,
@@ -32,7 +32,22 @@ import { mountStudyTimerPanel, refreshStudyTimerPanel } from './gardenPanel.js';
 export function createShell({ root, app, services, pages, now, todayInfo = null }) {
   clear(root);
 
-  const brand = el('div.app-brand', { 'data-glass': '' }, [el('span.app-brand__mark'), el('span', { text: '七天学习规划器' })]);
+  /**
+   * 品牌区：内联 SVG 图标 + 文字，整体是一个指向首页的链接。
+   *
+   * 为什么做成链接：品牌区是用户最自然想点回首页的地方；
+   * 用 <a href="#/home"> 而不是加 click 事件，是为了保留
+   * 键盘可聚焦、可回车、可右键新开等原生行为。
+   */
+  const brand = el('a.app-brand', {
+    'data-glass': '',
+    href: '#/home',
+    title: '七天学习规划器 · 返回首页',
+    'aria-label': '七天学习规划器 · 返回首页',
+  }, [
+    brandMark({ size: 24 }),
+    el('span.app-brand__text', { text: '七天学习规划器' }),
+  ]);
 
   const todayLabel = el('span', { text: todayInfo ? `今天 ${todayInfo.date} ${todayInfo.weekday}` : '今天' });
   const planLabel = el('span');

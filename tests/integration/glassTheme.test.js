@@ -148,7 +148,9 @@ test('结构：外壳三块与卡片都带 data-glass（镜面高光只作用于
   const domSource = await readFile(join(projectRoot, 'src', 'ui', 'dom.js'), 'utf8');
   const modalSource = await readFile(join(projectRoot, 'src', 'ui', 'modal.js'), 'utf8');
 
-  assert.match(shellSource, /el\('div\.app-brand',\s*\{\s*'data-glass': '' \}/, '品牌区应带 data-glass');
+  // 品牌区由一个指向首页的链接构成（可键盘聚焦、可回车），仍然必须带 data-glass
+  assert.match(shellSource, /el\('a\.app-brand',\s*\{\s*'data-glass': ''/, '品牌区应带 data-glass');
+  assert.match(shellSource, /href: '#\/home'/, '品牌区应是指回首页的链接');
   assert.match(shellSource, /el\('header\.app-topbar',\s*\{\s*'data-glass': '' \}/, '顶栏应带 data-glass');
   assert.match(shellSource, /el\('nav\.app-nav',\s*\{[^}]*'data-glass': ''/, '侧边栏应带 data-glass');
   assert.match(componentsSource, /'data-glass': ''/, 'card/metric 应带 data-glass');

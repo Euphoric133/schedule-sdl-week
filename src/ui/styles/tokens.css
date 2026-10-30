@@ -271,6 +271,48 @@
   /* —— 鼠标高光位置（由 JS 更新） —— */
   --glass-x: 50%;
   --glass-y: 0%;
+
+  /* ========================================================================
+     太阳系（首页仪表盘）
+     ========================================================================
+     这里只放**颜色与尺寸**：天体的主题色、星空底色、轨道线。
+     具体布局在 components.css 里，避免令牌文件变成样式垃圾场。
+     ======================================================================== */
+
+  /* 观测窗底色：浅色下是晨光星图，不是黑块 */
+  --solar-sky-1: #eef3fb;
+  --solar-sky-2: #e6eef9;
+  --solar-sky-3: #f7f2e6;
+  --solar-sky-blend: 140deg;
+  --solar-star: rgba(47, 111, 208, 0.32);
+  --solar-star-glow: rgba(184, 145, 47, 0.28);
+
+  /* 轨道线：足够淡，hover 时才提亮 */
+  --solar-orbit-line: rgba(47, 111, 208, 0.16);
+  --solar-orbit-line-hover: rgba(47, 111, 208, 0.42);
+
+  /* 太阳 */
+  --solar-sun-core: #f3c969;
+  --solar-sun-glow: rgba(243, 201, 105, 0.55);
+  --solar-sun-ring: rgba(184, 145, 47, 0.28);
+
+  /* 行星主题色（克制、同色系，不搞高饱和彩虹） */
+  --solar-mercury: #9aa7b8;
+  --solar-venus: #d9b77a;
+  --solar-earth: #4f8fd8;
+  --solar-mars: #c96f5a;
+  --solar-jupiter: #b58a58;
+  --solar-saturn: #b9a06a;
+  --solar-uranus: #6fb6c4;
+
+  /* 天体尺寸（桌面） */
+  --solar-sun-size: 132px;
+  --solar-planet-sm: 44px;
+  --solar-planet-md: 56px;
+  --solar-planet-lg: 68px;
+
+  /* 面板高度：桌面首屏要能同时看到太阳系与操作条 */
+  --solar-height: 480px;
 }
 
 /* 深色：烟熏玻璃，不纯黑；边框高光更细，阴影更重 */
@@ -293,6 +335,28 @@
   --ambient-2: rgba(60, 140, 130, 0.1);
   --ambient-3: rgba(180, 150, 80, 0.08);
   --ambient-opacity: 0.9;
+
+  /* 深空：深海军蓝到近黑，不是纯黑 */
+  --solar-sky-1: #0e1520;
+  --solar-sky-2: #121c2b;
+  --solar-sky-3: #0b1220;
+  --solar-star: rgba(214, 226, 245, 0.55);
+  --solar-star-glow: rgba(214, 174, 78, 0.45);
+
+  --solar-orbit-line: rgba(150, 185, 235, 0.18);
+  --solar-orbit-line-hover: rgba(150, 185, 235, 0.5);
+
+  --solar-sun-core: #f0cf7e;
+  --solar-sun-glow: rgba(240, 207, 126, 0.45);
+  --solar-sun-ring: rgba(214, 174, 78, 0.3);
+
+  --solar-mercury: #8794a6;
+  --solar-venus: #c8a973;
+  --solar-earth: #5c9ae0;
+  --solar-mars: #cf735d;
+  --solar-jupiter: #bb9060;
+  --solar-saturn: #c2aa74;
+  --solar-uranus: #79c0ce;
 }
 
 /* 跟随系统深色 */
@@ -317,6 +381,27 @@
     --ambient-2: rgba(60, 140, 130, 0.1);
     --ambient-3: rgba(180, 150, 80, 0.08);
     --ambient-opacity: 0.9;
+
+    --solar-sky-1: #0e1520;
+    --solar-sky-2: #121c2b;
+    --solar-sky-3: #0b1220;
+    --solar-star: rgba(214, 226, 245, 0.55);
+    --solar-star-glow: rgba(214, 174, 78, 0.45);
+
+    --solar-orbit-line: rgba(150, 185, 235, 0.18);
+    --solar-orbit-line-hover: rgba(150, 185, 235, 0.5);
+
+    --solar-sun-core: #f0cf7e;
+    --solar-sun-glow: rgba(240, 207, 126, 0.45);
+    --solar-sun-ring: rgba(214, 174, 78, 0.3);
+
+    --solar-mercury: #8794a6;
+    --solar-venus: #c8a973;
+    --solar-earth: #5c9ae0;
+    --solar-mars: #cf735d;
+    --solar-jupiter: #bb9060;
+    --solar-saturn: #c2aa74;
+    --solar-uranus: #79c0ce;
   }
 }
 

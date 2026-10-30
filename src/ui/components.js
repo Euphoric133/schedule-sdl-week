@@ -358,3 +358,153 @@ export function barChart({ days, height = 150, emptyText = '还没有可以统�
     ]),
   ]);
 }
+
+/* ------------------------------------------------------------------ *
+ * 品牌图标（Logo）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 品牌图标：「七日轨道」。
+ *
+ * 构成（三个图元，刻意保持极简，20px 下仍可辨）：
+ * 1. 一条折线 —— 顶部横笔 + 斜向下的长笔，构成「7」；
+ * 2. 一条弧线 —— 从「7」的腰部下方掠过，表示轨道；
+ * 3. 一个圆点 —— 轨道上的一颗行星。
+ *
+ * 为什么用内联 SVG 而不是图片：
+ * - 必须跟随主题 Token（深色/浅色/壁纸）变色，图片做不到；
+ * - 16–64px 任意缩放都清晰，不引入额外请求；
+ * - 单文件构建时无需处理资源内联。
+ *
+ * 颜色全部用 CSS 变量：主笔画 `currentColor`（由容器设置为主色），
+ * 轨道与星点用 `--color-accent`。绝不写死颜色值。
+ */
+export function brandMark({ size = 24 } = {}) {
+  return el('span.app-brand__mark', {
+    html: `
+<svg viewBox="0 0 24 24" width="${size}" height="${size}" role="presentation"
+     aria-hidden="true" focusable="false" fill="none">
+  <path d="M6.4 6.6 H17.4 L9.6 17.6"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M4.6 16.2 A10 10 0 0 1 18.9 9.1"
+        stroke="var(--color-accent)" stroke-width="1.5" stroke-linecap="round" opacity="0.85" />
+  <circle cx="19.4" cy="8.6" r="1.7" fill="var(--color-accent)" />
+</svg>`.trim(),
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * 首页：七天太阳系
+ * ------------------------------------------------------------------ */
+
+/**
+ * 星点位置（确定性）。
+ *
+ * 为什么不用 Math.random：首页每次渲染都必须一致，否则
+ * 切换页面前后星图会跳变；测试也无法稳定断言。
+ * 这里用一个固定的小表 + 线性同余生成，输出完全可复现。
+ */
+function buildStars(count) {
+  const stars = [];
+  let seed = 20261030;
+  const next = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
+  for (let i = 0; i < count; i += 1) {
+    const x = Number((next() * 100).toFixed(2));
+    const y = Number((next() * 100).toFixed(2));
+    const size = Number((0.8 + next() * 1.6).toFixed(2));
+    const delay = Number((next() * 8).toFixed(2));
+    stars.push({ x, y, size, delay, key: i });
+  }
+  return stars;
+}
+
+/**
+ * 「七天太阳系」仪表盘。
+ *
+ * 语义定位：**导航 + 状态总览**，不是装饰动画。
+ * 因此每个天体都是真实的 <a>，带可访问名称，键盘可 Tab、可 Enter。
+ *
+ * 结构（同一份 DOM，靠 CSS 在窄屏切成列表）：
+ *   section.solar
+ *     ├─ .solar__sky      星点（纯装饰，aria-hidden）
+ *     ├─ .solar__orbits   三条椭圆轨道（纯装饰，aria-hidden）
+ *     ├─ a.solar__sun     太阳 = 今日总览 → #/home
+ *     └─ a.solar__planet × 7
+ *
+ * @param {{sun: object, planets: object[]}} model buildSolarSystemModel 的产物
+ */
+export function solarSystem(model) {
+  const { sun, planets } = model;
+  const stars = buildStars(56);
+
+  const sky = el('div.solar__sky', { 'aria-hidden': 'true' });
+  for (const star of stars) {
+    sky.appendChild(
+      el('span.solar__star', {
+        style: {
+          left: `${star.x}%`,
+          top: `${star.y}%`,
+          width: `${star.size}px`,
+          height: `${star.size}px`,
+          animationDelay: `${star.delay}s`,
+        },
+      }),
+    );
+  }
+
+  const orbits = el('div.solar__orbits', { 'aria-hidden': 'true' }, [
+    el('span.solar__orbit.solar__orbit--1'),
+    el('span.solar__orbit.solar__orbit--2'),
+    el('span.solar__orbit.solar__orbit--3'),
+  ]);
+
+  const sunNode = el(
+    'a.solar__sun',
+    {
+      href: sun.route === 'home' ? '#/home' : `#/${sun.route}`,
+      'aria-label': sun.ariaLabel,
+      title: sun.ariaLabel,
+      style: { '--solar-percent': String(sun.percent ?? 0) },
+    },
+    [
+      el('span.solar__sun-halo', { 'aria-hidden': 'true' }),
+      el('span.solar__sun-core', {}, [
+        el('span.solar__sun-value', { text: sun.value }),
+        el('span.solar__sun-caption', { text: '今日' }),
+      ]),
+      el('span.solar__sun-meta', {}, [
+        el('strong', { text: sun.name }),
+        el('span', { text: sun.detail }),
+      ]),
+    ],
+  );
+
+  const planetNodes = planets.map((planet) =>
+    el(
+      `a.solar__planet.solar__planet--${planet.planet}.solar__planet--${planet.size}`,
+      {
+        href: planet.href,
+        'aria-label': planet.ariaLabel,
+        title: planet.ariaLabel,
+        style: { '--solar-x': `${planet.x}%`, '--solar-y': `${planet.y}%` },
+      },
+      [
+        el('span.solar__body', { 'aria-hidden': 'true' }),
+        el('span.solar__chip', {}, [
+          el('strong.solar__chip-name', { text: planet.name }),
+          el('span.solar__chip-value', { text: planet.value }),
+          el('span.solar__chip-detail', { text: planet.detail }),
+        ]),
+      ],
+    ),
+  );
+
+  return el('section.solar', { 'data-glass': '', 'aria-label': '七天太阳系：今日总览与七个核心模块' }, [
+    sky,
+    orbits,
+    el('div.solar__stage', {}, [sunNode, ...planetNodes]),
+  ]);
+}
