@@ -612,7 +612,7 @@ test('恢复出厂设置：数据、设置、主题一起回到初始状态', as
     assert.equal(after.officialPlan, null, '正式计划必须清空');
     assert.equal(after.planHistory.length, 0, '版本历史必须清空');
     assert.equal(after.settings.maxSessionsPerDay, 24, '设置必须恢复默认');
-    assert.equal(services.appearanceService.getPreferences().appearance.theme, 'light', '主题必须恢复默认');
+    assert.equal(services.appearanceService.getPreferences().appearance.theme, 'dark', '主题必须恢复默认（深色）');
     assert.equal(validateAppState(after).ok, true, '重置后数据仍然合法');
   });
 });

@@ -334,10 +334,11 @@ test('任务列表：完成任务后仍保留学习记录，并继续以"已完�
 
 test('主题：只剩浅色与深色，旧的 system 会被映射成显式主题', () => {
   assert.deepEqual(Object.keys(THEME).sort(), ['DARK', 'LIGHT']);
-  assert.equal(defaultPreferences().appearance.theme, THEME.LIGHT);
+  // 产品默认值已由浅色改为深色（深空是当前主基调），浅色仍可手动切换
+  assert.equal(defaultPreferences().appearance.theme, THEME.DARK);
   assert.equal(normalizeTheme('system', { prefersDark: true }), THEME.DARK);
   assert.equal(normalizeTheme('system', { prefersDark: false }), THEME.LIGHT);
-  assert.equal(normalizeTheme('rainbow'), THEME.LIGHT, '未知值回落到默认主题，不能崩');
+  assert.equal(normalizeTheme('rainbow'), THEME.DARK, '未知值回落到默认主题（深色），不能崩');
 });
 
 test('主题：旧偏好里的 system 在读取时被安全转换', () => {

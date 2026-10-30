@@ -34,8 +34,16 @@ export const THEME = Object.freeze({
  */
 export function normalizeTheme(theme, { prefersDark = false } = {}) {
   if (theme === THEME.LIGHT || theme === THEME.DARK) return theme;
+  // 已废弃的 'system'：按当前系统偏好落成一个显式主题，避免用户观感突变
   if (theme === 'system') return prefersDark ? THEME.DARK : THEME.LIGHT;
-  return THEME.LIGHT;
+  /**
+   * 未知值 / 缺失值 → **深色**。
+   *
+   * 默认主题从浅色改为深色是产品决定：深空视觉是这一版的主基调。
+   * 注意这里只影响"没有有效值"的情况；用户显式保存过 light 的不会被改写
+   * （见 normalizeAppearance 里的 themeExplicit 逻辑）。
+   */
+  return THEME.DARK;
 }
 
 export const NOTIFICATION_TYPE = Object.freeze({
@@ -48,7 +56,15 @@ export function defaultPreferences() {
   return {
     version: 1,
     appearance: {
-      theme: THEME.LIGHT,
+      /**
+       * 默认主题：深色。
+       *
+       * 深空是当前视觉的主基调，浅色仍可在设置页切换。
+       * `themeExplicit` 用来区分"用户主动选过"与"只是旧默认值"，
+       * 这样默认值变更不会静默覆盖用户明确的选择。
+       */
+      theme: THEME.DARK,
+      themeExplicit: false,
       wallpaper: {
         enabled: false,
         fileName: null,
@@ -116,12 +132,34 @@ function mergeDefaults(defaults, stored) {
  */
 function normalizeAppearance(preferences) {
   const prefersDark = Boolean(globalThis.matchMedia?.('(prefers-color-scheme: dark)')?.matches);
+  const appearance = preferences.appearance ?? {};
+  const explicit = appearance.themeExplicit === true;
+
+  /**
+   * 迁移策略（默认主题由浅改深之后必须处理，否则老用户会被"卡"在浅色）：
+   *
+   * - `themeExplicit === true`：用户主动选过，**原样保留**，不做任何改写；
+   * - 没有该标记（旧版本数据）：说明这个值可能是"旧默认浅色"而不是用户的主动选择，
+   *   统一迁移为深色，并把标记设为 false（下次用户主动切换时才置 true）；
+   * - 已废弃的 `system`：仍然按系统偏好落成显式主题，再走上面的规则。
+   *
+   * 代价说明：确实有意选择浅色、但从未在设置页点过切换的老用户会被迁到深色。
+   * 这是"无法区分意图"时选择默认值的必然代价；用户可以一键切回，且之后会被记住。
+   */
+  let theme;
+  if (explicit) {
+    theme = normalizeTheme(appearance.theme, { prefersDark });
+  } else if (appearance.theme === 'system') {
+    // 已废弃的"跟随系统"：按当前系统偏好落成显式主题，观感不变
+    theme = prefersDark ? THEME.DARK : THEME.LIGHT;
+  } else {
+    // 旧默认值或缺失 → 新的默认深色
+    theme = THEME.DARK;
+  }
+
   return {
     ...preferences,
-    appearance: {
-      ...preferences.appearance,
-      theme: normalizeTheme(preferences.appearance?.theme, { prefersDark }),
-    },
+    appearance: { ...appearance, theme, themeExplicit: explicit },
   };
 }
 

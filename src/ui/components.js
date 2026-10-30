@@ -437,7 +437,7 @@ function buildStars(count) {
  * @param {{sun: object, planets: object[]}} model buildSolarSystemModel 的产物
  */
 export function solarSystem(model) {
-  const { sun, planets } = model;
+  const { sun, planets, orbits = [] } = model;
   const stars = buildStars(56);
 
   const sky = el('div.solar__sky', { 'aria-hidden': 'true' });
@@ -455,11 +455,21 @@ export function solarSystem(model) {
     );
   }
 
-  const orbits = el('div.solar__orbits', { 'aria-hidden': 'true' }, [
-    el('span.solar__orbit.solar__orbit--1'),
-    el('span.solar__orbit.solar__orbit--2'),
-    el('span.solar__orbit.solar__orbit--3'),
-  ]);
+  /**
+   * 轨道尺寸由 SOLAR_ORBITS 驱动（宽度 2rx%、高度 2ry%）。
+   *
+   * 这是"行星脱离轨道"的根治方式：绘制轨道与计算行星坐标共用同一份数据。
+   * 以前样式表里另写了一套百分比，两边一旦不同步，行星就会偏出轨道。
+   */
+  const orbitLayer = el(
+    'div.solar__orbits',
+    { 'aria-hidden': 'true' },
+    orbits.map((ring, index) =>
+      el(`span.solar__orbit.solar__orbit--${index + 1}`, {
+        style: { '--orbit-w': `${ring.rx * 2}%`, '--orbit-h': `${ring.ry * 2}%` },
+      }),
+    ),
+  );
 
   const sunNode = el(
     'a.solar__sun',
@@ -482,29 +492,49 @@ export function solarSystem(model) {
     ],
   );
 
-  const planetNodes = planets.map((planet) =>
-    el(
+  const planetNodes = planets.map((planet) => {
+    const children = [el('span.solar__glow', { 'aria-hidden': 'true' })];
+
+    // 土星环 / 天王星环 / 地球月球：必须放在球体**外部**的兄弟元素里，
+    // 球体本身 overflow:hidden 会把它们裁掉
+    if (planet.planet === 'saturn') {
+      children.push(el('span.solar__ring', { 'aria-hidden': 'true' }));
+    }
+    if (planet.planet === 'uranus') {
+      children.push(el('span.solar__ring.solar__ring--vertical', { 'aria-hidden': 'true' }));
+    }
+
+    children.push(el('span.solar__body', { 'aria-hidden': 'true' }));
+
+    if (planet.planet === 'earth') {
+      children.push(el('span.solar__moon', { 'aria-hidden': 'true' }));
+    }
+
+    children.push(
+      el('span.solar__chip', {}, [
+        el('strong.solar__chip-name', { text: planet.name }),
+        el('span.solar__chip-value', { text: planet.value }),
+        el('span.solar__chip-detail', { text: planet.detail }),
+      ]),
+    );
+
+    return el(
       `a.solar__planet.solar__planet--${planet.planet}.solar__planet--${planet.size}`,
       {
         href: planet.href,
         'aria-label': planet.ariaLabel,
         title: planet.ariaLabel,
         style: { '--solar-x': `${planet.x}%`, '--solar-y': `${planet.y}%` },
+        // 底部行星的 chip 翻到上方，避免超出面板
+        ...(planet.flip ? { 'data-flip': 'up' } : {}),
       },
-      [
-        el('span.solar__body', { 'aria-hidden': 'true' }),
-        el('span.solar__chip', {}, [
-          el('strong.solar__chip-name', { text: planet.name }),
-          el('span.solar__chip-value', { text: planet.value }),
-          el('span.solar__chip-detail', { text: planet.detail }),
-        ]),
-      ],
-    ),
-  );
+      children,
+    );
+  });
 
   return el('section.solar', { 'data-glass': '', 'aria-label': '七天太阳系：今日总览与七个核心模块' }, [
     sky,
-    orbits,
+    orbitLayer,
     el('div.solar__stage', {}, [sunNode, ...planetNodes]),
   ]);
 }

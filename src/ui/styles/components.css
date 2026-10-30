@@ -4099,18 +4099,20 @@ dialog {
   }
 }
 
+
 /* ==========================================================================
    首页：七天太阳系
    ==========================================================================
-   结构：section.solar
-           ├─ .solar__sky      星点（装饰）
-           ├─ .solar__orbits   三条椭圆轨道（装饰）
-           └─ .solar__stage
-                ├─ a.solar__sun
-                └─ a.solar__planet × 7
+   几何契约（改这里之前请先读一遍）：
 
-   桌面：stage 是定位上下文，天体绝对定位在椭圆轨道上；
-   窄屏（≤720px）：stage 变成纵向列表，轨道与星点隐藏。
+   1. 轨道尺寸**由 JS 驱动**：组件把 SOLAR_ORBITS 的 rx/ry 写成
+      `--orbit-w: (rx*2)%`、`--orbit-h: (ry*2)%`，样式表不再手写百分比。
+      以前两边各写一套，结果行星"脱离轨道"且外圈被裁。
+   2. 行星链接的盒子**与球体同尺寸**：left/top 是轨道坐标，
+      `translate: -50% -50%` 因此正好把**球心**压在坐标上。
+      早期版本把"球体 + chip"整体居中，球心因此上移，视觉上脱离轨道。
+   3. chip 绝对定位在球体外侧，不参与父级尺寸计算；
+      外圈底部行星用 `data-flip="up"` 把 chip 翻到上方，避免超出面板。
    ========================================================================== */
 
 .home-solar {
@@ -4157,14 +4159,13 @@ dialog {
   border: 1px solid var(--color-border);
   overflow: hidden;
   isolation: isolate;
-  /* 单层渐变星空：不使用图片，也不叠加额外的大面积 backdrop-filter */
   background:
     radial-gradient(120% 90% at 18% 12%, var(--solar-star-glow) 0%, transparent 42%),
     radial-gradient(90% 70% at 82% 88%, var(--solar-sky-3) 0%, transparent 55%),
     linear-gradient(var(--solar-sky-blend), var(--solar-sky-1), var(--solar-sky-2));
 }
 
-/* —— 星点（装饰，不进无障碍树） —— */
+/* —— 星点（装饰） —— */
 .solar__sky {
   position: absolute;
   inset: 0;
@@ -4183,14 +4184,14 @@ dialog {
 @keyframes solar-twinkle {
   0%,
   100% {
-    opacity: 0.35;
+    opacity: 0.32;
   }
   50% {
     opacity: 0.9;
   }
 }
 
-/* —— 轨道 —— */
+/* —— 轨道：尺寸完全来自 JS —— */
 .solar__orbits {
   position: absolute;
   inset: 0;
@@ -4202,32 +4203,22 @@ dialog {
   position: absolute;
   left: 50%;
   top: 50%;
+  width: var(--orbit-w, 40%);
+  height: var(--orbit-h, 32%);
   translate: -50% -50%;
   border: 1px solid var(--solar-orbit-line);
   border-radius: 50%;
-  /* 轨道缓慢漂移：只动 transform（rotate 由伪元素承担），不触发布局 */
-  transition: border-color 0.25s ease;
+  transition: border-color 0.24s ease, box-shadow 0.24s ease;
 }
 
-.solar__orbit--1 {
-  width: 46%;
-  height: 54%;
-}
-
-.solar__orbit--2 {
-  width: 72%;
-  height: 84%;
-}
-
-.solar__orbit--3 {
-  width: 96%;
-  height: 114%;
-}
-
-/* 轨道上的柔和光环：hover 对应行星时由 JS 无关的 :has 选中，不支持时降级为无光环 */
-.solar__stage:has(.solar__planet:hover) ~ .solar__orbits .solar__orbit,
-.solar__stage:has(.solar__planet:focus-visible) ~ .solar__orbits .solar__orbit {
+/* 轨道与行星联动高亮。
+   注意：.solar__orbits 在 DOM 里位于 .solar__stage **之前**，
+   所以不能用 `.stage:has(...) ~ .orbits`（兄弟选择器方向反了，永远不匹配），
+   必须以共同祖先 .solar 作为 :has 的作用域。 */
+.solar:has(.solar__planet:hover) .solar__orbit,
+.solar:has(.solar__planet:focus-within) .solar__orbit {
   border-color: var(--solar-orbit-line-hover);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--solar-orbit-line-hover) 55%, transparent);
 }
 
 /* —— 舞台 —— */
@@ -4246,29 +4237,33 @@ dialog {
   width: var(--solar-sun-size);
   height: var(--solar-sun-size);
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
   border-radius: 50%;
   text-decoration: none;
   color: var(--color-text);
-  background: radial-gradient(circle at 35% 30%, var(--solar-sun-core) 0%, transparent 62%),
-    radial-gradient(circle at 70% 75%, var(--solar-sun-glow) 0%, transparent 70%),
-    var(--glass-bg-card);
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.5) 0%, transparent 46%),
+    radial-gradient(circle at 70% 76%, rgba(120, 70, 10, 0.42) 0%, transparent 62%),
+    radial-gradient(circle at 50% 50%, var(--solar-sun-core) 0%, color-mix(in srgb, var(--solar-sun-core) 55%, #7a4b12) 100%);
   border: 1px solid var(--solar-sun-ring);
-  box-shadow: 0 0 32px var(--solar-sun-glow), var(--glass-shadow);
+  box-shadow:
+    0 0 32px var(--solar-sun-glow),
+    0 0 72px color-mix(in srgb, var(--solar-sun-glow) 45%, transparent),
+    var(--glass-shadow);
+  z-index: 3;
 }
 
 .solar__sun-halo {
   position: absolute;
-  inset: -12px;
+  inset: -14px;
   border-radius: 50%;
   border: 1px solid var(--solar-sun-ring);
-  opacity: 0.6;
+  opacity: 0.55;
+  pointer-events: none;
 }
 
-/* 今日完成环：用 conic-gradient 表示百分比，由 --solar-percent 驱动 */
+/* 今日完成环（conic-gradient 由 --solar-percent 驱动） */
 .solar__sun::after {
   content: '';
   position: absolute;
@@ -4283,14 +4278,13 @@ dialog {
   pointer-events: none;
 }
 
-/* 太阳内部的数值与说明必须两行显示（否则会挤成"未安排今日"） */
 .solar__sun-core {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 1px;
-  position: relative;
-  z-index: 1;
 }
 
 .solar__sun-value {
@@ -4301,12 +4295,12 @@ dialog {
 
 .solar__sun-caption {
   font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
+  color: color-mix(in srgb, var(--color-text) 72%, transparent);
 }
 
 .solar__sun-meta {
   position: absolute;
-  top: calc(100% + var(--space-2));
+  top: calc(100% + var(--space-3));
   left: 50%;
   translate: -50% 0;
   display: flex;
@@ -4316,7 +4310,6 @@ dialog {
   white-space: nowrap;
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
-  /* 太阳的文字只在下方一行，绝不放进球体内部挤压数字 */
 }
 
 .solar__sun-meta strong {
@@ -4327,144 +4320,159 @@ dialog {
 .solar__sun:focus-visible,
 .solar__planet:focus-visible {
   outline: 2px solid var(--color-primary);
-  outline-offset: 4px;
+  outline-offset: 6px;
 }
 
-/* —— 行星 —— */
+/* —— 行星：盒子 = 球体尺寸，球心压在轨道坐标上 —— */
 .solar__planet {
   position: absolute;
   left: var(--solar-x);
   top: var(--solar-y);
+  width: var(--planet-size);
+  height: var(--planet-size);
   translate: -50% -50%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
+  display: block;
   text-decoration: none;
   color: var(--color-text);
-  /* 行星本体放大靠 transform，不改变命中区域，避免 hover 抖动 */
-  transition: transform 0.2s ease;
+  border-radius: 50%;
+  z-index: 2;
 }
 
+/* 尺寸档位（只改 --planet-size，不改盒子结构） */
+.solar__planet--sm {
+  --planet-size: var(--solar-planet-sm);
+}
+.solar__planet--md {
+  --planet-size: var(--solar-planet-md);
+}
+.solar__planet--lg {
+  --planet-size: var(--solar-planet-lg);
+}
+
+/* hover/focus：整颗行星提到最上层，避免光晕被邻星压住 */
 .solar__planet:hover,
 .solar__planet:focus-visible {
-  transform: scale(1.04);
-  /* hover 时暂停该行星的自转，避免"点不到" */
+  z-index: 6;
 }
 
+/* —— 球体：多层渐变做出体积与纹理 —— */
+.solar__body {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.5) 0%, transparent 40%),
+    radial-gradient(circle at 72% 80%, rgba(0, 0, 0, 0.55) 0%, transparent 62%),
+    var(--planet-surface, none),
+    var(--planet-color, var(--color-primary));
+  box-shadow:
+    inset -4px -6px 12px rgba(0, 0, 0, 0.5),
+    inset 2px 2px 6px rgba(255, 255, 255, 0.16),
+    0 6px 12px rgba(0, 0, 0, 0.28);
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+
+/* 表面纹理层：缓慢自转（只动 transform） */
+.solar__body::before {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background: var(--planet-texture, none);
+  animation: planet-spin var(--planet-spin, 64s) linear infinite;
+  pointer-events: none;
+}
+
+@keyframes planet-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 大气边缘光 */
+.solar__body::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--planet-color) 55%, white 45%);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* hover：球体放大 + 发光（chip 不跟着放大） */
 .solar__planet:hover .solar__body,
 .solar__planet:focus-visible .solar__body {
-  animation-play-state: paused;
-  box-shadow: 0 0 0 2px var(--glass-highlight), 0 0 18px var(--solar-orbit-line-hover), var(--glass-shadow);
+  transform: scale(1.1);
+  box-shadow:
+    inset -4px -6px 12px rgba(0, 0, 0, 0.45),
+    inset 2px 2px 8px rgba(255, 255, 255, 0.22),
+    0 0 0 1px color-mix(in srgb, var(--planet-color) 55%, transparent),
+    0 0 18px 4px color-mix(in srgb, var(--planet-glow) 65%, transparent),
+    0 0 42px 10px color-mix(in srgb, var(--planet-glow) 35%, transparent);
 }
 
-.solar__body {
-  display: block;
-  width: var(--solar-planet-md);
-  height: var(--solar-planet-md);
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.55) 0%, transparent 46%),
-    radial-gradient(circle at 68% 78%, rgba(0, 0, 0, 0.22) 0%, transparent 60%),
-    var(--planet-color, var(--color-primary));
-  box-shadow: inset -3px -4px 10px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.18);
-  animation: solar-breathe 12s ease-in-out infinite;
-}
-
-@keyframes solar-breathe {
-  0%,
-  100% {
-    filter: brightness(1);
-  }
-  50% {
-    filter: brightness(1.08);
-  }
-}
-
-/* 尺寸档位 */
-.solar__planet--sm .solar__body {
-  width: var(--solar-planet-sm);
-  height: var(--solar-planet-sm);
-}
-
-.solar__planet--lg .solar__body {
-  width: var(--solar-planet-lg);
-  height: var(--solar-planet-lg);
-}
-
-/* 各行星主题色（全部来自令牌） */
-.solar__planet--mercury {
-  --planet-color: var(--solar-mercury);
-}
-.solar__planet--venus {
-  --planet-color: var(--solar-venus);
-}
-.solar__planet--earth {
-  --planet-color: var(--solar-earth);
-}
-.solar__planet--mars {
-  --planet-color: var(--solar-mars);
-}
-.solar__planet--jupiter {
-  --planet-color: var(--solar-jupiter);
-}
-.solar__planet--saturn {
-  --planet-color: var(--solar-saturn);
-}
-.solar__planet--uranus {
-  --planet-color: var(--solar-uranus);
-}
-
-/* 土星环 */
-.solar__planet--saturn .solar__body::after {
-  content: '';
+/* 外圈光环：hover 时铺开，只动 transform/opacity */
+.solar__glow {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 165%;
-  height: 34%;
-  translate: -50% -50%;
-  border: 1px solid var(--planet-color);
+  inset: -18%;
   border-radius: 50%;
-  opacity: 0.65;
-  rotate: -18deg;
+  background: radial-gradient(circle, color-mix(in srgb, var(--planet-glow) 55%, transparent) 0%, transparent 68%);
+  opacity: 0;
+  transform: scale(0.85);
+  transition: transform 0.24s ease, opacity 0.24s ease;
+  pointer-events: none;
+  z-index: -1;
 }
 
-.solar__planet--saturn .solar__body {
-  position: relative;
+.solar__planet:hover .solar__glow,
+.solar__planet:focus-visible .solar__glow {
+  opacity: 0.75;
+  transform: scale(1.3);
 }
 
-/* 地球的小卫星 */
-.solar__planet--earth .solar__body::after {
-  content: '';
-  position: absolute;
-  right: -10%;
-  top: 18%;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--color-text-faint);
-}
-
-.solar__planet--earth .solar__body {
-  position: relative;
-}
-
-/* 行星标签：始终可见，不依赖 hover */
+/* —— chip：绝对定位在球体下方（或上方），不参与父级尺寸 —— */
+/* chip 单行：名称 + 数值。细节放进 title/aria-label，避免 chip 过大压住邻星 */
 .solar__chip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  translate: -50% 0;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 5px;
   padding: 2px var(--space-2);
   border-radius: var(--radius-sm);
-  /* 高不透明度玻璃，保证在任何星云上都可读 */
   background: var(--glass-bg-card);
   border: 1px solid var(--color-border);
-  backdrop-filter: none;
   box-shadow: var(--shadow-sm);
+  white-space: nowrap;
   text-align: center;
-  max-width: 148px;
+  z-index: 2;
+  transition: translate 0.22s ease;
+}
+
+/* 外圈底部行星：chip 翻到球体上方，避免超出面板 */
+.solar__planet[data-flip='up'] .solar__chip {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
+/* hover 时 chip 轻微上浮 1–2px（不放大） */
+.solar__planet:hover .solar__chip,
+.solar__planet:focus-visible .solar__chip {
+  translate: -50% -2px;
+}
+
+.solar__planet[data-flip='up']:hover .solar__chip,
+.solar__planet[data-flip='up']:focus-visible .solar__chip {
+  translate: -50% -2px;
 }
 
 .solar__chip-name {
@@ -4476,51 +4484,226 @@ dialog {
 
 .solar__chip-value {
   font-size: var(--font-size-xs);
-  color: var(--color-text);
   line-height: 1.4;
   white-space: nowrap;
 }
 
+/* 细节不常驻显示：只有在很宽的屏幕上才作为第二行出现 */
 .solar__chip-detail {
+  display: none;
   font-size: 11px;
   color: var(--color-text-muted);
   line-height: 1.35;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 136px;
 }
 
-/* 窄屏：行星标签只留名称与数值，细节靠 title/aria-label */
+/* ==========================================================================
+   行星外观：每个星球一套表面/纹理/大气
+   ==========================================================================
+   全部用渐变实现，不引入图片。纹理层放在 --planet-texture（自转），
+   表面静态层放在 --planet-surface。
+   ========================================================================== */
+
+/* 水星：灰色岩质 + 细小陨石坑 + 无明显大气 */
+.solar__planet--mercury {
+  --planet-color: var(--solar-mercury);
+  --planet-glow: color-mix(in srgb, var(--solar-mercury) 60%, transparent);
+  --planet-surface: radial-gradient(circle at 62% 38%, rgba(255, 255, 255, 0.14) 0 3%, transparent 4%),
+    radial-gradient(circle at 38% 66%, rgba(0, 0, 0, 0.28) 0 4%, transparent 5%),
+    radial-gradient(circle at 72% 70%, rgba(0, 0, 0, 0.22) 0 3%, transparent 4%);
+  --planet-texture: radial-gradient(circle at 30% 70%, rgba(0, 0, 0, 0.16) 0 8%, transparent 9%),
+    radial-gradient(circle at 70% 30%, rgba(0, 0, 0, 0.12) 0 6%, transparent 7%);
+  --planet-spin: 90s;
+}
+
+/* 金星：奶油黄 + 柔和云带 + 厚重大气 */
+.solar__planet--venus {
+  --planet-color: var(--solar-venus);
+  --planet-glow: color-mix(in srgb, var(--solar-venus) 70%, transparent);
+  --planet-surface: repeating-linear-gradient(
+      104deg,
+      rgba(255, 255, 255, 0.16) 0 6px,
+      transparent 6px 16px
+    ),
+    radial-gradient(circle at 40% 30%, rgba(255, 255, 255, 0.3) 0%, transparent 52%);
+  --planet-texture: none;
+  --planet-spin: 70s;
+}
+
+.solar__planet--venus .solar__body::after {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--solar-venus) 40%, #fff 60%);
+  opacity: 0.7;
+}
+
+/* 地球：海洋 + 陆地 + 云带 + 极冠 + 蓝色大气 + 月球 */
+.solar__planet--earth {
+  --planet-color: var(--solar-earth);
+  --planet-glow: color-mix(in srgb, var(--solar-earth) 78%, transparent);
+  --planet-surface: radial-gradient(ellipse 22% 14% at 34% 40%, rgba(96, 168, 96, 0.95) 0%, transparent 100%),
+    radial-gradient(ellipse 18% 12% at 62% 58%, rgba(120, 150, 80, 0.9) 0%, transparent 100%),
+    radial-gradient(ellipse 14% 10% at 48% 72%, rgba(150, 120, 80, 0.85) 0%, transparent 100%),
+    radial-gradient(ellipse 60% 8% at 50% 22%, rgba(255, 255, 255, 0.55) 0%, transparent 100%),
+    radial-gradient(ellipse 50% 6% at 44% 62%, rgba(255, 255, 255, 0.4) 0%, transparent 100%),
+    radial-gradient(circle at 50% 4%, rgba(255, 255, 255, 0.9) 0 12%, transparent 13%),
+    radial-gradient(circle at 50% 96%, rgba(255, 255, 255, 0.85) 0 10%, transparent 11%);
+  --planet-texture: radial-gradient(ellipse 30% 8% at 40% 44%, rgba(255, 255, 255, 0.28) 0%, transparent 100%),
+    radial-gradient(ellipse 24% 7% at 66% 30%, rgba(255, 255, 255, 0.22) 0%, transparent 100%);
+  --planet-spin: 60s;
+}
+
+.solar__planet--earth .solar__body::after {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, #9ad0ff 70%, transparent);
+  opacity: 0.85;
+}
+
+/* 地球的月球：放在球体外部的兄弟元素里（否则会被 overflow: hidden 裁掉） */
+.solar__moon {
+  position: absolute;
+  right: -16%;
+  top: 26%;
+  width: 22%;
+  height: 22%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f2f4f7, #b6bcc6 70%);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+
+/* 火星：锈红 + 暗色玄武岩斑 + 白色极冠 + 淡红大气 */
+.solar__planet--mars {
+  --planet-color: var(--solar-mars);
+  --planet-glow: color-mix(in srgb, var(--solar-mars) 72%, transparent);
+  --planet-surface: radial-gradient(ellipse 20% 13% at 36% 58%, rgba(90, 45, 32, 0.75) 0%, transparent 100%),
+    radial-gradient(ellipse 14% 10% at 66% 40%, rgba(90, 45, 32, 0.6) 0%, transparent 100%),
+    radial-gradient(circle at 50% 5%, rgba(255, 255, 255, 0.9) 0 10%, transparent 11%),
+    radial-gradient(circle at 50% 95%, rgba(255, 255, 255, 0.7) 0 8%, transparent 9%);
+  --planet-texture: radial-gradient(ellipse 26% 10% at 44% 74%, rgba(0, 0, 0, 0.18) 0%, transparent 100%);
+  --planet-spin: 80s;
+}
+
+.solar__planet--mars .solar__body::after {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, #e89a86 65%, transparent);
+  opacity: 0.6;
+}
+
+/* 木星：明显水平条带 + 大红斑 + 奶油橙大气 */
+.solar__planet--jupiter {
+  --planet-color: var(--solar-jupiter);
+  --planet-glow: color-mix(in srgb, var(--solar-jupiter) 70%, transparent);
+  --planet-surface: repeating-linear-gradient(
+      92deg,
+      rgba(255, 255, 255, 0.16) 0 4px,
+      rgba(120, 80, 40, 0.18) 4px 9px,
+      rgba(255, 240, 210, 0.12) 9px 13px,
+      rgba(90, 60, 30, 0.16) 13px 18px
+    ),
+    radial-gradient(ellipse 16% 10% at 64% 62%, rgba(190, 80, 50, 0.95) 0%, transparent 100%);
+  --planet-texture: repeating-linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.08) 0 7px,
+    transparent 7px 15px
+  );
+  --planet-spin: 45s;
+}
+
+/* 土星：条带 + 有缝隙的环（环在球体外部） */
+.solar__planet--saturn {
+  --planet-color: var(--solar-saturn);
+  --planet-glow: color-mix(in srgb, var(--solar-saturn) 66%, transparent);
+  --planet-surface: repeating-linear-gradient(
+    88deg,
+    rgba(255, 255, 255, 0.14) 0 5px,
+    rgba(140, 110, 60, 0.16) 5px 11px
+  );
+  --planet-texture: none;
+  --planet-spin: 100s;
+}
+
+.solar__ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 190%;
+  height: 46%;
+  translate: -50% -50%;
+  rotate: -20deg;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--solar-saturn) 75%, white 25%);
+  /* 用两层渐变做出"环有缝隙"的效果 */
+  background: radial-gradient(
+    ellipse at center,
+    transparent 40%,
+    color-mix(in srgb, var(--solar-saturn) 55%, transparent) 42%,
+    transparent 50%,
+    color-mix(in srgb, var(--solar-saturn) 40%, transparent) 56%,
+    transparent 64%
+  );
+  box-shadow: 0 0 10px color-mix(in srgb, var(--solar-saturn) 35%, transparent);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* 天王星：青蓝 + 极淡条带 + 细而垂直的环 + 柔和光晕 */
+.solar__planet--uranus {
+  --planet-color: var(--solar-uranus);
+  --planet-glow: color-mix(in srgb, var(--solar-uranus) 78%, transparent);
+  --planet-surface: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.1) 0 6px,
+    transparent 6px 14px
+  );
+  --planet-texture: none;
+  --planet-spin: 120s;
+}
+
+.solar__planet--uranus .solar__body::after {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, #bfe9f2 60%, transparent);
+  opacity: 0.6;
+}
+
+.solar__ring--vertical {
+  width: 118%;
+  height: 150%;
+  rotate: 8deg;
+  border: 1px solid color-mix(in srgb, var(--solar-uranus) 60%, transparent);
+  background: none;
+  box-shadow: none;
+}
+
+/* ==========================================================================
+   降级：平板 / 窄屏 / 减少动态 / 强制颜色 / 打印
+   ========================================================================== */
+
 @media (max-width: 1100px) {
   .solar__chip-detail {
     display: none;
   }
+  .solar__chip {
+    max-width: 118px;
+  }
 }
 
-/* ==========================================================================
-   太阳系：平板
-   ========================================================================== */
 @media (max-width: 1024px) {
   :root {
-    --solar-height: 560px;
-    --solar-planet-sm: 36px;
-    --solar-planet-md: 46px;
-    --solar-planet-lg: 56px;
-    --solar-sun-size: 108px;
-  }
-
-  .solar__chip {
-    max-width: 120px;
+    --solar-height: 520px;
+    --solar-planet-sm: 34px;
+    --solar-planet-md: 42px;
+    --solar-planet-lg: 52px;
+    --solar-sun-size: 104px;
   }
 }
 
-/* ==========================================================================
-   太阳系：窄屏降级为「轨道列表」
-   ==========================================================================
-   不是把椭圆轨道整体缩小——那样标签一定互相遮挡。
-   这里直接切换布局：太阳变成顶部摘要卡，7 个行星变成纵向列表行。
-   ========================================================================== */
+@media (max-width: 768px) {
+  :root {
+    --solar-height: 480px;
+    --solar-planet-sm: 30px;
+    --solar-planet-md: 36px;
+    --solar-planet-lg: 44px;
+    --solar-sun-size: 88px;
+  }
+}
+
+/* 窄屏：切换为纵向列表，不再使用绝对定位的椭圆 */
 @media (max-width: 720px) {
   :root {
     --solar-height: auto;
@@ -4531,7 +4714,6 @@ dialog {
     padding: var(--space-4);
   }
 
-  /* 星点与轨道在列表布局下没有意义，隐藏（装饰本就不进无障碍树） */
   .solar__sky,
   .solar__orbits {
     display: none;
@@ -4545,7 +4727,6 @@ dialog {
     gap: var(--space-2);
   }
 
-  /* 太阳：横向摘要卡；允许换行，否则右侧说明会被 .solar 的 overflow 裁掉 */
   .solar__sun {
     position: static;
     translate: none;
@@ -4562,20 +4743,19 @@ dialog {
     box-sizing: border-box;
   }
 
-  .solar__sun-core {
-    flex: none;
-  }
-
   .solar__sun-halo,
   .solar__sun::after {
     display: none;
+  }
+
+  .solar__sun-core {
+    flex: none;
   }
 
   .solar__sun-value {
     font-size: var(--font-size-md);
   }
 
-  /* 说明文字独占一行，不再用 margin-left:auto 挤压 */
   .solar__sun-meta {
     position: static;
     translate: none;
@@ -4589,11 +4769,13 @@ dialog {
     margin-left: 0;
   }
 
-  /* 行星：纵向列表行 */
+  /* 行星回到文档流，变成一行 */
   .solar__planet {
     position: static;
     translate: none;
-    flex-direction: row;
+    width: 100%;
+    height: auto;
+    display: flex;
     align-items: center;
     gap: var(--space-3);
     padding: var(--space-2) var(--space-3);
@@ -4602,8 +4784,8 @@ dialog {
     border: 1px solid var(--color-border);
   }
 
-  .solar__planet:hover,
-  .solar__planet:focus-visible {
+  .solar__planet:hover .solar__body,
+  .solar__planet:focus-visible .solar__body {
     transform: none;
   }
 
@@ -4617,12 +4799,21 @@ dialog {
     animation: none;
   }
 
-  .solar__planet--saturn .solar__body::after,
-  .solar__planet--earth .solar__body::after {
+  .solar__body::before {
+    animation: none;
+  }
+
+  .solar__ring,
+  .solar__ring--vertical,
+  .solar__moon,
+  .solar__glow {
     display: none;
   }
 
+  /* chip 回到行内布局 */
   .solar__chip {
+    position: static;
+    translate: none;
     flex-direction: row;
     align-items: baseline;
     gap: var(--space-2);
@@ -4637,7 +4828,13 @@ dialog {
     overflow: hidden;
   }
 
-  /* 名称与数值不换行；细节占剩余空间，超出用省略号——都靠 min-width:0 才生效 */
+  .solar__planet:hover .solar__chip,
+  .solar__planet:focus-visible .solar__chip,
+  .solar__planet[data-flip='up'] .solar__chip,
+  .solar__planet[data-flip='up']:hover .solar__chip {
+    translate: none;
+  }
+
   .solar__chip-name,
   .solar__chip-value {
     flex: none;
@@ -4655,7 +4852,6 @@ dialog {
     white-space: nowrap;
   }
 
-  /* 行尾箭头：暗示可点击 */
   .solar__planet::after {
     content: '›';
     color: var(--color-text-faint);
@@ -4665,24 +4861,44 @@ dialog {
   }
 }
 
-/* ==========================================================================
-   减少动态效果 / 强制颜色 / 打印
-   ========================================================================== */
-
+/* 减少动态效果：所有动画静止，但 hover/focus 保留静态高亮 */
 @media (prefers-reduced-motion: reduce) {
   .solar__star,
-  .solar__body {
+  .solar__body::before {
     animation: none;
   }
 
   .solar__planet,
+  .solar__body,
+  .solar__chip,
+  .solar__glow,
   .solar__orbit {
     transition: none;
   }
 
-  .solar__planet:hover,
-  .solar__planet:focus-visible {
+  .solar__planet:hover .solar__body,
+  .solar__planet:focus-visible .solar__body {
     transform: none;
+    box-shadow:
+      inset -4px -6px 12px rgba(0, 0, 0, 0.45),
+      0 0 0 2px color-mix(in srgb, var(--planet-color) 65%, transparent);
+  }
+
+  .solar__planet:hover .solar__glow,
+  .solar__planet:focus-visible .solar__glow {
+    opacity: 0.45;
+    transform: none;
+  }
+}
+
+/* 降低透明度偏好：去掉光晕，只保留边框高亮 */
+@media (prefers-reduced-transparency: reduce) {
+  .solar__glow {
+    display: none;
+  }
+
+  .solar__chip {
+    background: var(--color-surface);
   }
 }
 
@@ -4695,11 +4911,18 @@ dialog {
   .solar__orbit {
     border-color: CanvasText;
   }
+
+  .solar__glow {
+    display: none;
+  }
 }
 
 @media print {
   .solar__sky,
-  .solar__orbits {
+  .solar__orbits,
+  .solar__glow,
+  .solar__ring,
+  .solar__moon {
     display: none;
   }
 
@@ -4721,5 +4944,10 @@ dialog {
     position: static;
     translate: none;
     transform: none;
+  }
+
+  .solar__chip {
+    position: static;
+    translate: none;
   }
 }

@@ -230,3 +230,117 @@ test('首页：行星数据全部来自服务层，不自己另算统计', async
   assert.ok(!/from '\.\.\/services\//.test(model), '数据模型模块不得依赖服务层');
   assert.ok(!/document\.|localStorage/.test(model), '数据模型模块不得触碰 DOM 或存储');
 });
+
+/* ------------------------------------------------------------------ *
+ * 几何：行星必须严格落在轨道椭圆上（这是"脱离轨道"的回归守卫）
+ * ------------------------------------------------------------------ */
+
+test('几何：每个行星都严格满足所在轨道的椭圆方程', () => {
+  for (const body of SOLAR_BODIES) {
+    const ring = SOLAR_ORBITS[body.orbit];
+    const { x, y } = planetPosition(body.orbit, body.angle);
+    const dx = (x - 50) / ring.rx;
+    const dy = (y - 50) / ring.ry;
+    assert.ok(
+      Math.abs(dx * dx + dy * dy - 1) < 1e-6,
+      `${body.id} 不在椭圆轨道上：dx²+dy²=${(dx * dx + dy * dy).toFixed(9)}`,
+    );
+  }
+});
+
+test('几何：所有行星落在 12–88 的安全区内（留出球体、chip 与光晕的空间）', () => {
+  for (const body of SOLAR_BODIES) {
+    const { x, y } = planetPosition(body.orbit, body.angle);
+    assert.ok(x >= 12 && x <= 88, `${body.id} 的 x=${x.toFixed(2)} 超出安全区`);
+    assert.ok(y >= 12 && y <= 88, `${body.id} 的 y=${y.toFixed(2)} 超出安全区`);
+  }
+});
+
+test('几何：外圈轨道完整落在面板内（宽度 ≤92%、高度 ≤88%）', () => {
+  const outer = SOLAR_ORBITS[SOLAR_ORBITS.length - 1];
+  assert.ok(outer.rx * 2 <= 92, `外圈宽度 ${outer.rx * 2}% 超出安全范围`);
+  assert.ok(outer.ry * 2 <= 88, `外圈高度 ${outer.ry * 2}% 会被面板裁切`);
+});
+
+test('几何：轨道尺寸由 SOLAR_ORBITS 驱动，样式表不再手写第二套百分比', async () => {
+  const components = await read('src/ui/components.js');
+  // 组件用 ring.rx*2 / ring.ry*2 生成 CSS 变量
+  assert.match(components, /'--orbit-w': `\$\{ring\.rx \* 2\}%`/, '轨道宽度应由 rx 驱动');
+  assert.match(components, /'--orbit-h': `\$\{ring\.ry \* 2\}%`/, '轨道高度应由 ry 驱动');
+
+  const css = await read('src/ui/styles/components.css');
+  // 样式里轨道尺寸只允许用变量，不允许出现具体百分比
+  const orbitWidthRules = [...css.matchAll(/\.solar__orbit[^{]*\{[^}]*\}/g)].map((m) => m[0]);
+  for (const rule of orbitWidthRules) {
+    assert.ok(!/width:\s*\d+%/.test(rule), `轨道宽度不应写死：${rule.slice(0, 60)}`);
+    assert.ok(!/height:\s*\d+%/.test(rule), `轨道高度不应写死：${rule.slice(0, 60)}`);
+  }
+});
+
+test('几何：chip 朝远离太阳的一侧（上半区朝上、下半区朝下）', () => {
+  const model = buildSolarSystemModel({
+    state: { tasks: [], sessions: [], fixedActivities: [] },
+    todayStats: { scheduledMinutes: 0, actualMinutes: 0 },
+    weekStats: { thisWeek: { actualMinutes: 0 } },
+    streak: { current: 0 },
+    plan: null,
+    today: '2026-10-30',
+  });
+  /**
+   * 现在的规则不是"越往下越翻折"，而是"chip 朝远离太阳的一侧"：
+   * 上半区（y < 50）的行星 chip 朝上，下半区朝下。
+   * 这样 chip 总是伸向空旷处，也不会压住中间的太阳。
+   */
+  for (const planet of model.planets) {
+    assert.equal(
+      planet.flip,
+      planet.y < 50,
+      `${planet.id} 的 chip 方向应与所在半区一致（y=${planet.y.toFixed(1)}）`,
+    );
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ * 默认深色
+ * ------------------------------------------------------------------ */
+
+test('默认主题：defaultPreferences 为深色，且未标记为显式选择', async () => {
+  const { defaultPreferences, THEME } = await import('../../src/services/preferences.js');
+  const prefs = defaultPreferences();
+  assert.equal(prefs.appearance.theme, THEME.DARK);
+  assert.equal(prefs.appearance.themeExplicit, false, '默认值不是用户的明确选择');
+});
+
+test('默认主题：未知值回落到深色', async () => {
+  const { normalizeTheme, THEME } = await import('../../src/services/preferences.js');
+  assert.equal(normalizeTheme(undefined), THEME.DARK);
+  assert.equal(normalizeTheme('unknown'), THEME.DARK);
+  assert.equal(normalizeTheme(null), THEME.DARK);
+});
+
+test('默认主题：首屏 HTML 直接声明深色，避免闪白', async () => {
+  const html = await read('index.html');
+  assert.match(html, /<html lang="zh-CN" data-theme="dark">/, '首帧应为深色');
+  assert.match(html, /name="color-scheme" content="dark light"/, '应声明 color-scheme');
+  assert.match(html, /name="theme-color" content="#0b1220"/, '应设置深空底色');
+});
+
+test('默认主题：首屏脚本只应用"用户明确选过的浅色"', async () => {
+  const html = await read('index.html');
+  assert.match(html, /themeExplicit === true/, '只有显式选择才在首帧改写主题');
+  assert.match(html, /studyPlanner:v1:preferences/, '只读偏好键');
+  // 首屏脚本不得触碰业务数据
+  assert.ok(!/studyPlanner:v1:state/.test(html), '首屏脚本不应读取业务数据');
+});
+
+test('默认主题：迁移策略——显式选择保留、旧默认迁移为深色', async () => {
+  const { normalizeTheme, THEME } = await import('../../src/services/preferences.js');
+  // 显式选择过浅色 → 保留
+  const explicitLight = { appearance: { theme: 'light', themeExplicit: true } };
+  assert.equal(normalizeTheme(explicitLight.appearance.theme, { prefersDark: false }), THEME.LIGHT);
+  // 旧数据（无 themeExplicit）由 normalizeAppearance 迁移为深色，这里通过 loadPreferences 的
+  // 间接路径验证：normalizeTheme 本身不做迁移，迁移在 normalizeAppearance 里。
+  const prefsSource = await read('src/services/preferences.js');
+  assert.match(prefsSource, /appearance\.themeExplicit === true/, '应读取显式标记');
+  assert.match(prefsSource, /theme = THEME\.DARK;/, '无标记时应迁移为深色');
+});

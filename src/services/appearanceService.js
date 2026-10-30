@@ -79,7 +79,15 @@ export function createAppearanceService({ preferences: provided, onChange } = {}
     if (!Object.values(THEME).includes(theme)) {
       return { ok: false, message: `未知的主题：${theme}` };
     }
-    preferences = { ...preferences, appearance: { ...preferences.appearance, theme } };
+    /**
+     * 记录"用户主动选择过主题"。
+     *
+     * 默认主题由浅改深之后，需要一个标记来区分：
+     * - 用户明确选过（themeExplicit = true）→ 迁移时原样保留；
+     * - 只是旧默认值 → 迁移到新的默认深色。
+     * 只有走这个函数（即用户点过设置页的切换）才算"明确选择"。
+     */
+    preferences = { ...preferences, appearance: { ...preferences.appearance, theme, themeExplicit: true } };
     applyThemeOnly(theme);
     const saved = savePreferences(preferences);
     notify();

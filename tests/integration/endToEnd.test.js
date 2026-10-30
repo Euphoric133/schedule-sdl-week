@@ -210,8 +210,17 @@ test('端到端：外观页可以切换两种显式主题，设置被写入偏�
 
     env.click('深色');
     assert.equal(env.instance.services.appearanceService.getPreferences().appearance.theme, 'dark');
+    // 主动切换要标记为"显式选择"，否则迁移逻辑会把它当作旧默认值
+    assert.equal(
+      env.instance.services.appearanceService.getPreferences().appearance.themeExplicit,
+      true,
+      '手动切换主题应记录为用户明确选择',
+    );
+
     env.instance.shell.render();
     env.click('浅色');
+    // 点浅色之后必须真的变成浅色。旧断言写的是 'dark'，它之所以曾经通过，
+    // 是因为当时切换按钮失效（徽标不刷新的同一个 bug），点击没有生效。
     assert.equal(env.instance.services.appearanceService.getPreferences().appearance.theme, 'light');
   } finally {
     env.cleanup();

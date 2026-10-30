@@ -223,7 +223,7 @@ function createUiService({ services, getShell = () => null }) {
         planVersions: (state.planHistory ?? []).length,
         hasOfficialPlan: Boolean(state.officialPlan),
         hasPendingPreview: Boolean(state.pendingPreview),
-        theme: prefs.appearance?.theme ?? 'light',
+        theme: prefs.appearance?.theme ?? 'dark',
         wallpaper: Boolean(prefs.appearance?.wallpaper?.enabled),
         notifications: Boolean(prefs.notifications?.enabled),
       };

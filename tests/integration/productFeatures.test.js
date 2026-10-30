@@ -70,7 +70,7 @@ function makeEnv({ clockMs = FIXED_MS } = {}) {
 test('偏好：默认值只包含外观与通知两个分区（番茄钟与转盘已移除）', () => {
   const prefs = defaultPreferences();
   // "跟随系统"已移除，默认改为显式浅色主题
-  assert.equal(prefs.appearance.theme, THEME.LIGHT);
+  assert.equal(prefs.appearance.theme, THEME.DARK, '默认主题为深色');
   assert.equal('SYSTEM' in THEME, false, '不应再有"跟随系统"选项');
   assert.equal(prefs.appearance.wallpaper.enabled, false);
   assert.equal(prefs.notifications.enabled, false, '默认不开启通知，必须由用户主动开启');
@@ -114,7 +114,7 @@ test('偏好：存储损坏时回退默认值，不影响应用启动', () => {
   };
   try {
     const prefs = loadPreferences();
-    assert.equal(prefs.appearance.theme, THEME.LIGHT, '损坏的偏好回退默认主题');
+    assert.equal(prefs.appearance.theme, THEME.DARK, '损坏的偏好回退默认主题（深色）');
     assert.equal(prefs.notifications.enabled, false, '损坏的偏好回退默认通知设置');
   } finally {
     if (original === undefined) delete globalThis.localStorage;

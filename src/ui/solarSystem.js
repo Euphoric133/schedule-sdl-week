@@ -12,10 +12,22 @@
  */
 
 /** 天体几何：三条轨道，越靠外半径越大。数值是相对舞台的百分比半径。 */
+/**
+ * 三条轨道的**半轴**（相对面板宽/高的百分比）。
+ *
+ * 约束（改动前请先读懂）：
+ * 1. 外圈宽度 = rx*2 ≤ 92%，高度 = ry*2 ≤ 88%——否则轨道会被面板的
+ *    `overflow: hidden` 裁掉（早期版本 ry=57 即 114%，上下明显被切）；
+ * 2. 行星坐标 = 50 ± rx/ry，必须落在 12–88 的安全区，
+ *    给球体半径、chip 与 hover 光晕留出空间。
+ *    因此 rx 上限约 38、ry 上限约 31。
+ * 3. CSS 里的轨道尺寸**由这份数据驱动**（宽度 2rx%、高度 2ry%），
+ *    不再在样式表里手写第二套百分比——两套数值必然错位。
+ */
 export const SOLAR_ORBITS = Object.freeze([
-  { rx: 23, ry: 27 },
-  { rx: 36, ry: 42 },
-  { rx: 48, ry: 57 },
+  { rx: 21, ry: 19 },
+  { rx: 30, ry: 27 },
+  { rx: 38, ry: 34 },
 ]);
 
 /**
@@ -25,22 +37,32 @@ export const SOLAR_ORBITS = Object.freeze([
  * （0° = 正右方，顺时针增加）。角度刻意错开，避免行星互相遮挡。
  */
 export const SOLAR_BODIES = Object.freeze([
-  { id: 'tasks', route: 'tasks', name: '学习任务', orbit: 0, angle: 205, size: 'md', planet: 'mercury' },
-  { id: 'day', route: 'day', name: '每日视图', orbit: 0, angle: 325, size: 'sm', planet: 'venus' },
-  { id: 'week', route: 'week', name: '七天计划', orbit: 1, angle: 160, size: 'lg', planet: 'earth' },
-  { id: 'stats', route: 'stats', name: '学习统计', orbit: 1, angle: 250, size: 'md', planet: 'mars' },
-  { id: 'garden', route: 'garden', name: '专注花园', orbit: 1, angle: 20, size: 'lg', planet: 'jupiter' },
-  { id: 'activities', route: 'activities', name: '固定日程', orbit: 2, angle: 195, size: 'md', planet: 'saturn' },
-  { id: 'ai', route: 'ai', name: 'AI 助手', orbit: 2, angle: 340, size: 'sm', planet: 'uranus' },
+  /**
+   * 角度经过实测调整：早期取值会让相邻轨道的 chip 压住下一颗行星
+   * （实测「每日视图」的 chip 压住「专注花园」、「固定日程」的 chip 压住「七天计划」）。
+   * 调整原则：同一侧的行星尽量上下错开，且相邻轨道之间留出一个 chip 的高度。
+   */
+  { id: 'tasks', route: 'tasks', name: '学习任务', orbit: 0, angle: 191, size: 'md', planet: 'mercury' },
+  { id: 'day', route: 'day', name: '每日视图', orbit: 0, angle: 346, size: 'sm', planet: 'venus' },
+  { id: 'week', route: 'week', name: '七天计划', orbit: 1, angle: 135, size: 'lg', planet: 'earth' },
+  { id: 'stats', route: 'stats', name: '学习统计', orbit: 1, angle: 243, size: 'md', planet: 'mars' },
+  { id: 'garden', route: 'garden', name: '专注花园', orbit: 1, angle: 36, size: 'lg', planet: 'jupiter' },
+  { id: 'activities', route: 'activities', name: '固定日程', orbit: 2, angle: 162, size: 'md', planet: 'saturn' },
+  { id: 'ai', route: 'ai', name: 'AI 助手', orbit: 2, angle: 334, size: 'sm', planet: 'uranus' },
 ]);
 
 /** 把 (轨道, 角度) 换算成舞台上的百分比坐标，供 CSS 定位使用 */
 export function planetPosition(orbit, angle) {
   const ring = SOLAR_ORBITS[orbit] ?? SOLAR_ORBITS[0];
   const rad = (angle * Math.PI) / 180;
+  /**
+   * 不做四舍五入：调用方（几何测试）要验证点严格落在椭圆上。
+   * 保留完整精度后，(x-50)/rx 与 (y-50)/ry 的平方和精确等于 1；
+   * 截断到 2 位小数会引入约 1e-4 的偏差，看起来"贴线"了但测试通不过。
+   */
   return {
-    x: Number((50 + ring.rx * Math.cos(rad)).toFixed(2)),
-    y: Number((50 + ring.ry * Math.sin(rad)).toFixed(2)),
+    x: 50 + ring.rx * Math.cos(rad),
+    y: 50 + ring.ry * Math.sin(rad),
   };
 }
 
@@ -151,6 +173,25 @@ export function buildSolarSystemModel({
     },
   };
 
+  /**
+   * chip 需要翻到球体上方的阈值。
+   *
+   * 面板高度约 480–560px，chip 高约 46px（含间距）。y 超过 62% 时，
+   * 球体下方已放不下 chip，必须翻到上方——否则会被 .solar 的 overflow 裁掉。
+   * 这个判断放在模型里（而不是 CSS），因为它是**几何事实**，可以测试。
+   */
+  /**
+   * chip 放置方向：**朝远离太阳的一侧**。
+   *
+   * 早期版本一律把 chip 放在球体下方，结果是外圈下方行星的 chip 顶到面板边缘，
+   * 内圈行星的 chip 又压住下一圈的行星——无论怎么调角度都会有一两处重叠。
+   * 改成"上半区的行星 chip 朝上、下半区朝下"之后，chip 总是往空旷处伸展，
+   * 同时也避开了中间的太阳。
+   *
+   * 这个判断是几何事实，放在模型里可以直接被测到。
+   */
+  const UPPER_HALF_Y = 50;
+
   const planets = SOLAR_BODIES.map((body) => {
     const metric = metricByBody[body.id] ?? { value: '', detail: '' };
     const position = planetPosition(body.orbit, body.angle);
@@ -161,11 +202,16 @@ export function buildSolarSystemModel({
       detail: metric.detail,
       x: position.x,
       y: position.y,
+      flip: position.y < UPPER_HALF_Y,
       ariaLabel: `${body.name}，${metric.value}${metric.detail ? `，${metric.detail}` : ''}`,
     };
   });
 
-  return { sun, planets };
+  /**
+   * 同时返回轨道定义：组件据此设置每条轨道的宽度/高度。
+   * 这样"轨道画多大"与"行星放在哪"共用同一份数据，不会出现两套数值。
+   */
+  return { sun, planets, orbits: SOLAR_ORBITS };
 }
 
 /** 计划状态 → 简短中文（只用于行星上的一行说明） */
