@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI 学习规划与执行助手 · 行动方案展示</title>
+<style>
+  :root {
+    --bg: #070b12;
+    --bg-2: #0b1220;
+    --panel: rgba(18, 26, 40, 0.72);
+    --line: rgba(150, 180, 220, 0.16);
+    --text: #eef2f8;
+    --muted: #9fb0c6;
+    --faint: #6b7d94;
+    --blue: #6ba4f0;
+    --blue-soft: rgba(107, 164, 240, 0.14);
+    --gold: #d6ae4e;
+    --radius: 18px;
+    --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: radial-gradient(120% 90% at 50% -20%, #10203a 0%, var(--bg) 55%, #04060a 100%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* —— 舞台：1920×1080 设计稿，等比缩放 —— */
+  .viewport { position: fixed; inset: 0; display: grid; place-items: center; }
+  .stage {
+    width: 1920px; height: 1080px;
+    position: relative;
+    transform: scale(var(--scale, 1));
+    transform-origin: center center;
+    background:
+      radial-gradient(60% 50% at 12% 6%, rgba(107, 164, 240, 0.10), transparent 70%),
+      radial-gradient(50% 46% at 88% 18%, rgba(214, 174, 78, 0.07), transparent 72%),
+      radial-gradient(60% 60% at 60% 100%, rgba(80, 140, 220, 0.08), transparent 70%),
+      linear-gradient(160deg, #0a111d, #060a11 60%);
+    overflow: hidden;
+  }
+  .stage::after {
+    content: '';
+    position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,.045) 1px, transparent 1px);
+    background-size: 64px 64px;
+    opacity: .5;
+    pointer-events: none;
+  }
+
+  /* —— 幻灯片 —— */
+  .slide {
+    position: absolute; inset: 0;
+    display: grid;
+    padding: 96px 120px 120px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translate3d(40px, 0, 0);
+    transition: opacity 380ms var(--ease), transform 380ms var(--ease), visibility 0s linear 380ms;
+  }
+  .slide.is-active {
+    opacity: 1; visibility: visible;
+    transform: none;
+    transition: opacity 380ms var(--ease), transform 380ms var(--ease), visibility 0s;
+  }
+  .slide__inner { position: relative; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
+  .slide[data-kind="cover"] { padding: 0; }
+  .slide[data-kind="cover"] .slide__inner { height: 100%; justify-content: center; padding: 0 140px; }
+
+  /* —— 元素入场 —— */
+  .anim { opacity: 0; transform: translate3d(0, 22px, 0); }
+  .slide.is-active .anim {
+    animation: rise 620ms var(--ease) both;
+    animation-delay: calc(var(--i, 0) * 70ms + 120ms);
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translate3d(0, 22px, 0); }
+    to { opacity: 1; transform: none; }
+  }
+
+  /* —— 排版 —— */
+  .eyebrow {
+    font-size: 20px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--blue); font-weight: 600; margin-bottom: 18px;
+  }
+  .title-row { display: flex; align-items: center; gap: 20px; }
+  .tag {
+    flex: none; font-size: 18px; font-weight: 700; padding: 6px 16px; border-radius: 999px;
+    background: var(--blue-soft); color: var(--blue); border: 1px solid rgba(107,164,240,.34);
+  }
+  .title { margin: 0 0 18px; font-size: 58px; line-height: 1.2; letter-spacing: -.01em; font-weight: 650; }
+  .sub { margin: 0; font-size: 24px; line-height: 1.6; color: var(--muted); max-width: 1180px; }
+  .display { font-size: 92px; line-height: 1.14; font-weight: 700; letter-spacing: -.02em; margin: 0 0 22px; }
+
+  /* —— 封面 —— */
+  .cover { position: relative; z-index: 1; max-width: 1180px; }
+  .cover__stars { position: absolute; inset: 0; }
+  .logo { width: 88px; height: 88px; display: block; margin-bottom: 34px; border-radius: 22px; box-shadow: 0 18px 44px rgba(0,0,0,.45); }
+  .chips { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+  .chip {
+    font-size: 18px; padding: 8px 18px; border-radius: 999px;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line); color: var(--muted);
+  }
+  .chip--lg { font-size: 22px; padding: 12px 24px; color: var(--text); text-decoration: none; }
+  .chip--lg:hover { border-color: var(--blue); color: var(--blue); }
+  .meta { margin-top: 30px; font-size: 19px; color: var(--faint); letter-spacing: .02em; }
+
+  /* —— 主张页 —— */
+  .statement { max-width: 1300px; }
+  .statement__big { font-size: 84px; line-height: 1.24; margin: 0 0 26px; font-weight: 700; letter-spacing: -.02em; }
+  .proof { display: flex; gap: 18px; margin-top: 52px; }
+  .proof__item {
+    flex: 1; padding: 26px 28px; border-radius: var(--radius);
+    background: var(--panel); border: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 6px;
+    backdrop-filter: blur(14px);
+  }
+  .proof__item strong { font-size: 52px; color: var(--blue); font-variant-numeric: tabular-nums; }
+  .proof__item span { font-size: 18px; color: var(--muted); }
+
+  /* —— 议程 —— */
+  .agenda { list-style: none; margin: 40px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+  .agenda__item {
+    display: flex; gap: 22px; padding: 26px 28px; border-radius: var(--radius);
+    background: var(--panel); border: 1px solid var(--line);
+  }
+  .agenda__n { font-size: 34px; font-weight: 700; color: var(--gold); font-variant-numeric: tabular-nums; }
+  .agenda h3 { margin: 0 0 6px; font-size: 26px; }
+  .agenda p { margin: 0; font-size: 18px; color: var(--muted); }
+
+  /* —— 痛点 —— */
+  .pain { list-style: none; margin: 34px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .pain__item {
+    display: flex; gap: 16px; padding: 22px 24px; border-radius: var(--radius);
+    background: var(--panel); border: 1px solid var(--line);
+  }
+  .pain__icon { flex: none; width: 34px; height: 34px; color: var(--blue); }
+  .pain__icon .icon { width: 100%; height: 100%; }
+  .icon { width: 22px; height: 22px; }
+  .icon--mark { width: 22px; height: 22px; }
+  .compare__mark { display: grid; place-items: center; }
+  .compare__mark.is-ok { color: #6fd0a2; }
+  .compare__mark.is-no { color: var(--faint); opacity: .7; }
+  .pain h3 { margin: 0 0 6px; font-size: 21px; }
+  .pain p { margin: 0; font-size: 17px; color: var(--muted); line-height: 1.5; }
+
+  /* —— 对比 —— */
+  .compare { list-style: none; margin: 32px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .compare__row {
+    display: grid; grid-template-columns: 220px 1fr 48px; align-items: center; gap: 20px;
+    padding: 18px 24px; border-radius: 14px; background: rgba(255,255,255,.03);
+    border: 1px solid var(--line); font-size: 20px;
+  }
+  .compare__row.is-ours { background: var(--blue-soft); border-color: rgba(107,164,240,.4); }
+  .compare__name { font-weight: 600; }
+  .compare__why { color: var(--muted); font-size: 19px; }
+  .compare__mark { font-size: 20px; text-align: right; }
+
+  /* —— 四件事 —— */
+  .four { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-top: 38px; }
+  .four__card { padding: 30px 32px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); }
+  .four__card h3 { margin: 0 0 10px; font-size: 28px; color: var(--blue); }
+  .four__card p { margin: 0; font-size: 19px; color: var(--muted); line-height: 1.6; }
+
+  /* —— 人群 —— */
+  .who { margin-top: 36px; }
+  .who__tags { display: flex; flex-wrap: wrap; gap: 14px; }
+  .who blockquote {
+    margin: 46px 0 0; padding: 28px 34px; border-left: 4px solid var(--gold);
+    font-size: 30px; line-height: 1.6; color: #dbe6f5; background: rgba(214,174,78,.06);
+    border-radius: 0 var(--radius) var(--radius) 0; max-width: 1200px;
+  }
+
+  /* —— 亮点页 —— */
+  .feature { display: grid; grid-template-columns: 1.25fr 1fr; gap: 48px; margin-top: 40px; align-items: center; }
+  .feature__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+  .feature__list li {
+    position: relative; padding-left: 30px; font-size: 21px; line-height: 1.6; color: #d8e3f2;
+  }
+  .feature__list li::before {
+    content: ''; position: absolute; left: 4px; top: 12px; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--blue);
+  }
+  .feature__visual { display: grid; place-items: center; min-height: 340px; }
+
+  /* 示意图通用 */
+  .viz { width: 100%; display: grid; gap: 14px; }
+  .viz__cap { font-size: 15px; color: var(--faint); letter-spacing: .08em; }
+  .viz__col { display: grid; gap: 10px; }
+  .viz--same { grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 14px; }
+  .viz__eq { font-size: 26px; color: var(--gold); }
+  .viz__bar { height: 12px; border-radius: 6px; background: rgba(255,255,255,.14); }
+  .viz__bar--short { width: 60%; }
+  .viz__blk { height: 40px; border-radius: 8px; background: rgba(107,164,240,.22); border: 1px solid rgba(107,164,240,.4); }
+  .viz__note { font-size: 16px; color: var(--faint); }
+  .viz__arrow { font-size: 16px; color: var(--gold); }
+
+  .viz--split { place-items: stretch; }
+  .longbar { display: block; height: 34px; border-radius: 8px; background: linear-gradient(90deg, #3b6fb8, #2a4f86); }
+  .splitbar { display: flex; gap: 10px; }
+  .splitbar i { display: block; height: 34px; border-radius: 8px; background: rgba(107,164,240,.3); border: 1px solid rgba(107,164,240,.55); }
+  .splitbar i:nth-child(1) { flex: 40; }
+  .splitbar i:nth-child(2) { flex: 40; }
+  .splitbar i:nth-child(3) { flex: 20; }
+  .slide.is-active .splitbar i { animation: grow 700ms var(--ease) both; transform-origin: left center; }
+  .slide.is-active .splitbar i:nth-child(2) { animation-delay: 90ms; }
+  .slide.is-active .splitbar i:nth-child(3) { animation-delay: 180ms; }
+  @keyframes grow { from { transform: scaleX(.08); opacity: .2; } to { transform: none; opacity: 1; } }
+
+  .viz--diff { grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; }
+  .blk { display: block; height: 26px; width: var(--w, 60%); border-radius: 6px; background: rgba(255,255,255,.12); }
+  .blk--new { background: rgba(107,164,240,.3); border: 1px solid rgba(107,164,240,.5); }
+
+  .viz--ring { place-items: center; }
+  .ring { width: 280px; height: 280px; }
+  .slide.is-active .ring__progress { animation: fill 1200ms var(--ease) 260ms both; }
+  @keyframes fill { from { stroke-dashoffset: 339.29; } to { stroke-dashoffset: 108.57; } }
+
+  .pages { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; max-width: 460px; }
+  .pages__chip {
+    font-size: 16px; padding: 8px 14px; border-radius: 10px;
+    border: 1px solid var(--line); background: rgba(255,255,255,.03); color: var(--muted);
+  }
+  .pages__chip--more { color: var(--gold); border-color: rgba(214,174,78,.4); }
+
+  /* —— AI 流程 —— */
+  .flow { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 36px 0 34px; }
+  .flow__step {
+    font-size: 19px; padding: 12px 20px; border-radius: 12px;
+    background: var(--panel); border: 1px solid var(--line);
+  }
+  .flow__step:last-child { border-color: rgba(214,174,78,.5); color: var(--gold); }
+  .flow__arrow { color: var(--faint); font-size: 20px; }
+  .rules { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+  .rules li { padding: 22px 24px; border-radius: 14px; background: rgba(255,255,255,.03); border: 1px solid var(--line); }
+  .rules strong { display: block; font-size: 20px; margin-bottom: 8px; color: var(--blue); }
+  .rules span { font-size: 17px; color: var(--muted); line-height: 1.6; }
+
+  /* —— 数字 —— */
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 36px; }
+  .metrics__card {
+    padding: 26px 28px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .metrics__card strong { font-size: 58px; color: var(--blue); font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .metrics__label { font-size: 19px; }
+  .metrics__hint { font-size: 15px; color: var(--faint); }
+  .footnote { margin: 22px 0 0; font-size: 15px; color: var(--faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* —— 链接卡 —— */
+  .linkcard {
+    margin-top: 40px; display: flex; align-items: center; gap: 20px;
+    padding: 34px 38px; border-radius: var(--radius);
+    background: linear-gradient(120deg, rgba(107,164,240,.14), rgba(214,174,78,.08));
+    border: 1px solid rgba(107,164,240,.4); text-decoration: none; color: var(--text);
+    transition: transform 180ms var(--ease), border-color 180ms var(--ease);
+  }
+  .linkcard:hover { transform: translateY(-2px); border-color: var(--blue); }
+  .linkcard__label { font-size: 17px; padding: 4px 12px; border-radius: 999px; background: var(--blue); color: #08111c; font-weight: 700; }
+  .linkcard__url { font-size: 30px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .hint { margin-top: 20px; font-size: 18px; color: var(--faint); }
+
+  /* —— 工具 —— */
+  .tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 36px; }
+  .tools__card { position: relative; padding: 26px 24px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); }
+  .tools__badge {
+    position: absolute; top: 18px; right: 18px; font-size: 13px; padding: 3px 10px; border-radius: 999px;
+    background: var(--blue-soft); color: var(--blue); border: 1px solid rgba(107,164,240,.35);
+  }
+  .tools__card h3 { margin: 0 0 6px; font-size: 24px; }
+  .tools__role { margin: 0 0 14px; font-size: 16px; color: var(--gold); }
+  .tools__card ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
+  .tools__card li { font-size: 16px; color: var(--muted); line-height: 1.5; }
+
+  /* —— 故事 —— */
+  .story { list-style: none; margin: 36px 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+  .story__step { position: relative; padding: 24px 22px 24px 26px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); }
+  .story__dot { position: absolute; top: 0; left: 26px; width: 10px; height: 10px; border-radius: 50%; background: var(--gold); transform: translateY(-50%); }
+  .story__step h3 { margin: 6px 0 10px; font-size: 24px; }
+  .story__step p { margin: 0; font-size: 17px; color: var(--muted); line-height: 1.6; }
+
+  /* —— 反思 —— */
+  .learn { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 40px; }
+  .learn__card { padding: 30px 28px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); }
+  .learn__n { font-size: 15px; letter-spacing: .12em; color: var(--gold); }
+  .learn__card h3 { margin: 12px 0 10px; font-size: 25px; }
+  .learn__card p { margin: 0; font-size: 17px; color: var(--muted); line-height: 1.65; }
+
+  /* —— 结尾 —— */
+  .end { text-align: center; display: grid; place-items: center; }
+  .end .display { margin-bottom: 12px; }
+  .end__links { display: flex; gap: 14px; margin-top: 34px; }
+  .end .meta { margin-top: 40px; }
+
+  /* —— 演讲备注 —— */
+  .notes { display: none; }
+  body.notes-on .notes {
+    display: block; position: absolute; left: 120px; right: 120px; bottom: 96px;
+    padding: 18px 24px; border-radius: 12px; font-size: 17px; line-height: 1.6;
+    background: rgba(214, 174, 78, .12); border: 1px solid rgba(214, 174, 78, .35); color: #f0dfb6;
+  }
+  body.notes-on .notes::before { content: '演讲备注　'; color: var(--gold); font-weight: 700; }
+
+  /* —— 控制条 —— */
+  .hud {
+    position: fixed; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.06); z-index: 20;
+  }
+  .hud__bar { height: 100%; width: 0; background: linear-gradient(90deg, var(--blue), var(--gold)); transition: width 320ms var(--ease); }
+  .pager {
+    position: fixed; right: 26px; bottom: 18px; z-index: 21;
+    font: 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--faint);
+    letter-spacing: .08em; user-select: none;
+  }
+  .pager b { color: var(--text); font-weight: 600; }
+  .keys {
+    position: fixed; left: 26px; bottom: 16px; z-index: 21; font-size: 12.5px; color: var(--faint);
+    letter-spacing: .04em; transition: opacity 400ms ease;
+  }
+  body.hide-hud .keys, body.hide-hud .pager { opacity: 0; }
+  .navbtn {
+    position: fixed; top: 50%; transform: translateY(-50%); z-index: 21;
+    width: 44px; height: 80px; border: 0; border-radius: 10px; cursor: pointer;
+    background: rgba(255,255,255,.04); color: var(--muted); font-size: 20px;
+    opacity: 0; transition: opacity 200ms ease;
+  }
+  .navbtn:hover { opacity: 1; background: rgba(107,164,240,.12); }
+  .navbtn--prev { left: 8px; } .navbtn--next { right: 8px; }
+  .viewport:hover .navbtn { opacity: .35; }
+
+  /* —— 总览 —— */
+  .overview {
+    position: fixed; inset: 0; z-index: 30; display: none; padding: 40px;
+    background: rgba(5, 8, 13, .94); overflow: auto;
+  }
+  .overview.is-open { display: block; }
+  .overview h2 { font-size: 20px; color: var(--muted); margin: 0 0 20px; font-weight: 500; letter-spacing: .1em; }
+  .overview__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .overview__item {
+    text-align: left; padding: 14px 16px; border-radius: 10px; cursor: pointer;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line); color: var(--text); font: inherit;
+  }
+  .overview__item:hover { border-color: var(--blue); }
+  .overview__n { display: block; font-size: 12px; color: var(--faint); margin-bottom: 4px; }
+
+  /* —— 竖屏提示 —— */
+  .rotate { display: none; }
+  @media (orientation: portrait) and (max-width: 900px) {
+    .rotate {
+      display: grid; place-items: center; position: fixed; inset: 0; z-index: 40;
+      background: var(--bg); color: var(--muted); font-size: 16px; text-align: center; padding: 32px;
+    }
+  }
+
+  /* —— 减少动态 —— */
+  @media (prefers-reduced-motion: reduce) {
+    .slide, .anim, .splitbar i, .ring__progress, .hud__bar { animation: none !important; transition: none !important; }
+    .slide { opacity: 1; transform: none; }
+    .slide:not(.is-active) { display: none; }
+  }
+
+  /* —— 打印：每页一张 A4 横向 —— */
+  @page { size: A4 landscape; margin: 0; }
+  @media print {
+    html, body { overflow: visible; background: #0a111d; }
+    .viewport { position: static; display: block; }
+    .stage {
+      transform: none !important; width: auto; height: auto;
+      background: #0a111d; overflow: visible;
+    }
+    .stage::after { display: none; }
+    /* 1920×1080 设计稿按 0.5854 缩放到 A4 横向（297mm ≈ 1122px），一页一张不裁切 */
+    .slide {
+      position: relative; inset: auto; display: block;
+      opacity: 1 !important; visibility: visible !important; transform: none !important;
+      page-break-after: always; break-after: page;
+      width: 297mm; height: 210mm; padding: 0; margin: 0;
+      background: #0a111d; color: var(--text);
+      overflow: hidden;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .slide:last-child { page-break-after: auto; }
+    .slide__inner, .slide[data-kind="cover"] .slide__inner {
+      zoom: 0.585;
+      width: 1920px; height: 1080px;
+      padding: 96px 120px 120px;
+    }
+    .slide[data-kind="cover"] .slide__inner { padding: 0 140px; }
+    .anim { opacity: 1 !important; transform: none !important; animation: none !important; }
+    .hud, .pager, .keys, .navbtn, .overview, .rotate { display: none !important; }
+    .notes { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="rotate">请把设备横过来观看（或使用电脑全屏放映）</div>
+<div class="viewport" id="viewport">
+  <div class="stage" id="stage">
+<section class="slide" id="slide-1" data-index="0" data-kind="cover" aria-label="第 1 页"><div class="slide__inner ">
+        <div class="cover__stars"><circle cx="0.00%" cy="0.00%" r="0.50" opacity="0.18" fill="#cfe0f8"/><circle cx="37.51%" cy="61.80%" r="1.00" opacity="0.31" fill="#cfe0f8"/><circle cx="75.02%" cy="23.61%" r="0.79" opacity="0.44" fill="#cfe0f8"/><circle cx="12.52%" cy="85.41%" r="0.57" opacity="0.57" fill="#cfe0f8"/><circle cx="50.03%" cy="47.21%" r="1.07" opacity="0.30" fill="#cfe0f8"/><circle cx="87.54%" cy="9.01%" r="0.86" opacity="0.43" fill="#cfe0f8"/><circle cx="25.05%" cy="70.82%" r="0.64" opacity="0.56" fill="#cfe0f8"/><circle cx="62.56%" cy="32.62%" r="1.14" opacity="0.29" fill="#cfe0f8"/><circle cx="0.06%" cy="94.42%" r="0.93" opacity="0.42" fill="#cfe0f8"/><circle cx="37.57%" cy="56.23%" r="0.71" opacity="0.55" fill="#cfe0f8"/><circle cx="75.08%" cy="18.03%" r="0.50" opacity="0.28" fill="#cfe0f8"/><circle cx="12.59%" cy="79.83%" r="1.00" opacity="0.41" fill="#cfe0f8"/><circle cx="50.10%" cy="41.64%" r="0.79" opacity="0.54" fill="#cfe0f8"/><circle cx="87.60%" cy="3.44%" r="0.57" opacity="0.27" fill="#cfe0f8"/><circle cx="25.11%" cy="65.24%" r="1.07" opacity="0.40" fill="#cfe0f8"/><circle cx="62.62%" cy="27.04%" r="0.86" opacity="0.53" fill="#cfe0f8"/><circle cx="0.13%" cy="88.85%" r="0.64" opacity="0.26" fill="#cfe0f8"/><circle cx="37.64%" cy="50.65%" r="1.14" opacity="0.39" fill="#cfe0f8"/><circle cx="75.14%" cy="12.45%" r="0.93" opacity="0.52" fill="#cfe0f8"/><circle cx="12.65%" cy="74.26%" r="0.71" opacity="0.25" fill="#cfe0f8"/><circle cx="50.16%" cy="36.06%" r="0.50" opacity="0.38" fill="#cfe0f8"/><circle cx="87.67%" cy="97.86%" r="1.00" opacity="0.51" fill="#cfe0f8"/><circle cx="25.18%" cy="59.67%" r="0.79" opacity="0.24" fill="#cfe0f8"/><circle cx="62.68%" cy="21.47%" r="0.57" opacity="0.37" fill="#cfe0f8"/><circle cx="0.19%" cy="83.27%" r="1.07" opacity="0.50" fill="#cfe0f8"/><circle cx="37.70%" cy="45.07%" r="0.86" opacity="0.23" fill="#cfe0f8"/><circle cx="75.21%" cy="6.88%" r="0.64" opacity="0.36" fill="#cfe0f8"/><circle cx="12.72%" cy="68.68%" r="1.14" opacity="0.49" fill="#cfe0f8"/><circle cx="50.22%" cy="30.48%" r="0.93" opacity="0.22" fill="#cfe0f8"/><circle cx="87.73%" cy="92.29%" r="0.71" opacity="0.35" fill="#cfe0f8"/><circle cx="25.24%" cy="54.09%" r="0.50" opacity="0.48" fill="#cfe0f8"/><circle cx="62.75%" cy="15.89%" r="1.00" opacity="0.21" fill="#cfe0f8"/><circle cx="0.26%" cy="77.70%" r="0.79" opacity="0.34" fill="#cfe0f8"/><circle cx="37.76%" cy="39.50%" r="0.57" opacity="0.47" fill="#cfe0f8"/><circle cx="75.27%" cy="1.30%" r="1.07" opacity="0.20" fill="#cfe0f8"/><circle cx="12.78%" cy="63.11%" r="0.86" opacity="0.33" fill="#cfe0f8"/><circle cx="50.29%" cy="24.91%" r="0.64" opacity="0.46" fill="#cfe0f8"/><circle cx="87.80%" cy="86.71%" r="1.14" opacity="0.19" fill="#cfe0f8"/><circle cx="25.30%" cy="48.51%" r="0.93" opacity="0.32" fill="#cfe0f8"/><circle cx="62.81%" cy="10.32%" r="0.71" opacity="0.45" fill="#cfe0f8"/><circle cx="0.32%" cy="72.12%" r="0.50" opacity="0.18" fill="#cfe0f8"/><circle cx="37.83%" cy="33.92%" r="1.00" opacity="0.31" fill="#cfe0f8"/><circle cx="75.34%" cy="95.73%" r="0.79" opacity="0.44" fill="#cfe0f8"/><circle cx="12.84%" cy="57.53%" r="0.57" opacity="0.57" fill="#cfe0f8"/><circle cx="50.35%" cy="19.33%" r="1.07" opacity="0.30" fill="#cfe0f8"/><circle cx="87.86%" cy="81.13%" r="0.86" opacity="0.43" fill="#cfe0f8"/></div>
+        <div class="cover"><svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+  <rect x="2" y="2" width="20" height="20" rx="6.5" fill="#0e1520"/>
+  <circle cx="12" cy="12" r="8.6" stroke="#6ba4f0" stroke-width="1.6" fill="none"/>
+  <g stroke="#d6ae4e" stroke-width="1.3" stroke-linecap="round">
+    <path d="M12 6.4V5"/><path d="M16.38 8.51l1.09-.87"/><path d="M17.46 13.25l1.36.31"/>
+    <path d="M14.43 17.05l.61 1.26"/><path d="M9.57 17.05l-.61 1.26"/>
+    <path d="M6.54 13.25l-1.36.31"/><path d="M7.62 8.51l-1.09-.87"/>
+  </g>
+  <g stroke="#eef2f8" stroke-width="1.9" stroke-linecap="round">
+    <path d="M12 12l.52-2.95"/><path d="M12 12l3.64 2.1"/>
+  </g>
+  <circle cx="12" cy="12" r="1.25" fill="#d6ae4e"/>
+</svg>
+          <div class="eyebrow anim" style="--i:0">MYP AI SDL WEEK · 行动方案展示</div>
+          <h1 class="display anim" style="--i:1">AI 学习规划与执行助手</h1>
+          <p class="sub anim" style="--i:2">告诉它作业和空闲时间，它帮你安排好未来七天</p>
+          <div class="chips anim" style="--i:3"><span class="chip">确定性排程</span><span class="chip">AI 辅助建议</span><span class="chip">本地优先</span><span class="chip">0 运行时依赖</span></div>
+          <div class="meta anim" style="--i:4">9 年级 4 班　·　陈家晋 · 宋建宇　·　2026.10.30</div>
+        </div></div><aside class="notes">开场 30 秒：我们做一个&quot;排得进去&quot;的计划工具。强调它不是聊天机器人，核心是确定性排程。</aside></section>
+<section class="slide" id="slide-2" data-index="1" data-kind="statement" aria-label="第 2 页"><div class="slide__inner ">
+        <div class="statement">
+          <h2 class="statement__big anim" style="--i:0">计划不是写在纸上，<br>是排得进去。</h2>
+          <p class="sub anim" style="--i:1">输入相同 → 计划相同；每一处改动都先给你看，你点确认才生效。</p>
+          <div class="proof anim" style="--i:2"><div class="proof__item"><strong class="count" data-count="853">0</strong><span>自动化测试全通过</span></div><div class="proof__item"><strong class="count" data-count="0">0</strong><span>运行时依赖</span></div><div class="proof__item"><strong class="count" data-count="59">0</strong><span>可运行历史版本</span></div></div>
+        </div></div><aside class="notes">这一页定调：我们的价值不是&quot;生成计划&quot;，而是&quot;排得进去并且可控&quot;。</aside></section>
+<section class="slide" id="slide-3" data-index="2" data-kind="agenda" aria-label="第 3 页"><div class="slide__inner ">
+        
+        <ol class="agenda"><li class="agenda__item anim" style="--i:2"><span class="agenda__n">01</span><div><h3>产品介绍</h3><p>我们做什么、为谁做、解决什么问题</p></div></li><li class="agenda__item anim" style="--i:3"><span class="agenda__n">02</span><div><h3>现场演示</h3><p>输入作业，看系统排出七天计划</p></div></li><li class="agenda__item anim" style="--i:4"><span class="agenda__n">03</span><div><h3>开发过程</h3><p>用 AI 工具辅助完成规则与界面</p></div></li><li class="agenda__item anim" style="--i:5"><span class="agenda__n">04</span><div><h3>测试与反思</h3><p>发现问题、修复问题与收获</p></div></li></ol></div><aside class="notes">四步走完，约 8 分钟；演示环节会现场打开网页。</aside></section>
+<section class="slide" id="slide-4" data-index="3" data-kind="grid-list" aria-label="第 4 页"><div class="slide__inner ">
+        <div class="eyebrow anim" style="--i:0">用户痛点</div><div class="title-row"><h2 class="title anim" style="--i:1">知道该学，却总在截止前赶工</h2></div><p class="sub anim" style="--i:2">同时上多门课，时间被课程、吃饭、社团切得很碎</p>
+        <ul class="pain"><li class="pain__item anim" style="--i:3"><span class="pain__icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span><div><h3>任务堆在一起</h3><p>数学、英语、生物三份作业同时压过来</p></div></li><li class="pain__item anim" style="--i:4"><span class="pain__icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M15 9l-2.2 5.8L7 17l2.2-5.8z"/></svg></span><div><h3>不知道先做哪个</h3><p>哪天真该花多少时间，全靠猜</p></div></li><li class="pain__item anim" style="--i:5"><span class="pain__icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><path d="M9 7l11 10M9 17L20 7"/></svg></span><div><h3>大作业不会拆</h3><p>100 分钟的论文想分几天写，却不知怎么分</p></div></li><li class="pain__item anim" style="--i:6"><span class="pain__icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10M7 20h10M8 4c0 4 8 4 8 8s-8 4-8 8"/></svg></span><div><h3>排计划太费时间</h3><p>手排一次半小时，一改就全乱</p></div></li><li class="pain__item anim" style="--i:7"><span class="pain__icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.2"/></svg></span><div><h3>整块时间被切碎</h3><p>上课、吃饭、社团，凑不出连续两小时</p></div></li></ul></div><aside class="notes">这五条来自我自己和同学的真实处境；不是调研报告，是我们每天的状态。</aside></section>
+<section class="slide" id="slide-5" data-index="4" data-kind="compare" aria-label="第 5 页"><div class="slide__inner ">
+        <div class="eyebrow anim" style="--i:0">需求分析</div><div class="title-row"><h2 class="title anim" style="--i:1">现有工具排不出真正能执行的计划</h2></div>
+        <ul class="compare"><li class="compare__row anim " style="--i:3">
+            <span class="compare__name">通用日历</span><span class="compare__why">只记时间，不懂任务难度和截止优先级</span>
+            <span class="compare__mark is-no"><svg class="icon icon--mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span></li><li class="compare__row anim " style="--i:4">
+            <span class="compare__name">待办清单</span><span class="compare__why">列了一堆事，不会告诉你排到哪天几点</span>
+            <span class="compare__mark is-no"><svg class="icon icon--mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span></li><li class="compare__row anim " style="--i:5">
+            <span class="compare__name">AI 排程</span><span class="compare__why">结果不可控，可能排出根本做不完的计划</span>
+            <span class="compare__mark is-no"><svg class="icon icon--mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span></li><li class="compare__row anim " style="--i:6">
+            <span class="compare__name">手动排表</span><span class="compare__why">每次重排要半小时，改一处全乱</span>
+            <span class="compare__mark is-no"><svg class="icon icon--mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span></li><li class="compare__row anim is-ours" style="--i:7">
+            <span class="compare__name">本产品</span><span class="compare__why">确定性排程 + 硬约束校验 + 改前预览</span>
+            <span class="compare__mark is-ok"><svg class="icon icon--mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg></span></li></ul></div><aside class="notes">关键差异在&quot;可控&quot;：AI 排程不可复现，我们的排程同输入同输出，可检查可撤销。</aside></section>
+<section class="slide" id="slide-6" data-index="5" data-kind="four" aria-label="第 6 页"><div class="slide__inner ">
+        <div class="eyebrow anim" style="--i:0">我们的答案</div><div class="title-row"><h2 class="title anim" style="--i:1">把&quot;排不出来&quot;变成&quot;排得清楚&quot;</h2></div>
+        <div class="four"><div class="four__card anim" style="--i:3"><h3>自动排期</h3><p>综合截止日、难度、重要性与空闲时间，排出未来七天</p></div><div class="four__card anim" style="--i:4"><h3>任务拆分</h3><p>100 分钟的大作业分到三天，总量守恒，可跟踪进度</p></div><div class="four__card anim" style="--i:5"><h3>冲突检测</h3><p>时间不够就明说原因，不硬塞、不造假可行</p></div><div class="four__card anim" style="--i:6"><h3>改前确认</h3><p>新增作业先看逐项改动预览，确认后才写入</p></div></div></div><aside class="notes">四件事对应四个技术点，后面各用一页展开。</aside></section>
+<section class="slide" id="slide-7" data-index="6" data-kind="who" aria-label="第 7 页"><div class="slide__inner ">
+        <div class="eyebrow anim" style="--i:0">目标人群</div><div class="title-row"><h2 class="title anim" style="--i:1">为被多门课压着的中学生而做</h2></div>
+        <div class="who">
+          <div class="who__tags anim" style="--i:3"><span class="chip chip--lg">12–15 岁</span><span class="chip chip--lg">初中 / IB MYP</span><span class="chip chip--lg">每周都有作业与小测</span><span class="chip chip--lg">知道要学，但总在截止前赶工</span></div>
+          <blockquote class="anim" style="--i:4">&quot;我不是不想学，是每次坐下来都不知道该先做哪一个。&quot;</blockquote>
+        </div></div><aside class="notes">人群画像是具体的：初中 IB MYP 阶段，多门课并行，作业与小测密集。</aside></section>
+<section class="slide" id="slide-8" data-index="7" data-kind="feature" aria-label="第 8 页"><div class="slide__inner ">
+        <div class="title-row"><span class="tag">亮点 A</span><h2 class="title anim" style="--i:1">确定性排程：同样的输入，永远同样的结果</h2></div>
+        <div class="feature">
+          <ul class="feature__list"><li class="anim" style="--i:3">排程是纯函数：不看时钟、不联网、不掷骰子</li><li class="anim" style="--i:4">10 条硬约束（H1–H10）逐条校验，违反就不交付</li><li class="anim" style="--i:5">排不下时如实报告原因，绝不偷偷压缩或取消</li><li class="anim" style="--i:6">每个未安排任务都有原因码 + 中文说明 + 建议</li></ul>
+          <div class="feature__visual anim" style="--i:3"><div class="viz viz--same">
+      <div class="viz__col"><span class="viz__cap">输入</span><span class="viz__bar"></span><span class="viz__bar"></span><span class="viz__bar viz__bar--short"></span></div>
+      <span class="viz__eq">＝</span>
+      <div class="viz__col"><span class="viz__cap">输出 A</span><span class="viz__blk"></span><span class="viz__blk"></span></div>
+      <span class="viz__eq">＝</span>
+      <div class="viz__col"><span class="viz__cap">输出 B</span><span class="viz__blk"></span><span class="viz__blk"></span></div>
+    </div></div>
+        </div></div><aside class="notes">这一页是最硬的技术点：可复现、可检查。测试里同一输入跑两次结果必须一致。</aside></section>
+<section class="slide" id="slide-9" data-index="8" data-kind="feature" aria-label="第 9 页"><div class="slide__inner ">
+        <div class="title-row"><span class="tag">亮点 B</span><h2 class="title anim" style="--i:1">任务拆分与依赖：大作业不再靠意志力</h2></div>
+        <div class="feature">
+          <ul class="feature__list"><li class="anim" style="--i:3">可拆分任务切成合规片段，跨天铺开</li><li class="anim" style="--i:4">所有片段总时长 = 任务剩余工作量（总量守恒）</li><li class="anim" style="--i:5">不可拆分任务必须一次排进连续时段，绝不切碎</li><li class="anim" style="--i:6">前置任务未完成，后续任务不会被排到前面</li></ul>
+          <div class="feature__visual anim" style="--i:3"><div class="viz viz--split">
+      <span class="viz__cap">100 分钟的大作业</span>
+      <span class="longbar"></span>
+      <span class="viz__arrow">↓ 自动拆分</span>
+      <div class="splitbar"><i></i><i></i><i></i></div>
+      <span class="viz__note">40 + 40 + 20 分钟　·　总量不变</span>
+    </div></div>
+        </div></div><aside class="notes">用一条 100 分钟的长条变三条示意；这是学生最容易&quot;手排失败&quot;的地方。</aside></section>
+<section class="slide" id="slide-10" data-index="9" data-kind="feature" aria-label="第 10 页"><div class="slide__inner ">
+        <div class="title-row"><span class="tag">亮点 C</span><h2 class="title anim" style="--i:1">预览确认与撤销：改动永远可控</h2></div>
+        <div class="feature">
+          <ul class="feature__list"><li class="anim" style="--i:3">候选计划与正式计划严格分开，绝不偷偷替换</li><li class="anim" style="--i:4">差异逐条列出：新增 / 移动 / 拆分 / 缩短 / 取消 + 原因</li><li class="anim" style="--i:5">确认才写入；放弃则零改动；每次应用都留版本可回滚</li><li class="anim" style="--i:6">&quot;本次无需调整&quot;会直说，不拿一堆 0 糊弄你</li></ul>
+          <div class="feature__visual anim" style="--i:3"><div class="viz viz--diff">
+      <div class="viz__col"><span class="viz__cap">旧计划</span><span class="blk" style="--w:82%"></span><span class="blk" style="--w:52%"></span><span class="blk" style="--w:64%"></span></div>
+      <span class="viz__eq">→</span>
+      <div class="viz__col"><span class="viz__cap">新计划</span><span class="blk blk--new" style="--w:64%"></span><span class="blk blk--new" style="--w:82%"></span><span class="blk blk--new" style="--w:52%"></span></div>
+    </div></div>
+        </div></div><aside class="notes">强调&quot;零静默改动&quot;：任何变更都要经过预览这一步。</aside></section>
+<section class="slide" id="slide-11" data-index="10" data-kind="feature" aria-label="第 11 页"><div class="slide__inner ">
+        <div class="title-row"><span class="tag">亮点 D</span><h2 class="title anim" style="--i:1">专注执行闭环：计划接着计时跑</h2></div>
+        <div class="feature">
+          <ul class="feature__list"><li class="anim" style="--i:3">任务清单直接进专注页，点「专注」按任务时长开始</li><li class="anim" style="--i:4">倒计时 / 正计时双模式，暂停不丢时间，刷新不归零</li><li class="anim" style="--i:5">完成即回写：记录实际学习时段、任务完成、取消剩余时段</li><li class="anim" style="--i:6">番茄数与奖励转盘挂钩，完成一个任务额外发一次机会</li></ul>
+          <div class="feature__visual anim" style="--i:3"><div class="viz viz--ring">
+      <svg viewBox="0 0 140 140" class="ring">
+        <circle cx="70" cy="70" r="54" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="9"/>
+        <circle class="ring__progress" cx="70" cy="70" r="54" fill="none" stroke="#6ba4f0" stroke-width="9"
+          stroke-linecap="round" stroke-dasharray="339.29" stroke-dashoffset="339.29"
+          transform="rotate(-90 70 70)"/>
+        <circle cx="70" cy="6" r="2" fill="#6ba4f0"/>
+      </svg>
+      <span class="viz__cap">专注 68% · 41 / 60 分钟</span>
+    </div></div>
+        </div></div><aside class="notes">演示时这里切到真实页面；这一页只是示意环形进度。</aside></section>
+<section class="slide" id="slide-12" data-index="11" data-kind="feature" aria-label="第 12 页"><div class="slide__inner ">
+        <div class="title-row"><span class="tag">亮点 E</span><h2 class="title anim" style="--i:1">体验：13 个页面，一套设计语言</h2></div>
+        <div class="feature">
+          <ul class="feature__list"><li class="anim" style="--i:3">深色为默认，冷蓝 + 暖金；液态玻璃分层，不牺牲可读性</li><li class="anim" style="--i:4">首页太阳系概念、七天看板、每日视图、调整预览统一风格</li><li class="anim" style="--i:5">浅色 / 深色 / 自定义壁纸；壁纸下自动提高不透明度</li><li class="anim" style="--i:6">键盘可操作、焦点可见、减少动态效果时关闭动画</li></ul>
+          <div class="feature__visual anim" style="--i:3"><div class="viz viz--pages">
+    <div class="pages"><span class="pages__chip">首页</span><span class="pages__chip">七天计划</span><span class="pages__chip">每日视图</span><span class="pages__chip">学习任务</span><span class="pages__chip">固定日程</span><span class="pages__chip">AI 助手</span><span class="pages__chip">学习统计</span><span class="pages__chip">专注花园</span><span class="pages__chip pages__chip--more">+5</span></div>
+  </div></div>
+        </div></div><aside class="notes">13 个页面列表：首页、七天计划、每日视图、学习任务、固定日程、AI 助手、统计、专注花园、预览、版本历史、外观、通知、设置。</aside></section>
+<section class="slide" id="slide-13" data-index="12" data-kind="ai" aria-label="第 13 页"><div class="slide__inner ">
+        <div class="eyebrow anim" style="--i:0">AI 的边界</div><div class="title-row"><h2 class="title anim" style="--i:1">AI 只提议，永不改数据</h2></div>
+        <div class="flow"><span class="flow__step anim" style="--i:3">你描述情况</span><span class="flow__arrow anim" style="--i:3">→</span><span class="flow__step anim" style="--i:4">AI 给方案</span><span class="flow__arrow anim" style="--i:4">→</span><span class="flow__step anim" style="--i:5">程序校验</span><span class="flow__arrow anim" style="--i:5">→</span><span class="flow__step anim" style="--i:6">生成预览</span><span class="flow__arrow anim" style="--i:6">→</span><span class="flow__step anim" style="--i:7">你点确认</span></div>
+        <ul class="rules"><li class="anim" style="--i:4"><strong>只发必要数据</strong><span>任务标题、时长、截止与评分；备注与姓名不发送</span></li><li class="anim" style="--i:5"><strong>提议必须过校验</strong><span>任务必须存在、字段在白名单内、数值在范围内</span></li><li class="anim" style="--i:6"><strong>核心排程不用 AI</strong><span>AI 从不决定&quot;排到几点&quot;，它只建议参数</span></li><li class="anim" style="--i:7"><strong>失败如实说明</strong><span>超时、限流、格式错误都给出原因与下一步</span></li></ul></div><aside class="notes">这是产品原则：可解释、可回退。AI 失败也不影响排程与数据。</aside></section>
+<section class="slide" id="slide-14" data-index="13" data-kind="metrics" aria-label="第 14 页"><div class="slide__inner ">
+        <div class="eyebrow anim" style="--i:0">质量证据</div><div class="title-row"><h2 class="title anim" style="--i:1">不是&quot;能跑&quot;，是&quot;可验证&quot;</h2></div>
+        <div class="metrics"><div class="metrics__card anim" style="--i:3">
+            <strong class="count" data-count="853">0</strong>
+            <span class="metrics__label">自动化测试全通过</span>
+            <span class="metrics__hint">单元 / 集成 / 端到端</span></div><div class="metrics__card anim" style="--i:4">
+            <strong class="count" data-count="20">0</strong>
+            <span class="metrics__label">验收场景逐条覆盖</span>
+            <span class="metrics__hint">docs/ACCEPTANCE.md</span></div><div class="metrics__card anim" style="--i:5">
+            <strong class="count" data-count="0">0</strong>
+            <span class="metrics__label">运行时依赖</span>
+            <span class="metrics__hint">零第三方库、无 CDN</span></div><div class="metrics__card anim" style="--i:6">
+            <strong class="count" data-count="93">0</strong>
+            <span class="metrics__label">次提交 · 15 天</span>
+            <span class="metrics__hint">2026-10-16 → 10-30</span></div><div class="metrics__card anim" style="--i:7">
+            <strong class="count" data-count="59">0</strong>
+            <span class="metrics__label">可运行历史版本</span>
+            <span class="metrics__hint">每个提交都能打开</span></div></div>
+        <p class="footnote anim" style="--i:8">数据截至 2026-10-30　·　可现场复核：node --test &quot;tests/**/*.test.js&quot;　·　git rev-list --count HEAD</p></div><aside class="notes">数字都在页脚注了截止日期，可现场复核：node --test、git rev-list --count HEAD。</aside></section>
+<section class="slide" id="slide-15" data-index="14" data-kind="link" aria-label="第 15 页"><div class="slide__inner ">
+        <div class="eyebrow anim" style="--i:0">第 2 步 · 现场演示</div><div class="title-row"><h2 class="title anim" style="--i:1">现在打开，现场输入一份作业</h2></div>
+        <a class="linkcard anim" style="--i:3" href="https://powerschedule-bfq.pages.dev/" target="_blank" rel="noopener">
+          <span class="linkcard__label">打开</span>
+          <span class="linkcard__url">https://powerschedule-bfq.pages.dev/</span>
+        </a>
+        <p class="hint anim" style="--i:4">进入后点「学习任务」新建，再点「生成计划」看预览</p></div><aside class="notes">现场演示 2 分钟：新建任务 → 生成计划 → 看预览差异 → 确认应用。</aside></section>
+<section class="slide" id="slide-16" data-index="15" data-kind="link" aria-label="第 16 页"><div class="slide__inner ">
+        <div class="eyebrow anim" style="--i:0">第 3 步 · 过程展示</div><div class="title-row"><h2 class="title anim" style="--i:1">59 个版本，26 段原始 prompt</h2></div>
+        <a class="linkcard anim" style="--i:3" href="versions/index.html" target="_blank" rel="noopener">
+          <span class="linkcard__label">打开</span>
+          <span class="linkcard__url">versions/index.html</span>
+        </a>
+        <p class="hint anim" style="--i:4">每一段都写着&quot;我当时的 prompt&quot;与&quot;它解决了什么&quot;</p></div><aside class="notes">这是我们的开发证据链：每个版本都能打开，每段 prompt 都有产出。</aside></section>
+<section class="slide" id="slide-17" data-index="16" data-kind="tools" aria-label="第 17 页"><div class="slide__inner ">
+        <div class="eyebrow anim" style="--i:0">开发过程 · AI 工具选型</div><div class="title-row"><h2 class="title anim" style="--i:1">四个工具，各司其职</h2></div>
+        <div class="tools"><div class="tools__card anim" style="--i:3">
+            <span class="tools__badge">探索</span>
+            <h3>ChatGPT</h3><p class="tools__role">灵感与早期 prompt</p>
+            <ul><li>项目初期找方向</li><li>写了部分初始 prompt</li><li>对话变长后上下文受限</li></ul></div><div class="tools__card anim" style="--i:4">
+            <span class="tools__badge">主力</span>
+            <h3>DeepSeek Harness</h3><p class="tools__role">主力开发</p>
+            <ul><li>直接读取项目文件</li><li>按仓库现状生成 prompt</li><li>几轮后成为主力</li></ul></div><div class="tools__card anim" style="--i:5">
+            <span class="tools__badge">辅助</span>
+            <h3>Codex</h3><p class="tools__role">内嵌 AI 接入</p>
+            <ul><li>作为接入平台使用</li><li>验证提议结构</li></ul></div><div class="tools__card anim" style="--i:6">
+            <span class="tools__badge">平台</span>
+            <h3>Netlify / Cloudflare</h3><p class="tools__role">中继与部署</p>
+            <ul><li>先 Netlify 跑通</li><li>后迁 Cloudflare Pages</li></ul></div></div></div><aside class="notes">老实说：ChatGPT 帮我们起步，DeepSeek Harness 是主力，Codex 做接入验证。</aside></section>
+<section class="slide" id="slide-18" data-index="17" data-kind="story" aria-label="第 18 页"><div class="slide__inner ">
+        <div class="eyebrow anim" style="--i:0">第 4 步 · 最大困难</div><div class="title-row"><h2 class="title anim" style="--i:1">最难的是&quot;让 AI 真的能改计划&quot;</h2></div>
+        <ol class="story"><li class="story__step anim" style="--i:3"><span class="story__dot"></span><h3>跑通</h3><p>Netlify 函数两小时跑通，AI 能回话了</p></li><li class="story__step anim" style="--i:4"><span class="story__dot"></span><h3>卡住</h3><p>但编辑受限、额度不够，改一次要等很久</p></li><li class="story__step anim" style="--i:5"><span class="story__dot"></span><h3>迁移</h3><p>换到 Cloudflare Worker 中继，跨域与重试自己处理</p></li><li class="story__step anim" style="--i:6"><span class="story__dot"></span><h3>收敛</h3><p>提议改成结构化 JSON：任务 id 必须来自枚举，校验不过就不展示</p></li></ol></div><aside class="notes">这段是全项目最折腾的地方，也是学到最多的地方：不是&quot;接上模型&quot;就完了，是&quot;让它可控&quot;。</aside></section>
+<section class="slide" id="slide-19" data-index="18" data-kind="learn" aria-label="第 19 页"><div class="slide__inner ">
+        <div class="eyebrow anim" style="--i:0">第 5 步 · 反思</div><div class="title-row"><h2 class="title anim" style="--i:1">我从这个项目里带走了什么</h2></div>
+        <div class="learn"><div class="learn__card anim" style="--i:3"><span class="learn__n">01</span><h3>把大目标拆成可交付的小步</h3><p>需求、开发、测试、文档并行，学会排优先级而不是被事情推着走。</p></div><div class="learn__card anim" style="--i:4"><span class="learn__n">02</span><h3>AI 的效果取决于环境</h3><p>让它看见项目文件，比反复聊天更有效；上下文比措辞更重要。</p></div><div class="learn__card anim" style="--i:5"><span class="learn__n">03</span><h3>判断力才是核心能力</h3><p>不是照单全收 AI 的输出，而是能看出哪里不对、怎么验证。</p></div></div></div><aside class="notes">三条收获对应 MYP 的三个学习成果：接受挑战、发展技能、协作与自主规划。</aside></section>
+<section class="slide" id="slide-20" data-index="19" data-kind="end" aria-label="第 20 页"><div class="slide__inner ">
+        <div class="end">
+          <h2 class="display anim" style="--i:0">THANK YOU</h2>
+          <p class="sub anim" style="--i:1">谢谢大家</p>
+          <div class="end__links anim" style="--i:2"><a class="chip chip--lg" href="https://powerschedule-bfq.pages.dev/" target="_blank" rel="noopener">打开产品</a><a class="chip chip--lg" href="versions/index.html" target="_blank" rel="noopener">版本时间线</a></div>
+          <p class="meta anim" style="--i:3">特别鸣谢：刘衍辰</p>
+        </div></div><aside class="notes">收尾留 30 秒提问时间；如果被问&quot;AI 会不会乱改&quot;，直接翻回第 13 页。</aside></section>
+  </div>
+</div>
+
+<div class="hud"><div class="hud__bar" id="bar"></div></div>
+<div class="pager" id="pager"><b>1</b> / 20</div>
+<div class="keys" id="keys">← → 翻页　·　F 全屏　·　N 备注　·　G 总览　·　Home/End</div>
+<button class="navbtn navbtn--prev" id="prev" aria-label="上一页">‹</button>
+<button class="navbtn navbtn--next" id="next" aria-label="下一页">›</button>
+
+<div class="overview" id="overview" aria-hidden="true">
+  <h2>总览 · 点击跳转</h2>
+  <div class="overview__grid">
+<button class="overview__item" data-goto="0"><span class="overview__n">01</span>AI 学习规划与执行助手</button>
+<button class="overview__item" data-goto="1"><span class="overview__n">02</span>计划不是写在纸上，&lt;br&gt;是排得进去。</button>
+<button class="overview__item" data-goto="2"><span class="overview__n">03</span></button>
+<button class="overview__item" data-goto="3"><span class="overview__n">04</span>知道该学，却总在截止前赶工</button>
+<button class="overview__item" data-goto="4"><span class="overview__n">05</span>现有工具排不出真正能执行的计划</button>
+<button class="overview__item" data-goto="5"><span class="overview__n">06</span>把&quot;排不出来&quot;变成&quot;排得清楚&quot;</button>
+<button class="overview__item" data-goto="6"><span class="overview__n">07</span>为被多门课压着的中学生而做</button>
+<button class="overview__item" data-goto="7"><span class="overview__n">08</span>确定性排程：同样的输入，永远同样的结果</button>
+<button class="overview__item" data-goto="8"><span class="overview__n">09</span>任务拆分与依赖：大作业不再靠意志力</button>
+<button class="overview__item" data-goto="9"><span class="overview__n">10</span>预览确认与撤销：改动永远可控</button>
+<button class="overview__item" data-goto="10"><span class="overview__n">11</span>专注执行闭环：计划接着计时跑</button>
+<button class="overview__item" data-goto="11"><span class="overview__n">12</span>体验：13 个页面，一套设计语言</button>
+<button class="overview__item" data-goto="12"><span class="overview__n">13</span>AI 只提议，永不改数据</button>
+<button class="overview__item" data-goto="13"><span class="overview__n">14</span>不是&quot;能跑&quot;，是&quot;可验证&quot;</button>
+<button class="overview__item" data-goto="14"><span class="overview__n">15</span>现在打开，现场输入一份作业</button>
+<button class="overview__item" data-goto="15"><span class="overview__n">16</span>59 个版本，26 段原始 prompt</button>
+<button class="overview__item" data-goto="16"><span class="overview__n">17</span>四个工具，各司其职</button>
+<button class="overview__item" data-goto="17"><span class="overview__n">18</span>最难的是&quot;让 AI 真的能改计划&quot;</button>
+<button class="overview__item" data-goto="18"><span class="overview__n">19</span>我从这个项目里带走了什么</button>
+<button class="overview__item" data-goto="19"><span class="overview__n">20</span>THANK YOU</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var stage = document.getElementById('stage');
+  var bar = document.getElementById('bar');
+  var pager = document.getElementById('pager');
+  var overview = document.getElementById('overview');
+  var total = slides.length;
+  var current = 0;
+
+  /* —— 等比缩放：1920×1080 设计稿适配任意窗口 —— */
+  function fit() {
+    var pad = 0;
+    var scale = Math.min((window.innerWidth - pad) / 1920, (window.innerHeight - pad) / 1080);
+    stage.style.setProperty('--scale', String(scale));
+  }
+  window.addEventListener('resize', fit);
+  fit();
+
+  /* —— 数字滚动 —— */
+  function countUp(el) {
+    var target = Number(el.getAttribute('data-count'));
+    if (!isFinite(target)) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      el.textContent = String(target);
+      return;
+    }
+    var start = performance.now();
+    var dur = 900;
+    function step(now) {
+      var t = Math.min(1, (now - start) / dur);
+      var eased = 1 - Math.pow(1 - t, 3);
+      el.textContent = String(Math.round(target * eased));
+      if (t < 1) requestAnimationFrame(step);
+      else el.textContent = String(target);
+    }
+    el.textContent = '0';
+    requestAnimationFrame(step);
+  }
+
+  function go(index, opts) {
+    var next = Math.max(0, Math.min(total - 1, index));
+    slides.forEach(function (s, i) {
+      s.classList.toggle('is-active', i === next);
+      s.setAttribute('aria-hidden', i === next ? 'false' : 'true');
+    });
+    current = next;
+    bar.style.width = ((next + 1) / total * 100) + '%';
+    pager.innerHTML = '<b>' + (next + 1) + '</b> / ' + total;
+    if (!opts || opts.hash !== false) {
+      history.replaceState(null, '', '#slide-' + (next + 1));
+    }
+    var active = slides[next];
+    active.querySelectorAll('[data-count]').forEach(countUp);
+    // 重新触发一次性动画（跳出再进入同一页时也能重播）
+    active.querySelectorAll('.anim').forEach(function (el) {
+      el.style.animation = 'none';
+      void el.offsetWidth;
+      el.style.animation = '';
+    });
+  }
+
+  function fromHash() {
+    var m = /#slide-(\d+)/.exec(location.hash || '');
+    if (m) return Math.max(0, Math.min(total - 1, Number(m[1]) - 1));
+    return 0;
+  }
+
+  function toggleOverview(force) {
+    var open = typeof force === 'boolean' ? force : !overview.classList.contains('is-open');
+    overview.classList.toggle('is-open', open);
+    overview.setAttribute('aria-hidden', open ? 'false' : 'true');
+  }
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      var el = document.documentElement;
+      (el.requestFullscreen || el.webkitRequestFullscreen || function () {}).call(el);
+    } else {
+      (document.exitFullscreen || document.webkitExitFullscreen || function () {}).call(document);
+    }
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    var key = e.key;
+    if (key === 'ArrowRight' || key === 'PageDown' || key === ' ' || key === 'Enter') {
+      e.preventDefault(); toggleOverview(false); go(current + 1);
+    } else if (key === 'ArrowLeft' || key === 'PageUp' || key === 'Backspace') {
+      e.preventDefault(); toggleOverview(false); go(current - 1);
+    } else if (key === 'Home') { e.preventDefault(); go(0); }
+    else if (key === 'End') { e.preventDefault(); go(total - 1); }
+    else if (key === 'f' || key === 'F') { e.preventDefault(); toggleFullscreen(); }
+    else if (key === 'n' || key === 'N') { e.preventDefault(); document.body.classList.toggle('notes-on'); }
+    else if (key === 'g' || key === 'G') { e.preventDefault(); toggleOverview(); }
+    else if (key === 'Escape') { toggleOverview(false); }
+  });
+
+  document.getElementById('next').addEventListener('click', function () { go(current + 1); });
+  document.getElementById('prev').addEventListener('click', function () { go(current - 1); });
+
+  overview.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-goto]');
+    if (!btn) return;
+    toggleOverview(false);
+    go(Number(btn.getAttribute('data-goto')));
+  });
+
+  window.addEventListener('hashchange', function () { go(fromHash(), { hash: false }); });
+
+  // 触屏左右滑
+  var touchX = null;
+  document.addEventListener('touchstart', function (e) { touchX = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    if (touchX === null) return;
+    var dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) > 60) go(current + (dx < 0 ? 1 : -1));
+    touchX = null;
+  }, { passive: true });
+
+  // 空闲自动隐藏提示
+  var idleTimer = null;
+  function wake() {
+    document.body.classList.remove('hide-hud');
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () { document.body.classList.add('hide-hud'); }, 3200);
+  }
+  ['mousemove', 'keydown', 'touchstart'].forEach(function (evt) {
+    document.addEventListener(evt, wake, { passive: true });
+  });
+  wake();
+
+  go(fromHash(), { hash: false });
+})();
+</script>
+</body>
+</html>

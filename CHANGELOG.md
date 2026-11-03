@@ -458,6 +458,70 @@ AI 分析 → 程序校验通过 → 生成预览 → 二次确认 → 应用
 
 ---
 
+## [1.23.0] — 新增放映级演示页 showcase.html
+
+日期：2026-11-03
+
+### 交付物
+
+| 文件 | 说明 |
+|---|---|
+| `showcase.html` | 单文件放映演示，20 页，`file://` 双击即可 |
+| `versions/index.html` | 59 个历史版本 + 26 段原始 prompt 的时间线（已有，本次复核链接全部有效） |
+
+### 演示内容（20 页）
+
+封面 → 一句话主张 → Agenda → 用户痛点 → 现有工具对比 → 我们解决的四件事 → 目标人群 →
+亮点 A 确定性排程 → B 任务拆分与依赖 → C 预览确认与撤销 → D 专注执行闭环 → E 体验与设计 →
+AI 的边界 → 质量证据 → 现场演示（只放链接）→ 版本时间线（只放链接）→
+AI 工具选型 → 最大困难 → 反思 → 致谢。
+
+### 放映体验（对齐 PowerPoint）
+
+- **1920×1080 设计稿**，按窗口等比缩放，任何尺寸都不出滚动条；
+- 翻页：`←` `→` `空格` `PageUp/PageDown` `Home/End`；`F` 全屏；`N` 演讲备注；`G` 总览跳页；
+- 底部进度条 + 页码，空闲自动隐藏操作提示；
+- URL 深链 `#slide-8`，刷新保持；触屏左右滑；
+- 打印：`@page A4 landscape`，每页一张、按 0.585 等比缩放、`print-color-adjust: exact`；
+- `prefers-reduced-motion` 下关闭全部动画；
+- 元素入场 620ms 依次上浮（70ms 步进），翻页 380ms 淡入位移，数字滚动计数。
+
+### 视觉
+
+深空蓝黑 + 冷蓝 + 暖金，与产品默认深色一致；内联 Logo；星点与网格底纹；
+示意图全部用内联 SVG / CSS（拆分长条、预览前后对比、环形进度、页面清单），**无 emoji 图标、无外部图片**。
+
+### 数据来源（全部实测）
+
+```
+git rev-list --count HEAD        → 93
+git log --reverse --date=short   → 2026-10-16 → 2026-10-30
+ls versions/*.html | wc -l       → 59
+node --test "tests/**/*.test.js" → 853 pass / 0 fail
+package.json dependencies        → 0
+```
+
+演示页脚注标注「数据截至 2026-10-30」并给出复核命令。
+
+### 测试
+
+新增 `tests/integration/showcase.test.js`（8 个）：单文件完整性、20 页锚点、必需章节、
+两个入口链接（含逐个校验 versions 下 59 个文件存在）、无外部资源、无 emoji、
+放映交互齐全、数字与仓库一致。
+
+```
+$ node --test "tests/**/*.test.js"
+ℹ tests 861
+ℹ pass 861
+ℹ fail 0
+```
+
+### 新增脚本
+
+`scripts/build-showcase.mjs`：由数据生成 `showcase.html`，改文案不必手改 20 页 HTML。
+
+---
+
 ## [1.22.1] — 版本画廊改为时间线（原始 prompt + 解决了什么）
 
 日期：2026-10-22
