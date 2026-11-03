@@ -117,6 +117,27 @@ test('演示页：放映交互齐全（翻页/全屏/备注/总览/深链/打印
   }
 });
 
+test('演示页：尾页只有 THANK YOU，且没有左下角操作提示', async () => {
+  const html = await deck();
+  const end = html.match(/<section class="slide"[^>]*id="slide-20"[\s\S]*?<\/section>/)[0];
+  const visible = end.replace(/<aside class="notes">[\s\S]*?<\/aside>/g, '');
+  const text = visible.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  assert.equal(text, 'THANK YOU', `尾页只应有 THANK YOU，实际：${text}`);
+
+  assert.equal(/class="keys"/.test(html), false, '不应有左下角操作提示');
+  assert.equal(/← → 翻页/.test(html), false, '不应出现翻页提示文案');
+});
+
+test('演示页：16:9 舞台用绝对定位 + translate 居中（不依赖 grid）', async () => {
+  const html = await deck();
+  assert.match(html, /left: 50%; top: 50%/, '舞台应按视口中心定位');
+  assert.match(html, /translate\(-50%, -50%\) scale\(var\(--scale/, '应先居中再等比缩放');
+  // 只要求"视口/舞台这一处"不用 grid 居中；其它组件（图形居中）可以继续用
+  const viewportRule = html.match(/\.viewport\s*\{[^}]*\}/)?.[0] ?? '';
+  assert.equal(/place-items/.test(viewportRule), false, '视口不应再用 grid 居中（元素大于容器会跑偏）');
+  assert.equal(/display:\s*grid/.test(viewportRule), false, '视口不应再用 grid 布局');
+});
+
 test('演示页：数字来自真实仓库（测试数/提交数/版本数）', async () => {
   const html = await deck();
   assert.ok(html.includes('853'), '应写入真实测试数 853');

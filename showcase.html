@@ -32,11 +32,14 @@
   }
 
   /* —— 舞台：1920×1080 设计稿，等比缩放 —— */
-  .viewport { position: fixed; inset: 0; display: grid; place-items: center; }
+  .viewport { position: fixed; inset: 0; overflow: hidden; }
   .stage {
     width: 1920px; height: 1080px;
-    position: relative;
-    transform: scale(var(--scale, 1));
+    position: absolute;
+    left: 50%; top: 50%;
+    /* 先把自己中心对到视口中心，再围绕自身中心等比缩放：
+       不再依赖 grid 居中（元素大于容器时 grid 会让它溢到右下角）。 */
+    transform: translate(-50%, -50%) scale(var(--scale, 1));
     transform-origin: center center;
     background:
       radial-gradient(60% 50% at 12% 6%, rgba(107, 164, 240, 0.10), transparent 70%),
@@ -318,11 +321,7 @@
     letter-spacing: .08em; user-select: none;
   }
   .pager b { color: var(--text); font-weight: 600; }
-  .keys {
-    position: fixed; left: 26px; bottom: 16px; z-index: 21; font-size: 12.5px; color: var(--faint);
-    letter-spacing: .04em; transition: opacity 400ms ease;
-  }
-  body.hide-hud .keys, body.hide-hud .pager { opacity: 0; }
+  body.hide-hud .pager { opacity: 0; }
   .navbtn {
     position: fixed; top: 50%; transform: translateY(-50%); z-index: 21;
     width: 44px; height: 80px; border: 0; border-radius: 10px; cursor: pointer;
@@ -392,7 +391,7 @@
     }
     .slide[data-kind="cover"] .slide__inner { padding: 0 140px; }
     .anim { opacity: 1 !important; transform: none !important; animation: none !important; }
-    .hud, .pager, .keys, .navbtn, .overview, .rotate { display: none !important; }
+    .hud, .pager, .navbtn, .overview, .rotate { display: none !important; }
     .notes { display: none !important; }
   }
 </style>
@@ -570,20 +569,17 @@
         <ol class="story"><li class="story__step anim" style="--i:3"><span class="story__dot"></span><h3>跑通</h3><p>Netlify 函数两小时跑通，AI 能回话了</p></li><li class="story__step anim" style="--i:4"><span class="story__dot"></span><h3>卡住</h3><p>但编辑受限、额度不够，改一次要等很久</p></li><li class="story__step anim" style="--i:5"><span class="story__dot"></span><h3>迁移</h3><p>换到 Cloudflare Worker 中继，跨域与重试自己处理</p></li><li class="story__step anim" style="--i:6"><span class="story__dot"></span><h3>收敛</h3><p>提议改成结构化 JSON：任务 id 必须来自枚举，校验不过就不展示</p></li></ol></div><aside class="notes">这段是全项目最折腾的地方，也是学到最多的地方：不是&quot;接上模型&quot;就完了，是&quot;让它可控&quot;。</aside></section>
 <section class="slide" id="slide-19" data-index="18" data-kind="learn" aria-label="第 19 页"><div class="slide__inner ">
         <div class="eyebrow anim" style="--i:0">第 5 步 · 反思</div><div class="title-row"><h2 class="title anim" style="--i:1">我从这个项目里带走了什么</h2></div>
-        <div class="learn"><div class="learn__card anim" style="--i:3"><span class="learn__n">01</span><h3>把大目标拆成可交付的小步</h3><p>需求、开发、测试、文档并行，学会排优先级而不是被事情推着走。</p></div><div class="learn__card anim" style="--i:4"><span class="learn__n">02</span><h3>AI 的效果取决于环境</h3><p>让它看见项目文件，比反复聊天更有效；上下文比措辞更重要。</p></div><div class="learn__card anim" style="--i:5"><span class="learn__n">03</span><h3>判断力才是核心能力</h3><p>不是照单全收 AI 的输出，而是能看出哪里不对、怎么验证。</p></div></div></div><aside class="notes">三条收获对应 MYP 的三个学习成果：接受挑战、发展技能、协作与自主规划。</aside></section>
+        <div class="learn"><div class="learn__card anim" style="--i:3"><span class="learn__n">01</span><h3>把大目标拆成可交付的小步</h3><p>需求、开发、测试、文档并行，学会排优先级而不是被事情推着走。</p></div><div class="learn__card anim" style="--i:4"><span class="learn__n">02</span><h3>AI 的效果取决于环境</h3><p>让它看见项目文件，比反复聊天更有效；上下文比措辞更重要。</p></div><div class="learn__card anim" style="--i:5"><span class="learn__n">03</span><h3>判断力才是核心能力</h3><p>不是照单全收 AI 的输出，而是能看出哪里不对、怎么验证。</p></div></div>
+        <p class="footnote anim" style="--i:7">特别鸣谢：刘衍辰</p></div><aside class="notes">三条收获对应 MYP 的三个学习成果：接受挑战、发展技能、协作与自主规划。</aside></section>
 <section class="slide" id="slide-20" data-index="19" data-kind="end" aria-label="第 20 页"><div class="slide__inner ">
         <div class="end">
           <h2 class="display anim" style="--i:0">THANK YOU</h2>
-          <p class="sub anim" style="--i:1">谢谢大家</p>
-          <div class="end__links anim" style="--i:2"><a class="chip chip--lg" href="https://powerschedule-bfq.pages.dev/" target="_blank" rel="noopener">打开产品</a><a class="chip chip--lg" href="versions/index.html" target="_blank" rel="noopener">版本时间线</a></div>
-          <p class="meta anim" style="--i:3">特别鸣谢：刘衍辰</p>
         </div></div><aside class="notes">收尾留 30 秒提问时间；如果被问&quot;AI 会不会乱改&quot;，直接翻回第 13 页。</aside></section>
   </div>
 </div>
 
 <div class="hud"><div class="hud__bar" id="bar"></div></div>
 <div class="pager" id="pager"><b>1</b> / 20</div>
-<div class="keys" id="keys">← → 翻页　·　F 全屏　·　N 备注　·　G 总览　·　Home/End</div>
 <button class="navbtn navbtn--prev" id="prev" aria-label="上一页">‹</button>
 <button class="navbtn navbtn--next" id="next" aria-label="下一页">›</button>
 

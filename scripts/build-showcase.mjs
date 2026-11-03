@@ -278,17 +278,12 @@ const slides = [
       ['02', 'AI 的效果取决于环境', '让它看见项目文件，比反复聊天更有效；上下文比措辞更重要。'],
       ['03', '判断力才是核心能力', '不是照单全收 AI 的输出，而是能看出哪里不对、怎么验证。'],
     ],
+    footnote: '特别鸣谢：刘衍辰',
     notes: '三条收获对应 MYP 的三个学习成果：接受挑战、发展技能、协作与自主规划。',
   },
   {
     kind: 'end',
     big: 'THANK YOU',
-    sub: '谢谢大家',
-    meta: '特别鸣谢：刘衍辰',
-    links: [
-      ['打开产品', 'https://powerschedule-bfq.pages.dev/'],
-      ['版本时间线', 'versions/index.html'],
-    ],
     notes: '收尾留 30 秒提问时间；如果被问"AI 会不会乱改"，直接翻回第 13 页。',
   },
 ];
@@ -450,18 +445,15 @@ function renderSlide(slide, index) {
         ${head(slide)}
         <div class="learn">${slide.items
           .map(([n, t, d], i) => `<div class="learn__card anim" style="--i:${i + 3}"><span class="learn__n">${esc(n)}</span><h3>${esc(t)}</h3><p>${esc(d)}</p></div>`)
-          .join('')}</div>`);
+          .join('')}</div>
+        ${slide.footnote ? `<p class="footnote anim" style="--i:7">${esc(slide.footnote)}</p>` : ''}`);
       break;
 
     case 'end':
+      // 尾页只保留一句 THANK YOU（其余内容按需求移除）
       body = wrap(`
         <div class="end">
           <h2 class="display anim" style="--i:0">${esc(slide.big)}</h2>
-          <p class="sub anim" style="--i:1">${esc(slide.sub)}</p>
-          <div class="end__links anim" style="--i:2">${slide.links
-            .map(([label, href]) => `<a class="chip chip--lg" href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}</a>`)
-            .join('')}</div>
-          <p class="meta anim" style="--i:3">${esc(slide.meta)}</p>
         </div>`);
       break;
 
@@ -557,11 +549,14 @@ const html = `<!doctype html>
   }
 
   /* —— 舞台：1920×1080 设计稿，等比缩放 —— */
-  .viewport { position: fixed; inset: 0; display: grid; place-items: center; }
+  .viewport { position: fixed; inset: 0; overflow: hidden; }
   .stage {
     width: 1920px; height: 1080px;
-    position: relative;
-    transform: scale(var(--scale, 1));
+    position: absolute;
+    left: 50%; top: 50%;
+    /* 先把自己中心对到视口中心，再围绕自身中心等比缩放：
+       不再依赖 grid 居中（元素大于容器时 grid 会让它溢到右下角）。 */
+    transform: translate(-50%, -50%) scale(var(--scale, 1));
     transform-origin: center center;
     background:
       radial-gradient(60% 50% at 12% 6%, rgba(107, 164, 240, 0.10), transparent 70%),
@@ -843,11 +838,7 @@ const html = `<!doctype html>
     letter-spacing: .08em; user-select: none;
   }
   .pager b { color: var(--text); font-weight: 600; }
-  .keys {
-    position: fixed; left: 26px; bottom: 16px; z-index: 21; font-size: 12.5px; color: var(--faint);
-    letter-spacing: .04em; transition: opacity 400ms ease;
-  }
-  body.hide-hud .keys, body.hide-hud .pager { opacity: 0; }
+  body.hide-hud .pager { opacity: 0; }
   .navbtn {
     position: fixed; top: 50%; transform: translateY(-50%); z-index: 21;
     width: 44px; height: 80px; border: 0; border-radius: 10px; cursor: pointer;
@@ -917,7 +908,7 @@ const html = `<!doctype html>
     }
     .slide[data-kind="cover"] .slide__inner { padding: 0 140px; }
     .anim { opacity: 1 !important; transform: none !important; animation: none !important; }
-    .hud, .pager, .keys, .navbtn, .overview, .rotate { display: none !important; }
+    .hud, .pager, .navbtn, .overview, .rotate { display: none !important; }
     .notes { display: none !important; }
   }
 </style>
@@ -932,7 +923,6 @@ ${slides.map(renderSlide).join('\n')}
 
 <div class="hud"><div class="hud__bar" id="bar"></div></div>
 <div class="pager" id="pager"><b>1</b> / ${slides.length}</div>
-<div class="keys" id="keys">← → 翻页　·　F 全屏　·　N 备注　·　G 总览　·　Home/End</div>
 <button class="navbtn navbtn--prev" id="prev" aria-label="上一页">‹</button>
 <button class="navbtn navbtn--next" id="next" aria-label="下一页">›</button>
 
