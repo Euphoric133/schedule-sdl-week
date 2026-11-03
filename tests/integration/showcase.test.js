@@ -186,6 +186,35 @@ test('演示页：数字来自真实仓库（测试数/提交数/版本数）', 
   assert.ok(/数据截至\s*2026-10-30/.test(html), '页脚应标注数据截止日期');
 });
 
+test('演示页：间距走统一栅格，卡片内边距一致', async () => {
+  const html = await deck();
+  // 所有 gap 必须是令牌，不能是零散像素值
+  const rawGaps = [...html.matchAll(/gap:\s*(\d+px)/g)].map((m) => m[1]);
+  assert.deepEqual(rawGaps, [], `间距应走 --u* 令牌，仍有硬编码：${rawGaps.join(', ')}`);
+
+  // 栅格令牌必须存在且是 8 的倍数
+  for (const name of ['--u1', '--u2', '--u3', '--u4', '--u5', '--u6']) {
+    const m = html.match(new RegExp(`${name}:\\s*(\\d+)px`));
+    assert.ok(m, `缺少栅格令牌 ${name}`);
+    // u* 允许写成 var(--uN)（如 --pad-y: var(--u4)），此时直接放行
+    if (m) assert.equal(Number(m[1]) % 8, 0, `${name} 应为 8 的倍数，实际 ${m[1]}px`);
+  }
+
+  // 版心与卡片内边距共用同一组值
+  assert.match(html, /--gutter:\s*120px/);
+  assert.match(html, /--pad-x:\s*var\(--u4\)/);
+  assert.match(html, /--pad-y:\s*var\(--u4\)/);
+  assert.match(html, /padding:\s*96px var\(--gutter\) 120px/, '每页左右安全边距必须一致');
+
+  // 网格列不得出现裸 1fr（长内容会撑破）
+  const cols = [...html.matchAll(/grid-template-columns:\s*([^;{}]+);/g)].map((m) => m[1]);
+  const bare = cols.filter((c) => /(?:^|\s)1fr(?:\s|$)/.test(c));
+  assert.deepEqual(bare, [], `网格列应使用 minmax(0, 1fr)：${bare.join(' | ')}`);
+
+  // 标题块与正文的统一间隔
+  assert.match(html, /--head-gap:\s*var\(--u5\)/);
+});
+
 test('演示页：数字在无 JS / 打印时也是真实值，不是 0', async () => {
   const html = await deck();
   const counts = [...html.matchAll(/<strong class="count" data-count="(\d+)">([^<]*)<\/strong>/g)];
