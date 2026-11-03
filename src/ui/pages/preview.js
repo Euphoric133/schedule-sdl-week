@@ -27,6 +27,15 @@ export function renderPreview({ app, services }) {
 
   const nodes = [];
 
+  /**
+   * AI 发起、且带风险标记的调整（例如截止日期在过去、会删除已完成记录）。
+   *
+   * 标记存在 aiFeatureService 的 rescue 状态里，由 AI 页写入。
+   * 预览页只负责**醒目地再提示一次**——用户在这里做最终确认，
+   * 不能在没看到风险的情况下点"确认应用"。
+   */
+  const aiFlagMessages = services.aiFeatureService?.getRescueState?.()?.prepared?.flagMessages ?? [];
+
   const diff = preview?.diff ?? null;
   const counts = diff?.counts ?? null;
   const changeCount = counts
@@ -59,6 +68,16 @@ export function renderPreview({ app, services }) {
       ]),
     ]),
   );
+
+  if (aiFlagMessages.length > 0) {
+    nodes.push(
+      notice({
+        level: 'warning',
+        title: '这次调整带有风险',
+        message: aiFlagMessages.join(' '),
+      }),
+    );
+  }
 
   // 屏幕阅读器提示：候选计划未生效，必须由用户确认
   if (preview) {
@@ -449,7 +468,7 @@ async function handleUndo({ services, versions }) {
  * 这里刻意不展示版本号、状态码、指纹等内部信息——用户关心的是
  * "我接下来几天的安排会变成什么样"。
  */
-function describeChanges({ preview, state }) {
+function describeChanges({ preview, state, services = null }) {
   const counts = preview.diff?.counts ?? {};
   const bullets = [];
 
@@ -480,11 +499,17 @@ function describeChanges({ preview, state }) {
     bullets.push(`有 ${risks.length} 个任务存在逾期风险`);
   }
   if (bullets.length === 0) bullets.push('本次没有时段变化，应用后只会生成一个新版本');
+  /**
+   * AI 提议带来的风险必须出现在**确认弹窗**里，而不只是页面顶部——
+   * 用户点确认的那一刻才是真正做决定的时候。
+   */
+  const aiFlags = services?.aiFeatureService?.getRescueState?.()?.prepared?.flagMessages ?? [];
+  for (const text of aiFlags) bullets.push(text);
   return bullets;
 }
 
 async function handleApply({ services, preview, state, changeCount = 0 }) {
-  const bullets = describeChanges({ preview, state: state ?? { sessions: [] } });
+  const bullets = describeChanges({ preview, state: state ?? { sessions: [] }, services });
 
   const confirmed = await confirmDialog({
     title: changeCount > 0 ? '确认应用这份计划？' : '确认生成一个新版本？',

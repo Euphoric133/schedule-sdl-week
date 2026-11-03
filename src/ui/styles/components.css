@@ -5218,3 +5218,87 @@ dialog {
     transition: none;
   }
 }
+
+/* ==========================================================================
+   AI 助手：帮我改计划
+   ==========================================================================
+   这里是"AI 提议 → 程序校验 → 用户勾选 → 预览确认"这条链路的界面部分。
+   重点不是好看，而是让用户**看清**每条提议会改什么、有什么风险。
+   ========================================================================== */
+
+/* —— 快捷示例：一排小而低调的胶囊按钮 —— */
+.ai-examples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.ai-examples__label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.ai-example {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-xs);
+}
+
+/* —— 可勾选的提议列表 —— */
+.ai-proposals--selectable {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ai-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+}
+
+.ai-proposal__main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.ai-proposal__main input[type='checkbox'] {
+  margin-top: 3px;
+  flex: none;
+}
+
+/* —— 风险标签：必须显眼，但不能盖过正文 —— */
+.ai-risk {
+  display: inline-block;
+  margin-left: calc(var(--space-2) + 16px);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.ai-proposal--danger {
+  border-color: var(--color-danger);
+}
+
+.ai-proposal--danger .ai-risk {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}

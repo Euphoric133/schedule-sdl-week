@@ -911,6 +911,12 @@ async function handleStructuredRescue({ apiKey, value }) {
     structured: {
       reply: typeof parsed.reply === 'string' ? parsed.reply.slice(0, 2000) : '',
       proposals: Array.isArray(parsed.proposals) ? parsed.proposals.slice(0, 8) : [],
+      /**
+       * 追问通道：信息不全时 AI 需要先问清楚，而不是编造。
+       * 这两个字段原样透传给前端，前端据此把问题显示出来并保留输入。
+       */
+      needsMoreInfo: parsed.needsMoreInfo === true,
+      question: typeof parsed.question === 'string' ? parsed.question.slice(0, 500) : '',
     },
   });
 }
@@ -922,42 +928,101 @@ async function handleStructuredRescue({ apiKey, value }) {
  * lock_date 的 date 无法枚举，交由程序侧校验（不能锁过去/超出窗口）。
  */
 export function buildProposalSchema(refs) {
+  /**
+   * 提议的 JSON Schema。
+   *
+   * 关键点：
+   * - `taskId` 的 enum 就是本次合法的 ref 集合（从生成阶段杜绝"发明任务编号"）；
+   * - `deadlineDate` 只校验**格式**，不限制"必须 ≥ 今天"：
+   *   过去日期是合法但高风险的操作，交给程序侧打 `deadline_in_past` 标记，
+   *   再由预览页提示用户确认；
+   * - 字段全部可选（除 kind/reason），因为不同 kind 用到的字段不同；
+   *   程序侧会按 kind 校验必需字段。
+   */
   return {
     type: 'object',
     properties: {
-      reply: { type: 'string', description: '给学生的中文分析与取舍说明，两三句话' },
+      reply: { type: 'string', description: '给学生的中文说明，两三句话；信息不全时说明你在问什么' },
+      needsMoreInfo: { type: 'boolean', description: '信息不全、必须先追问时设为 true' },
+      question: { type: 'string', description: '需要追问用户的问题（一句话，needsMoreInfo 为 true 时填写）' },
       proposals: {
         type: 'array',
-        description: '可执行的调整建议；没有就返回空数组',
+        description: '可执行的结构化提议；不需要改动就给空数组',
         items: {
           type: 'object',
           properties: {
-            kind: { type: 'string', enum: ['defer_task', 'lock_date'] },
-            taskId: { type: 'string', enum: [...refs] },
-            minutes: { type: 'integer' },
-            date: { type: 'string' },
-            reason: { type: 'string' },
+            kind: {
+              type: 'string',
+              enum: ['defer_task', 'lock_date', 'create_task', 'update_task', 'complete_task', 'cancel_task', 'delete_task'],
+            },
+            taskId: { type: 'string', enum: [...refs], description: '只能填任务列表里的 ref 数字' },
+            minutes: { type: 'integer', minimum: 1, maximum: 480, description: 'defer_task：要推迟掉的分钟数' },
+            date: { type: 'string', description: 'lock_date：YYYY-MM-DD' },
+            title: { type: 'string', description: 'create_task：任务名称' },
+            subject: { type: 'string', description: 'create_task：必须使用上下文 subjects 里已有的科目' },
+            plannedMinutes: { type: 'integer', minimum: 5, maximum: 10080, description: 'create_task：预计用时' },
+            deadlineDate: { type: 'string', description: 'YYYY-MM-DD；允许过去日期，但要在 reply 里提醒' },
+            deadlineTime: { type: 'string', description: 'HH:mm，默认 23:00' },
+            importance: { type: 'integer', minimum: 1, maximum: 5 },
+            difficulty: { type: 'integer', minimum: 1, maximum: 5 },
+            procrastination: { type: 'integer', minimum: 1, maximum: 5 },
+            splittable: { type: 'boolean', description: '是否允许拆成多段，默认 true' },
+            plannedStart: { type: 'string', description: 'HH:mm，可选的计划开始时间下界' },
+            hard: { type: 'boolean', description: 'delete_task：true 表示彻底删除（含已完成记录）' },
+            patch: {
+              type: 'object',
+              description: 'update_task：要修改的字段（只能包含白名单字段）',
+              properties: {
+                title: { type: 'string' },
+                subject: { type: 'string' },
+                plannedMinutes: { type: 'integer', minimum: 1, maximum: 10080 },
+                deadlineDate: { type: 'string', description: 'YYYY-MM-DD' },
+                deadlineTime: { type: 'string', description: 'HH:mm' },
+                importance: { type: 'integer', minimum: 1, maximum: 5 },
+                difficulty: { type: 'integer', minimum: 1, maximum: 5 },
+                procrastination: { type: 'integer', minimum: 1, maximum: 5 },
+                splittable: { type: 'boolean' },
+                plannedStartMinutes: { type: 'integer', minimum: 0, maximum: 1440 },
+              },
+            },
+            reason: { type: 'string', description: '一句中文理由' },
           },
           required: ['kind', 'reason'],
-          propertyOrdering: ['kind', 'taskId', 'minutes', 'date', 'reason'],
+          propertyOrdering: [
+            'kind', 'taskId', 'minutes', 'date', 'title', 'subject', 'plannedMinutes',
+            'deadlineDate', 'deadlineTime', 'importance', 'difficulty', 'procrastination',
+            'splittable', 'plannedStart', 'hard', 'patch', 'reason',
+          ],
         },
       },
     },
     required: ['reply', 'proposals'],
-    propertyOrdering: ['reply', 'proposals'],
+    propertyOrdering: ['reply', 'needsMoreInfo', 'question', 'proposals'],
   };
 }
 
 const STRUCTURED_SYSTEM_INSTRUCTION = [
-  '你是学生学习规划助手的「计划急救」模块。',
+  '你是学生学习规划助手的「帮我改计划」模块。',
+  '',
+  '你可以提出这些结构化操作（都由程序校验、用户确认后才能生效）：',
+  '- create_task：新建学习任务；',
+  '- update_task：修改已有任务的名称/科目/用时/截止日期/重要度/难度/拖延倾向/是否可拆分/计划开始时间；',
+  '- complete_task：把任务标记完成（会自动记录本次学习时段）；',
+  '- cancel_task：取消任务（不删除，可恢复为未开始）；',
+  '- delete_task：删除任务；hard=false 是软删除（可恢复），hard=true 是彻底删除（连已完成记录一起删掉）；',
+  '- defer_task：减少某任务今天/后续的剩余工作量（minutes 是要推迟掉的分钟数）；',
+  '- lock_date：锁定某一天不再排学习。',
   '',
   '规则：',
-  '- reply 用简体中文写两三句话：分析冲突、比较取舍。不要列清单，不要复述任务原文。',
-  '- proposals 给出可执行的结构化调整；没有明确改动就给空数组。',
-  '- kind 只能是 defer_task（减少某任务今天的剩余工作量）或 lock_date（锁定某天不再排学习）。',
-  '- defer_task 的 taskId **只能填任务列表里 ref 字段的数字**（schema 已限定取值）；',
-  '  minutes 是"要推迟掉的分钟数"，必须大于 0 且不超过该任务的 remainingMinutes。',
-  '- lock_date 的 date 用 YYYY-MM-DD，不能是过去或超出规划窗口的日期。',
-  '- 不要修改截止时间、不要删除任务、不要移动已排好的时段。',
-  '- 只依据给定数据，不要编造任务或时长。',
+  '- reply 用简体中文写两三句话：说明你理解了什么、做了什么、有什么风险。不要列清单。',
+  '- 每条提议必须带一句中文 reason。',
+  '- kind 只能用上面列出的类型；taskId **只能填任务列表里的 ref 数字**（schema 已限定）。',
+  '- **信息不全时必须先追问**（needsMoreInfo=true + question），不要自己编造截止日期、用时或科目。',
+  '- 新建任务时，subject **只能使用上下文 subjects 里已有的科目**；没有合适的科目就追问用户。',
+  '- 截止日期允许填过去的日期或当年更早的日期，但必须在 reply 里主动提醒"这个截止日期已经过去了，任务会立即逾期"。',
+  '- 只有用户明确说"彻底删除/永久删除"时才用 hard=true；否则一律 hard=false。',
+  '- 不要修改已完成的历史学习记录；不要改固定日程、休息、设置、科目表。',
+  '- 用户没有明确要求时，不要凭空新增或删除任务。',
+  '- 只依据给定数据，不要编造任务、时长或日期。',
+  '- 输出必须是结构化 JSON，不要夹带额外说明文本。',
 ].join('\n');

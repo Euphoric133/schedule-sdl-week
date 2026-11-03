@@ -532,6 +532,9 @@ export async function sendStructuredRescue(input, options = {}) {
       ok: true,
       reply: payload.structured.reply ?? '',
       proposals: Array.isArray(payload.structured.proposals) ? payload.structured.proposals : [],
+      /** 信息不全时的追问（服务端原样透传） */
+      needsMoreInfo: payload.structured.needsMoreInfo === true,
+      question: typeof payload.structured.question === 'string' ? payload.structured.question : '',
       model: payload.model ?? '',
     };
   }

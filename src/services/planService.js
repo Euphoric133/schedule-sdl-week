@@ -560,7 +560,11 @@ export function createPlanService({ app, idFactory }) {
     // 把候选计划的学习片段转换成 StudySession —— **必须基于重放后的状态**，
     // 否则新增任务时产生的时段会引用草稿里的临时任务 ID，导致"时段引用了不存在的任务"。
     const sessionPlan = buildSessionPlan(remappedCandidate, nextState);
-    const protectedIssue = checkProtectedSessions(sessionPlan, state.sessions ?? []);
+    /** 本次预览中用户明确要求彻底删除的任务——它们的记录允许消失 */
+    const purgedTaskIds = new Set(
+      (preview.ops ?? []).filter((op) => op.kind === 'task.purge').map((op) => op.taskId),
+    );
+    const protectedIssue = checkProtectedSessions(sessionPlan, state.sessions ?? [], { purgedTaskIds });
     if (protectedIssue) return { ok: false, issues: [protectedIssue] };
 
     const snapshot = current ? createPlanSnapshot({ plan: current, nowIso: nowIso(), changeSummary: lastMutationSummary(current), trigger: preview.trigger }) : null;
@@ -730,12 +734,23 @@ export function createPlanService({ app, idFactory }) {
     };
   }
 
-  /** 受保护时段（已完成 / 锁定 / 进行中）必须逐字段保留 */
-  function checkProtectedSessions(nextSessions, previousSessions) {
+  /**
+   * 受保护时段（已完成 / 锁定 / 进行中）必须逐字段保留。
+   *
+   * 例外：用户**明确要求彻底删除**的任务（ops 里有 task.purge），
+   * 它的记录本来就应该一起消失，不能因为这道保护而让整个应用失败。
+   * 实测缺失这个例外时，AI 的"彻底删除"提议会一直卡在
+   * "已完成的学习时段在本次计划中消失了，已取消应用"。
+   *
+   * @param {Set<string>} purgedTaskIds 本次预览里被彻底删除的任务
+   */
+  function checkProtectedSessions(nextSessions, previousSessions, { purgedTaskIds = new Set() } = {}) {
     const previousById = new Map(previousSessions.map((session) => [session.id, session]));
     const nextById = new Map((nextSessions ?? []).map((session) => [session.id, session]));
 
     for (const session of previousSessions) {
+      // 明确要彻底删除的任务：它的时段本来就会被移除，跳过保护
+      if (purgedTaskIds.has(session.taskId)) continue;
       const mustKeep = session.state === SESSION_STATE.COMPLETED || session.locked === true || session.state === SESSION_STATE.IN_PROGRESS;
       if (!mustKeep) continue;
       const next = nextById.get(session.id);

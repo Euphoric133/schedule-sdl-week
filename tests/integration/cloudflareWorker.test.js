@@ -288,3 +288,43 @@ test('普通聊天：没有 context 时不塞空数据块', async () => {
     restore();
   }
 });
+
+/* ------------------------------------------------------------------ *
+ * 提议 schema：新增的改计划类型必须被服务端允许
+ * ------------------------------------------------------------------ */
+
+test('schema：kind 枚举包含新建/修改/完成/取消/删除', async () => {
+  const { mod } = await loadWorker({ GEMINI_API_KEY: 'k', ALLOWED_ORIGINS: ORIGIN });
+  const schema = mod.buildProposalSchema(['1', '2']);
+  const kinds = schema.properties.proposals.items.properties.kind.enum;
+  for (const kind of ['create_task', 'update_task', 'complete_task', 'cancel_task', 'delete_task', 'defer_task', 'lock_date']) {
+    assert.ok(kinds.includes(kind), `schema 缺少 ${kind}`);
+  }
+});
+
+test('schema：taskId 只能取本次上下文的 ref（防止发明任务编号）', async () => {
+  const { mod } = await loadWorker({ GEMINI_API_KEY: 'k', ALLOWED_ORIGINS: ORIGIN });
+  const schema = mod.buildProposalSchema(['1', '2', '3']);
+  assert.deepEqual(schema.properties.proposals.items.properties.taskId.enum, ['1', '2', '3']);
+});
+
+test('schema：截止日期只校验格式，不限制必须晚于今天（越界交给程序打风险标记）', async () => {
+  const { mod } = await loadWorker({ GEMINI_API_KEY: 'k', ALLOWED_ORIGINS: ORIGIN });
+  const schema = mod.buildProposalSchema(['1']);
+  const dateField = schema.properties.proposals.items.properties.deadlineDate;
+  assert.ok(dateField, '应有 deadlineDate 字段');
+  const text = JSON.stringify(dateField);
+  assert.ok(!/today|今天|不小于|>=\s*今天/.test(text), 'schema 不应把"必须晚于今天"写进约束');
+});
+
+test('schema：update_task 的 patch 只列出白名单字段', async () => {
+  const { mod } = await loadWorker({ GEMINI_API_KEY: 'k', ALLOWED_ORIGINS: ORIGIN });
+  const schema = mod.buildProposalSchema(['1']);
+  const patchProps = Object.keys(
+    schema.properties.proposals.items.properties.patch.properties ?? {},
+  );
+  assert.ok(patchProps.includes('deadlineDate'));
+  assert.ok(patchProps.includes('plannedMinutes'));
+  assert.ok(!patchProps.includes('status'), 'patch 不应允许改状态');
+  assert.ok(!patchProps.includes('dependsOn'), 'patch 不应允许改依赖');
+});

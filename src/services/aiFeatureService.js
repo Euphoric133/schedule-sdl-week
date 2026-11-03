@@ -15,7 +15,8 @@
  * - 校验失败时如实告诉学生哪一条不通过，而不是悄悄丢弃。
  */
 
-import { validateProposals, proposalsToOps } from '../ai/proposals.js';
+import { FLAG_TEXT, validateProposals, proposalsToOps } from '../ai/proposals.js';
+import { buildCompletionOps } from './planService.js';
 import { collectSamples, calibrateStats, suggestEstimate } from '../ai/calibration.js';
 import { remainingMinutesForTask } from '../domain/task.js';
 import { addDays, formatMinutes } from '../domain/time.js';
@@ -41,11 +42,20 @@ export function createAiFeatureService({ app, planService, now }) {
   function buildRescueInput() {
     const state = app.getState();
     const current = now();
-    const tasks = (state.tasks ?? []).filter((task) => task.status === 'not_started' || task.status === 'in_progress');
+    const allTasks = state.tasks ?? [];
+    /**
+     * ref 覆盖"未删除"的全部任务。
+     *
+     * 只给进行中的任务是不够的：完成、取消、删除都可能指向已完成或已取消的任务
+     * （例如"把上周那个作业删掉"）。已删除的任务不出现——它们已经在回收站里，
+     * 再让 AI 引用只会造成歧义。
+     */
+    const tasks = allTasks.filter((task) => task.status !== 'deleted');
+    const activeTasks = tasks.filter((task) => task.status === 'not_started' || task.status === 'in_progress');
 
     const taskById = new Map(tasks.map((task) => [task.id, task]));
     const remainingByTask = {};
-    for (const task of tasks) {
+    for (const task of activeTasks) {
       remainingByTask[task.id] = remainingMinutesForTask(task, state.sessions ?? []);
     }
 
@@ -58,6 +68,24 @@ export function createAiFeatureService({ app, planService, now }) {
       remainingByTask,
       context: {
         date: current.date,
+        /** 明确的今天日期：AI 理解"上个月""周六"这类相对说法必须依赖它 */
+        todayDate: current.date,
+        windowEndDate: addDays(current.date, 6),
+        /** 只能使用已有科目，避免 AI 凭空造出"物理"这种不存在的科目 */
+        /**
+         * 可用科目 = 科目表 ∪ 现有任务的科目。
+         *
+         * 只看任务会漏掉"建了科目但还没建任务"的情况；
+         * 只看科目表又会漏掉历史数据里存在、但科目表没登记的科目。
+         */
+        subjects: [
+          ...new Set([
+            ...(Array.isArray(state.subjects) ? state.subjects : []).map((item) =>
+              typeof item === 'string' ? item : item?.name,
+            ),
+            ...tasks.map((task) => task.subject),
+          ].filter(Boolean)),
+        ],
         now: formatMinutes(current.minutes),
         latestSleepMinutes,
         latestSleepTime: Number.isInteger(latestSleepMinutes) ? formatMinutes(latestSleepMinutes) : null,
@@ -68,14 +96,20 @@ export function createAiFeatureService({ app, planService, now }) {
          * 模型不擅长逐字复制任意字符串 id，但引用小整数几乎不会错。
          * 因此让 AI 用 ref，程序再映射回真实 id（一一对应，不是猜测）。
          */
-        tasks: tasks.slice(0, 8).map((task, index) => ({
+        tasks: tasks.slice(0, 12).map((task, index) => ({
           ref: index + 1,
           id: task.id,
           title: task.title,
           subject: task.subject,
-          remainingMinutes: remainingByTask[task.id],
+          status: task.status,
+          plannedMinutes: task.plannedMinutes,
+          remainingMinutes: remainingByTask[task.id] ?? 0,
           deadline: `${task.deadlineDate} ${task.deadlineTime}`,
           importance: task.importance,
+          /** 已完成记录条数：AI 判断"该不该彻底删除"时需要知道会丢多少记录 */
+          completedSessions: (state.sessions ?? []).filter(
+            (session) => session.taskId === task.id && session.state === 'completed',
+          ).length,
         })),
         /**
          * 明确列出"允许使用的 ref"。
@@ -83,7 +117,7 @@ export function createAiFeatureService({ app, planService, now }) {
          * 实测模型会凭空发明编号（只有 1 个任务却说 taskId:"2"）。
          * 把合法集合单独写出来，比让它自己从数组推断更可靠。
          */
-        validTaskRefs: tasks.slice(0, 8).map((task, index) => index + 1),
+        validTaskRefs: tasks.slice(0, 12).map((task, index) => index + 1),
       },
     };
   }
@@ -114,8 +148,10 @@ export function createAiFeatureService({ app, planService, now }) {
      */
     const refToId = new Map();
     for (const item of input.context.tasks) refToId.set(String(item.ref), item.id);
+    /** 所有"指向某个任务"的提议都要走同一套 ref 解析 */
+    const TASK_REFERENCING = new Set(['defer_task', 'update_task', 'complete_task', 'cancel_task', 'delete_task']);
     const normalized = (aiResult.proposals ?? []).map((proposal) => {
-      if (!proposal || proposal.kind !== 'defer_task') return proposal;
+      if (!proposal || !TASK_REFERENCING.has(proposal.kind)) return proposal;
       const key = String(proposal.taskId ?? '').trim();
       const asRef = refToId.get(key);
       if (asRef) return { ...proposal, taskId: asRef };
@@ -135,21 +171,70 @@ export function createAiFeatureService({ app, planService, now }) {
 
     // 注意接口形状：validateProposals 期望 { proposals: [...] }，不是裸数组。
     // 直接传数组会让它读不到提议、全部误判为"没有建议"——功能会静默失效。
-    const validated = validateProposals({ proposals: normalized }, input);
+    const validated = validateProposals(
+      { proposals: normalized },
+      {
+        ...input,
+        subjects: input.context.subjects ?? [],
+        state: app.getState(),
+        contextTasks: input.context.tasks.map((item) => ({ ref: item.ref, id: item.id })),
+      },
+    );
 
     if (!validated.ok) {
       // 全部拒绝：不生成预览。宁可让用户重试，也不展示一个半懂不懂的方案。
-      return { ok: false, stage: 'proposal_rejected', issues: validated.issues, reply: aiResult.reply };
+      return {
+        ok: false,
+        stage: 'proposal_rejected',
+        issues: validated.issues,
+        flags: validated.flags ?? [],
+        reply: aiResult.reply,
+      };
     }
     if (validated.proposals.length === 0) {
       return { ok: false, stage: 'no_proposal', issues: ['AI 认为当前不需要调整日程。'], reply: aiResult.reply };
     }
 
-    const ops = proposalsToOps(validated.proposals, { taskById: input.taskById, today: input.today });
+    return generatePreview(validated.proposals, {
+      reply: aiResult.reply,
+      flags: validated.flags ?? [],
+      taskById: input.taskById,
+      today: input.today,
+    });
+  }
+
+  /**
+   * 用"已通过校验的提议"生成候选预览。
+   *
+   * 单独抽出来的原因：前端允许用户逐条勾选，取消勾选的提议不应进入预览。
+   * 勾选之后需要**重新**生成一次预览，而不是复用包含全部提议的旧结果。
+   *
+   * @param {object[]} proposals 已通过 validateProposals 的提议
+   * @param {object} options { reply, flags, taskById, today }
+   */
+  function generatePreview(proposals, options = {}) {
+    const input = options.taskById ? { taskById: options.taskById, today: options.today } : buildRescueInput();
+    const flags = options.flags ?? [];
+
+    /**
+     * 完成任务必须走产品统一的链路（记录实际时段 + 标记完成 + 取消剩余时段 + 清理依赖），
+     * 这条链路在 planService 里已经实现，这里注入给 proposalsToOps，不重复写一遍。
+     */
+    const completionOpsFor = (taskId) =>
+      buildCompletionOps(app.getState(), {
+        taskId,
+        now: { date: input.today, minutes: now().minutes },
+      });
+
+    const ops = proposalsToOps(proposals, {
+      taskById: input.taskById,
+      today: input.today,
+      completionOpsFor,
+    });
     const previewResult = planService.requestPreview({
       ops,
       now: input.today ? { date: input.today, minutes: now().minutes } : undefined,
-      changeSummary: `AI 建议的调整：${validated.proposals.length} 项`,
+      changeSummary: `AI 建议的调整：${proposals.length} 项`,
       trigger: 'ai_rescue',
     });
 
@@ -165,17 +250,40 @@ export function createAiFeatureService({ app, planService, now }) {
         stage: 'infeasible',
         issues: (previewResult.issues ?? []).map((issue) => issue.message),
         preview: previewResult,
-        reply: aiResult.reply,
+        reply: options.reply,
       };
     }
 
     return {
       ok: true,
       stage: 'preview_ready',
-      proposals: validated.proposals,
+      proposals,
+      /** 风险标记（截止日期在过去、会删除已完成记录等），由预览页醒目提示 */
+      flags,
+      flagMessages: flags.map((name) => FLAG_TEXT[name]).filter(Boolean),
       preview: previewResult.preview,
-      reply: aiResult.reply,
+      reply: options.reply,
     };
+  }
+
+  /**
+   * 只把用户勾选的提议拿去生成预览（取消勾选的不进入预览）。
+   *
+   * @param {object[]} proposals 已通过校验、且被用户选中的提议
+   */
+  function previewSelected(proposals) {
+    const list = (proposals ?? []).filter(Boolean);
+    if (list.length === 0) {
+      return { ok: false, stage: 'no_proposal', issues: ['没有勾选任何调整。'] };
+    }
+    const input = buildRescueInput();
+    const flags = [...new Set(list.flatMap((proposal) => proposal.flags ?? []))];
+    return generatePreview(list, {
+      reply: '',
+      flags,
+      taskById: input.taskById,
+      today: input.today,
+    });
   }
 
   /**
@@ -256,6 +364,8 @@ export function createAiFeatureService({ app, planService, now }) {
   return {
     buildRescueInput,
     prepareRescuePreview,
+    /** 只对用户勾选的提议生成预览（取消勾选的不生效） */
+    previewSelected,
     getRescueState,
     setRescueState,
     clearRescueState,

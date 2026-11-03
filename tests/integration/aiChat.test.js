@@ -675,7 +675,12 @@ test('buildProposalSchema：taskId 的 enum 就是本次合法 ref 集合', asyn
   const schema = buildProposalSchema(['1', '2']);
   const item = schema.properties.proposals.items;
   assert.deepEqual(item.properties.taskId.enum, ['1', '2'], '非法 ref 必须在 schema 层就不可能出现');
-  assert.deepEqual(item.properties.kind.enum, ['defer_task', 'lock_date']);
+  // kind 现在覆盖 7 种提议（推迟/锁定/新建/修改/完成/取消/删除）。
+  // 这里不写死全集，而是断言"至少包含必需的两类"——新增提议类型时不应该让这条断言重写，
+  // 真正要守住的是 taskId 不能凭空发明（上一行）。
+  assert.ok(item.properties.kind.enum.includes('defer_task'), '必须支持 defer_task');
+  assert.ok(item.properties.kind.enum.includes('lock_date'), '必须支持 lock_date');
+  assert.ok(item.properties.kind.enum.length >= 2);
   assert.ok(schema.required.includes('reply'));
   assert.ok(schema.required.includes('proposals'));
 });

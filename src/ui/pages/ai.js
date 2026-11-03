@@ -15,6 +15,7 @@
 import { button, card, emptyState, notice, pill } from '../components.js';
 import { el, toast } from '../dom.js';
 import { formatDuration, formatMinutes } from '../../domain/time.js';
+import { FLAG_TEXT } from '../../ai/proposals.js';
 
 const TENDENCY_LABEL = Object.freeze({
   underestimated: '经常比预计久',
@@ -54,7 +55,7 @@ export function renderAi({ app, services, now, renderPage }) {
     notice({
       level: 'accent',
       title: '它是怎么工作的',
-      message: '你描述发生了什么（例如某个作业比预期多花了 40 分钟），AI 会分析冲突并给出方案；程序随后检查时间冲突、截止日期与睡觉时间等硬性约束。通过检查的方案才会变成「可应用的调整」给你预览。',
+      message: '用大白话告诉我你要改什么：新建任务、改截止日期、标记完成、取消或删除。我会把它整理成结构化操作，程序逐条校验（日期、科目、时长、冲突），你在下面勾选要保留的，再点「生成调整预览」确认后才会真正写入。',
     }),
   );
 
@@ -69,9 +70,37 @@ export function renderAi({ app, services, now, renderPage }) {
 
   const report = el('textarea.ai-report', {
     rows: 4,
-    placeholder: '例如：数学作业比预期多花了 40 分钟，我还要写英语作文，明天早上有考试，今晚 10:30 必须睡觉。',
-    'aria-label': '描述今天的情况',
+    placeholder: '例如：帮我加一个任务：生物实验报告，90 分钟，11 月 7 日截止，重要。',
+    'aria-label': '描述你要改什么',
   });
+
+  /**
+   * 快捷示例：点击只**填入输入框**，不自动提交。
+   *
+   * 为什么不自动提交：这些例句里有具体数值，用户往往要先改一改
+   * （换个日期、改个时长）。自动发送会浪费一次配额，也容易误改数据。
+   */
+  const EXAMPLES = [
+    '帮我加一个任务：生物实验报告，90 分钟，11 月 7 日截止，重要',
+    '把数学作业改到周六截止',
+    '英语作文我已经写完了',
+    '把化学实验的截止日期改到上个月',
+    '帮我删掉数学作业',
+    '彻底删除数学作业',
+  ];
+  const exampleRow = el('div.ai-examples', {}, [
+    el('span.ai-examples__label', { text: '试试：' }),
+    ...EXAMPLES.map((text) =>
+      el('button.btn.btn--sm.ai-example', {
+        type: 'button',
+        text,
+        onClick: () => {
+          report.value = text;
+          report.focus();
+        },
+      }),
+    ),
+  ]);
   const resultBox = el('div.ai-result');
 
   /**
@@ -92,10 +121,10 @@ export function renderAi({ app, services, now, renderPage }) {
       resultBox.appendChild(notice({ level: 'error', title: 'AI 没有返回结果', message: savedState.error }));
     }
   }
-  const askButton = button('让 AI 分析并给出方案', { variant: 'primary', onClick: () => runRescue() });
+  const askButton = button('让 AI 帮我改', { variant: 'primary', onClick: () => runRescue() });
 
-  rescueBody.push(report, el('div.btn-row', {}, [askButton]), resultBox);
-  nodes.push(card({ title: '功能一 · 计划急救', hint: 'AI 分析 + 程序校验', body: rescueBody }));
+  rescueBody.push(exampleRow, report, el('div.btn-row', {}, [askButton]), resultBox);
+  nodes.push(card({ title: '功能一 · 帮我改计划', hint: 'AI 理解 + 程序校验 + 你确认', body: rescueBody }));
 
   async function runRescue() {
     const text = report.value.trim();
@@ -124,6 +153,20 @@ export function renderAi({ app, services, now, renderPage }) {
       if (!ai.ok) {
         store.setRescueState({ reportText: text, error: ai.message });
         resultBox.replaceChildren(notice({ level: 'error', title: 'AI 没有返回结果', message: ai.message }));
+        return;
+      }
+
+      /**
+       * 追问优先：信息不全时**不生成预览**。
+       *
+       * 实测模型在缺少截止日期时会自己编一个——那比直接问用户危险得多。
+       * 这里把问题显示出来、输入框保留原文，用户补充后再提交。
+       */
+      if (ai.needsMoreInfo && ai.question) {
+        const pending = { ok: false, stage: 'needs_more_info', reply: ai.reply, question: ai.question };
+        store.setRescueState({ reportText: text, prepared: pending });
+        resultBox.replaceChildren(renderRescueResult(pending));
+        if (typeof renderPage === 'function') renderPage();
         return;
       }
 
@@ -161,30 +204,149 @@ export function renderAi({ app, services, now, renderPage }) {
       ]),
     );
 
+    /* ---------------- 需要追问 ---------------- */
+    if (prepared.stage === 'needs_more_info') {
+      fragments.push(
+        notice({
+          level: 'info',
+          title: '还需要一点信息',
+          message: prepared.question,
+        }),
+      );
+      fragments.push(
+        el('p.ai-hint', { text: '补充上面的信息后再点一次「让 AI 帮我改」，你刚才写的内容还在输入框里。' }),
+      );
+      return el('div.stack', {}, fragments);
+    }
+
+    /* ---------------- 校验通过：可勾选 ---------------- */
     if (prepared.ok) {
       fragments.push(
         notice({
           level: 'success',
           title: `程序校验通过（${prepared.proposals.length} 项调整）`,
-          message: '下面这次调整不违反任何硬性约束。点按钮可以查看它会带来的具体变化，确认前计划不会改变。',
+          message: '下面每一条都可以单独取消勾选。只有勾选的调整会进入预览，确认前计划与任务数据不会改变。',
         }),
       );
-      fragments.push(
-        el('ul.ai-proposals', {}, prepared.proposals.map((item) => el('li', { text: describeProposal(item) }))),
-      );
-      fragments.push(
-        el('div.btn-row', {}, [
-          button('生成调整预览', {
-            variant: 'primary',
-            onClick: () => {
-              globalThis.location.hash = '#/preview';
+
+      // 顶部风险提示（截止日期在过去、会删除已完成记录等）
+      for (const text of prepared.flagMessages ?? []) {
+        fragments.push(notice({ level: 'warning', title: '注意', message: text }));
+      }
+
+      /** 勾选状态：默认全选 */
+      const selected = prepared.proposals.map(() => true);
+
+      const list = el('ul.ai-proposals.ai-proposals--selectable');
+      prepared.proposals.forEach((item, index) => {
+        const checkbox = el('input', {
+          type: 'checkbox',
+          id: `ai-proposal-${index}`,
+          checked: true,
+          on: {
+            change: () => {
+              selected[index] = checkbox.checked;
+              refreshButton();
             },
+          },
+        });
+        const riskTags = (item.flags ?? [])
+          .map((name) => FLAG_TEXT[name])
+          .filter(Boolean)
+          .map((text) => el('span.ai-risk', { text }));
+
+        list.appendChild(
+          el('li.ai-proposal', {}, [
+            el('label.ai-proposal__main', { for: `ai-proposal-${index}` }, [
+              checkbox,
+              el('span', { text: describeProposal(item) }),
+            ]),
+            ...riskTags,
+          ]),
+        );
+      });
+      fragments.push(list);
+
+      const actionBox = el('div.btn-row');
+      const primary = button('生成调整预览', {
+        variant: 'primary',
+        onClick: () => {
+          const chosen = prepared.proposals.filter((_, index) => selected[index]);
+          if (chosen.length === 0) {
+            toast('至少勾选一条调整。', 'error');
+            return;
+          }
+          /**
+           * 彻底删除需要二次确认。
+           *
+           * 这里只做"确认意图"，真正的删除仍然发生在预览页点确认时：
+           * 生成预览本身不写数据。
+           */
+          if (chosen.some((item) => item.kind === 'delete_task' && item.hard)) {
+            showHardDeleteConfirm(chosen);
+            return;
+          }
+          goPreview(chosen);
+        },
+      });
+      actionBox.appendChild(primary);
+      fragments.push(actionBox);
+
+      function refreshButton() {
+        const count = selected.filter(Boolean).length;
+        primary.textContent = count > 0 ? `生成调整预览（已选 ${count} 项）` : '生成调整预览';
+        primary.disabled = count === 0;
+      }
+      refreshButton();
+
+      function showHardDeleteConfirm(chosen) {
+        const hardTargets = chosen.filter((item) => item.kind === 'delete_task' && item.hard);
+        const recordCount = hardTargets.reduce((sum, item) => sum + (item.completedSessionCount ?? 0), 0);
+        const confirmBox = el('div.stack', {}, [
+          notice({
+            level: 'error',
+            title: '确认要彻底删除吗',
+            message: `将永久删除：${hardTargets.map((item) => `「${item.taskTitle}」`).join('、')}。${
+              recordCount > 0
+                ? `其中包含 ${recordCount} 条已完成学习记录，删除后统计数据也会一并减少，且无法恢复。`
+                : '删除后无法恢复。'
+            }`,
           }),
-        ]),
-      );
+          el('div.btn-row', {}, [
+            button('我已了解，继续生成预览', {
+              variant: 'danger',
+              onClick: () => goPreview(chosen),
+            }),
+            button('返回修改', { onClick: () => confirmBox.remove() }),
+          ]),
+        ]);
+        fragments.push(confirmBox);
+        actionBox.replaceWith(confirmBox);
+      }
+
+      function goPreview(chosen) {
+        const result = services.aiFeatureService.previewSelected(chosen);
+        if (!result.ok) {
+          resultBox.replaceChildren(
+            el('div.stack', {}, [
+              ...fragments,
+              notice({
+                level: result.stage === 'infeasible' ? 'warning' : 'error',
+                title: result.stage === 'infeasible' ? '排程后仍然行不通' : '无法生成预览',
+                message: (result.issues ?? []).join(' '),
+              }),
+            ]),
+          );
+          return;
+        }
+        services.aiFeatureService.setRescueState({ prepared: { ...result, reply: prepared.reply } });
+        globalThis.location.hash = '#/preview';
+      }
+
       return el('div.stack', {}, fragments);
     }
 
+    /* ---------------- 校验失败 ---------------- */
     const title =
       prepared.stage === 'proposal_rejected'
         ? 'AI 的提议没有通过程序校验'
@@ -287,5 +449,54 @@ function describeProposal(item) {
   if (item.kind === 'defer_task') {
     return `「${item.taskTitle}」今天少做 ${item.minutes} 分钟${item.reason ? `：${item.reason}` : ''}`;
   }
-  return `锁定 ${item.date} 当天不再安排学习${item.reason ? `：${item.reason}` : ''}`;
+  if (item.kind === 'lock_date') {
+    return `锁定 ${item.date} 当天不再安排学习${item.reason ? `：${item.reason}` : ''}`;
+  }
+  if (item.kind === 'create_task') {
+    const deadline = `${item.deadlineDate} ${item.deadlineTime}`;
+    return `新建任务「${item.title}」/ ${item.subject} / ${formatDuration(item.plannedMinutes)} / 截止 ${deadline} / 重要度 ${item.importance}${item.reason ? `：${item.reason}` : ''}`;
+  }
+  if (item.kind === 'update_task') {
+    const parts = describePatch(item.patch);
+    return `修改「${item.taskTitle}」：${parts}${item.reason ? `（${item.reason}）` : ''}`;
+  }
+  if (item.kind === 'complete_task') {
+    return `把「${item.taskTitle}」标记为已完成${item.reason ? `：${item.reason}` : ''}`;
+  }
+  if (item.kind === 'cancel_task') {
+    return `取消「${item.taskTitle}」${item.reason ? `：${item.reason}` : ''}`;
+  }
+  if (item.kind === 'delete_task') {
+    const mode = item.hard ? '彻底删除（不可恢复）' : '删除（可在已删除历史中恢复）';
+    const records = item.completedSessionCount > 0 ? `，含 ${item.completedSessionCount} 条已完成记录` : '';
+    return `${mode}「${item.taskTitle}」${records}${item.reason ? `：${item.reason}` : ''}`;
+  }
+  return `未知的操作类型：${String(item.kind)}`;
+}
+
+/** 把 patch 字段翻译成中文，避免在界面上直接暴露英文字段名 */
+function describePatch(patch = {}) {
+  const labels = {
+    title: '名称',
+    subject: '科目',
+    plannedMinutes: '预计用时',
+    deadlineDate: '截止日期',
+    deadlineTime: '截止时刻',
+    importance: '重要度',
+    difficulty: '难度',
+    procrastination: '拖延倾向',
+    splittable: '可拆分',
+    plannedStartMinutes: '计划开始时间',
+  };
+  const parts = [];
+  for (const [key, value] of Object.entries(patch)) {
+    const label = labels[key] ?? key;
+    let shown = value;
+    if (key === 'plannedMinutes' && Number.isInteger(value)) shown = formatDuration(value);
+    else if (key === 'splittable') shown = value ? '可以拆分' : '不拆分';
+    else if (key === 'plannedStartMinutes' && Number.isInteger(value)) shown = formatMinutes(value);
+    else if (key === 'plannedStartMinutes' && value === null) shown = '不限';
+    parts.push(`${label} → ${shown}`);
+  }
+  return parts.join('，');
 }
