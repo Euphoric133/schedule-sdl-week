@@ -117,12 +117,12 @@ test('演示页：放映交互齐全（翻页/全屏/备注/总览/深链/打印
   }
 });
 
-test('演示页：尾页只有 THANK YOU，且没有左下角操作提示', async () => {
+test('演示页：尾页只有「感谢观看」，且没有左下角操作提示', async () => {
   const html = await deck();
   const end = html.match(/<section class="slide"[^>]*id="slide-20"[\s\S]*?<\/section>/)[0];
   const visible = end.replace(/<aside class="notes">[\s\S]*?<\/aside>/g, '');
   const text = visible.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  assert.equal(text, 'THANK YOU', `尾页只应有 THANK YOU，实际：${text}`);
+  assert.equal(text, '感谢观看', `尾页只应有「感谢观看」，实际：${text}`);
 
   assert.equal(/class="keys"/.test(html), false, '不应有左下角操作提示');
   assert.equal(/← → 翻页/.test(html), false, '不应出现翻页提示文案');
