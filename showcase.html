@@ -592,7 +592,7 @@
         <div class="statement">
           <h2 class="statement__big anim" style="--i:0">计划不是写在纸上，<br>是排得进去。</h2>
           <p class="sub anim" style="--i:1">输入相同 → 计划相同；每一处改动都先给你看，你点确认才生效。</p>
-          <div class="proof anim" style="--i:2"><div class="proof__item"><strong class="count" data-count="853">0</strong><span>自动化测试全通过</span></div><div class="proof__item"><strong class="count" data-count="0">0</strong><span>运行时依赖</span></div><div class="proof__item"><strong class="count" data-count="59">0</strong><span>可运行历史版本</span></div></div>
+          <div class="proof anim" style="--i:2"><div class="proof__item"><strong class="count" data-count="853">853</strong><span>自动化测试全通过</span></div><div class="proof__item"><strong class="count" data-count="0">0</strong><span>运行时依赖</span></div><div class="proof__item"><strong class="count" data-count="59">59</strong><span>可运行历史版本</span></div></div>
         </div></div><aside class="notes">这一页定调：我们的价值不是&quot;生成计划&quot;，而是&quot;排得进去并且可控&quot;。</aside></section>
 <section class="slide" id="slide-3" data-index="2" data-kind="agenda" data-trans="zoom" data-anim-set="c" aria-label="第 3 页"><div class="slide__inner ">
         
@@ -686,19 +686,19 @@
 <section class="slide" id="slide-14" data-index="13" data-kind="metrics" data-trans="push" data-anim-set="d" aria-label="第 14 页"><div class="slide__inner ">
         <div class="eyebrow anim" style="--i:0">质量证据</div><div class="title-row"><h2 class="title anim" style="--i:1">不是&quot;能跑&quot;，是&quot;可验证&quot;</h2></div>
         <div class="metrics"><div class="metrics__card anim glow" style="--i:3">
-            <strong class="count" data-count="853">0</strong>
+            <strong class="count" data-count="853">853</strong>
             <span class="metrics__label">自动化测试全通过</span>
             <span class="metrics__hint">单元 / 集成 / 端到端</span></div><div class="metrics__card anim " style="--i:4">
-            <strong class="count" data-count="20">0</strong>
+            <strong class="count" data-count="20">20</strong>
             <span class="metrics__label">验收场景逐条覆盖</span>
             <span class="metrics__hint">docs/ACCEPTANCE.md</span></div><div class="metrics__card anim " style="--i:5">
             <strong class="count" data-count="0">0</strong>
             <span class="metrics__label">运行时依赖</span>
             <span class="metrics__hint">零第三方库、无 CDN</span></div><div class="metrics__card anim " style="--i:6">
-            <strong class="count" data-count="93">0</strong>
+            <strong class="count" data-count="93">93</strong>
             <span class="metrics__label">次提交 · 15 天</span>
             <span class="metrics__hint">2026-10-16 → 10-30</span></div><div class="metrics__card anim " style="--i:7">
-            <strong class="count" data-count="59">0</strong>
+            <strong class="count" data-count="59">59</strong>
             <span class="metrics__label">可运行历史版本</span>
             <span class="metrics__hint">每个提交都能打开</span></div></div>
         <p class="footnote anim" style="--i:8">数据截至 2026-10-30　·　可现场复核：node --test &quot;tests/**/*.test.js&quot;　·　git rev-list --count HEAD</p></div><aside class="notes">数字都在页脚注了截止日期，可现场复核：node --test、git rev-list --count HEAD。</aside></section>
@@ -895,6 +895,13 @@
     if (Math.abs(dx) > 60) go(current + (dx < 0 ? 1 : -1));
     touchX = null;
   }, { passive: true });
+
+  // 打印/导出 PDF 前把滚动数字固定为最终值（否则可能打印出动画中途的 0）
+  window.addEventListener('beforeprint', function () {
+    document.querySelectorAll('[data-count]').forEach(function (el) {
+      el.textContent = el.getAttribute('data-count');
+    });
+  });
 
   // 空闲自动隐藏提示
   var idleTimer = null;

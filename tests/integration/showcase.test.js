@@ -185,3 +185,13 @@ test('演示页：数字来自真实仓库（测试数/提交数/版本数）', 
   assert.ok(html.includes('0'), '应写入零依赖');
   assert.ok(/数据截至\s*2026-10-30/.test(html), '页脚应标注数据截止日期');
 });
+
+test('演示页：数字在无 JS / 打印时也是真实值，不是 0', async () => {
+  const html = await deck();
+  const counts = [...html.matchAll(/<strong class="count" data-count="(\d+)">([^<]*)<\/strong>/g)];
+  assert.ok(counts.length >= 6, '应有多处滚动数字');
+  for (const [, target, text] of counts) {
+    assert.equal(text, target, `data-count=${target} 的静态文本应为 ${target}，实际 ${text}`);
+  }
+  assert.match(html, /beforeprint/, '打印前应把数字固定为最终值');
+});

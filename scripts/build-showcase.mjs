@@ -329,7 +329,7 @@ function renderSlide(slide, index) {
           <h2 class="statement__big anim" style="--i:0">${slide.big}</h2>
           <p class="sub anim" style="--i:1">${esc(slide.sub)}</p>
           <div class="proof anim" style="--i:2">${slide.proof
-            .map(([n, label]) => `<div class="proof__item"><strong class="count" data-count="${esc(n)}">0</strong><span>${esc(label)}</span></div>`)
+            .map(([n, label]) => `<div class="proof__item"><strong class="count" data-count="${esc(n)}">${esc(n)}</strong><span>${esc(label)}</span></div>`)
             .join('')}</div>
         </div>`);
       break;
@@ -404,7 +404,7 @@ function renderSlide(slide, index) {
         ${head(slide)}
         <div class="metrics">${slide.items
           .map(([n, label, hint], i) => `<div class="metrics__card anim ${i === 0 ? 'glow' : ''}" style="--i:${i + 3}">
-            <strong class="count" data-count="${esc(n)}">0</strong>
+            <strong class="count" data-count="${esc(n)}">${esc(n)}</strong>
             <span class="metrics__label">${esc(label)}</span>
             <span class="metrics__hint">${esc(hint)}</span></div>`)
           .join('')}</div>
@@ -1225,6 +1225,13 @@ ${slides
     if (Math.abs(dx) > 60) go(current + (dx < 0 ? 1 : -1));
     touchX = null;
   }, { passive: true });
+
+  // 打印/导出 PDF 前把滚动数字固定为最终值（否则可能打印出动画中途的 0）
+  window.addEventListener('beforeprint', function () {
+    document.querySelectorAll('[data-count]').forEach(function (el) {
+      el.textContent = el.getAttribute('data-count');
+    });
+  });
 
   // 空闲自动隐藏提示
   var idleTimer = null;
