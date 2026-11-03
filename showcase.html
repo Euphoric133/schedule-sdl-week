@@ -64,28 +64,189 @@
     padding: 96px 120px 120px;
     opacity: 0;
     visibility: hidden;
-    transform: translate3d(40px, 0, 0);
-    transition: opacity 380ms var(--ease), transform 380ms var(--ease), visibility 0s linear 380ms;
+    transition: opacity 380ms var(--ease), transform 420ms var(--ease), visibility 0s linear 420ms;
   }
+  /* 翻页过渡四种，按页分配，避免每次都是同一种"淡入" */
+  .slide[data-trans="fade"] { transform: none; }
+  .slide[data-trans="push"] { transform: translate3d(64px, 0, 0); }
+  .slide[data-trans="zoom"] { transform: scale(.968); }
+  .slide[data-trans="lift"] { transform: translate3d(0, 46px, 0); }
   .slide.is-active {
     opacity: 1; visibility: visible;
     transform: none;
-    transition: opacity 380ms var(--ease), transform 380ms var(--ease), visibility 0s;
+    transition: opacity 380ms var(--ease), transform 460ms var(--ease), visibility 0s;
   }
   .slide__inner { position: relative; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
   .slide[data-kind="cover"] { padding: 0; }
   .slide[data-kind="cover"] .slide__inner { height: 100%; justify-content: center; padding: 0 140px; }
 
-  /* —— 元素入场 —— */
-  .anim { opacity: 0; transform: translate3d(0, 22px, 0); }
+  /* ==================================================================
+     动画系统
+     ------------------------------------------------------------------
+     一页一种主入场 + 列表逐项错位，避免"整场只有一个上浮"。
+     变体按 data-kind 分配，同一页内部再按 nth-child 交替左右。
+     ================================================================== */
+
+  .anim { opacity: 0; will-change: opacity, transform; }
   .slide.is-active .anim {
-    animation: rise 620ms var(--ease) both;
-    animation-delay: calc(var(--i, 0) * 70ms + 120ms);
+    animation-duration: 640ms;
+    animation-timing-function: var(--ease);
+    animation-fill-mode: both;
+    animation-delay: calc(var(--i, 0) * 70ms + 140ms);
+    animation-name: rise;
   }
-  @keyframes rise {
-    from { opacity: 0; transform: translate3d(0, 22px, 0); }
-    to { opacity: 1; transform: none; }
+
+  @keyframes rise   { from { opacity:0; transform: translate3d(0, 24px, 0); }  to { opacity:1; transform:none; } }
+  @keyframes sink   { from { opacity:0; transform: translate3d(0,-18px, 0); }  to { opacity:1; transform:none; } }
+  @keyframes leftIn { from { opacity:0; transform: translate3d(-48px, 0, 0); } to { opacity:1; transform:none; } }
+  @keyframes rightIn{ from { opacity:0; transform: translate3d(48px, 0, 0); }  to { opacity:1; transform:none; } }
+  @keyframes zoomIn { from { opacity:0; transform: scale(.90); }               to { opacity:1; transform: scale(1); } }
+  @keyframes blurIn { from { opacity:0; filter: blur(14px); }                 to { opacity:1; filter: blur(0); } }
+  @keyframes clipUp { from { opacity:0; clip-path: inset(0 0 100% 0); }       to { opacity:1; clip-path: inset(0 0 0 0); } }
+  @keyframes popIn  {
+    0%   { opacity:0; transform: scale(.82); }
+    62%  { opacity:1; transform: scale(1.045); }
+    100% { opacity:1; transform: scale(1); }
   }
+  @keyframes flipIn {
+    from { opacity:0; transform: perspective(1100px) rotateX(-14deg) translateY(20px); }
+    to   { opacity:1; transform: perspective(1100px) rotateX(0) translateY(0); }
+  }
+
+  /* 按页面类型分配主入场 */
+  .slide[data-kind="statement"] .statement__big     { animation-name: clipUp; }
+  .slide[data-kind="statement"] .proof__item        { animation-name: flipIn; }
+  .slide[data-kind="cover"] .logo                   { animation-name: zoomIn; }
+  .slide[data-kind="cover"] .eyebrow                { animation-name: sink; }
+  .slide[data-kind="cover"] .display                { animation-name: clipUp; }
+  .slide[data-kind="agenda"] .agenda__item:nth-child(odd)  { animation-name: leftIn; }
+  .slide[data-kind="agenda"] .agenda__item:nth-child(even) { animation-name: rightIn; }
+  .slide[data-kind="grid-list"] .pain__item         { animation-name: blurIn; animation-duration: 720ms; }
+  .slide[data-kind="compare"] .compare__row         { animation-name: leftIn; }
+  .slide[data-kind="four"] .four__card              { animation-name: flipIn; }
+  .slide[data-kind="who"] .chip                     { animation-name: popIn; animation-duration: 520ms; }
+  .slide[data-kind="who"] blockquote                { animation-name: blurIn; }
+  /* 五个亮点页连续出现，各用一套入场，避免"五页一个样" */
+  .slide[data-kind="feature"][data-anim-set="a"] .feature__list li:nth-child(odd)  { animation-name: leftIn; }
+  .slide[data-kind="feature"][data-anim-set="a"] .feature__list li:nth-child(even) { animation-name: rightIn; }
+  .slide[data-kind="feature"][data-anim-set="a"] .feature__visual { animation-name: zoomIn; animation-duration: 760ms; }
+
+  .slide[data-kind="feature"][data-anim-set="b"] .feature__list li:nth-child(odd)  { animation-name: sink; }
+  .slide[data-kind="feature"][data-anim-set="b"] .feature__list li:nth-child(even) { animation-name: rise; }
+  .slide[data-kind="feature"][data-anim-set="b"] .feature__visual { animation-name: flipIn; animation-duration: 820ms; }
+
+  .slide[data-kind="feature"][data-anim-set="c"] .feature__list li { animation-name: blurIn; animation-duration: 700ms; }
+  .slide[data-kind="feature"][data-anim-set="c"] .feature__visual { animation-name: clipUp; animation-duration: 820ms; }
+
+  .slide[data-kind="feature"][data-anim-set="d"] .feature__list li:nth-child(odd)  { animation-name: rightIn; }
+  .slide[data-kind="feature"][data-anim-set="d"] .feature__list li:nth-child(even) { animation-name: leftIn; }
+  .slide[data-kind="feature"][data-anim-set="d"] .feature__visual { animation-name: popIn; animation-duration: 700ms; }
+
+  .slide[data-kind="feature"][data-anim-set="e"] .feature__list li { animation-name: zoomIn; animation-duration: 620ms; }
+  .slide[data-kind="feature"][data-anim-set="e"] .feature__visual { animation-name: rightIn; animation-duration: 800ms; }
+  .slide[data-kind="ai"] .flow__step                { animation-name: popIn; animation-duration: 560ms; }
+  .slide[data-kind="ai"] .rules li                  { animation-name: sink; }
+  .slide[data-kind="metrics"] .metrics__card        { animation-name: popIn; animation-duration: 580ms; }
+  .slide[data-kind="link"] .linkcard                { animation-name: clipUp; animation-duration: 720ms; }
+  .slide[data-kind="tools"] .tools__card            { animation-name: flipIn; }
+  .slide[data-kind="tools"] .tools__badge           { animation-name: popIn; animation-delay: .5s; }
+  .slide[data-kind="story"] .story__step            { animation-name: rightIn; }
+  .slide[data-kind="learn"] .learn__card            { animation-name: zoomIn; }
+  .slide[data-kind="end"] .display                  { animation-name: clipUp; animation-duration: 900ms; }
+
+  /* 逐个错位：列表/网格内部的元素按序号递增 */
+  .slide[data-kind="grid-list"] .pain__item:nth-child(2),
+  .slide[data-kind="metrics"] .metrics__card:nth-child(2),
+  .slide[data-kind="tools"] .tools__card:nth-child(2),
+  .slide[data-kind="story"] .story__step:nth-child(2),
+  .slide[data-kind="learn"] .learn__card:nth-child(2) { animation-delay: .26s; }
+  .slide[data-kind="grid-list"] .pain__item:nth-child(3),
+  .slide[data-kind="metrics"] .metrics__card:nth-child(3),
+  .slide[data-kind="tools"] .tools__card:nth-child(3),
+  .slide[data-kind="story"] .story__step:nth-child(3),
+  .slide[data-kind="learn"] .learn__card:nth-child(3) { animation-delay: .38s; }
+  .slide[data-kind="grid-list"] .pain__item:nth-child(4),
+  .slide[data-kind="metrics"] .metrics__card:nth-child(4),
+  .slide[data-kind="tools"] .tools__card:nth-child(4),
+  .slide[data-kind="story"] .story__step:nth-child(4) { animation-delay: .50s; }
+  .slide[data-kind="grid-list"] .pain__item:nth-child(5),
+  .slide[data-kind="metrics"] .metrics__card:nth-child(5) { animation-delay: .62s; }
+  .slide[data-kind="who"] .chip:nth-child(2) { animation-delay: .26s; }
+  .slide[data-kind="who"] .chip:nth-child(3) { animation-delay: .34s; }
+  .slide[data-kind="who"] .chip:nth-child(4) { animation-delay: .42s; }
+
+  /* ==================================================================
+     明暗突出
+     ------------------------------------------------------------------
+     每页有一道缓慢扫过的"主光"，重点元素再叠一层辉光。
+     不用 filter: brightness 压暗整页（会糊字），只用局部透明度与描边。
+     ================================================================== */
+  .slide::before {
+    content: '';
+    position: absolute; inset: -10% -6%;
+    background:
+      radial-gradient(38% 34% at 26% 14%, rgba(107,164,240,.20), transparent 72%),
+      radial-gradient(30% 28% at 78% 78%, rgba(214,174,78,.10), transparent 74%);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .slide.is-active::before { animation: keyLight 2200ms var(--ease) both; }
+  @keyframes keyLight {
+    0%   { opacity: 0; transform: translate3d(-3%, -2%, 0) scale(1.04); }
+    45%  { opacity: .85; }
+    100% { opacity: .38; transform: none; }
+  }
+
+  /* 重点元素：描边辉光（用伪元素，避免和入场动画抢 box-shadow） */
+  .glow { position: relative; }
+  .glow::after {
+    content: '';
+    position: absolute; inset: -1px; border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    box-shadow: 0 0 0 1px rgba(107,164,240,.55), 0 0 34px rgba(107,164,240,.30);
+  }
+  .slide.is-active .glow::after { animation: glowIn 2600ms var(--ease) 900ms both; }
+  @keyframes glowIn {
+    0%   { opacity: 0; }
+    35%  { opacity: 1; }
+    100% { opacity: .45; }
+  }
+
+  /* 非重点元素压暗，制造"主次"。
+     必须用 filter 而不是 opacity：入场动画结束在 opacity:1 且 fill: both，
+     会把静态的 opacity 覆盖掉（试过，视觉上等于没压暗）。 */
+  .slide[data-kind="compare"] .compare__row:not(.is-ours) { filter: brightness(.66) saturate(.8); }
+  .slide[data-kind="tools"] .tools__card:not(.glow) { filter: brightness(.64) saturate(.8); }
+  .slide[data-kind="story"] .story__step:not(.glow) { filter: brightness(.7); }
+  .slide[data-kind="metrics"] .metrics__card:not(.glow) { filter: brightness(.78); }
+
+  /* 重点元素额外描边（静态，不参与动画） */
+  .slide[data-kind="compare"] .is-ours,
+  .slide[data-kind="link"] .linkcard { border-color: rgba(107,164,240,.55); }
+
+  /* 故事页的节点圆点：弹一下，强调"时间在推进" */
+  .slide[data-kind="story"] .story__dot { animation: dotPop 520ms var(--ease) both; }
+  .slide[data-kind="story"] .story__step:nth-child(2) .story__dot { animation-delay: .26s; }
+  .slide[data-kind="story"] .story__step:nth-child(3) .story__dot { animation-delay: .38s; }
+  .slide[data-kind="story"] .story__step:nth-child(4) .story__dot { animation-delay: .50s; }
+  @keyframes dotPop {
+    0%   { transform: translateY(-50%) scale(0); opacity: 0; }
+    70%  { transform: translateY(-50%) scale(1.5); opacity: 1; }
+    100% { transform: translateY(-50%) scale(1); opacity: 1; }
+  }
+
+  /* 尾页与主张页：文字自带一点光晕 */
+  .slide[data-kind="end"] .display,
+  .slide[data-kind="statement"] .statement__big {
+    text-shadow: 0 0 46px rgba(107,164,240,.28);
+  }
+
+  /* 图标线条描边动画 */
+  .slide.is-active .icon path,
+  .slide.is-active .icon circle { animation: draw 900ms var(--ease) .3s both; }
+  @keyframes draw { from { stroke-dasharray: 60; stroke-dashoffset: 60; } to { stroke-dasharray: 60; stroke-dashoffset: 0; } }
 
   /* —— 排版 —— */
   .eyebrow {
@@ -358,7 +519,13 @@
 
   /* —— 减少动态 —— */
   @media (prefers-reduced-motion: reduce) {
-    .slide, .anim, .splitbar i, .ring__progress, .hud__bar { animation: none !important; transition: none !important; }
+    .slide, .anim, .splitbar i, .ring__progress, .hud__bar,
+    .slide::before, .glow::after, .story__dot, .icon path, .icon circle {
+      animation: none !important; transition: none !important;
+    }
+    .slide::before { opacity: .3; }
+    .glow::after { opacity: .4; }
+    .slide [class]:not(.glow) { filter: none !important; }
     .slide { opacity: 1; transform: none; }
     .slide:not(.is-active) { display: none; }
   }
@@ -400,7 +567,7 @@
 <div class="rotate">请把设备横过来观看（或使用电脑全屏放映）</div>
 <div class="viewport" id="viewport">
   <div class="stage" id="stage">
-<section class="slide" id="slide-1" data-index="0" data-kind="cover" aria-label="第 1 页"><div class="slide__inner ">
+<section class="slide" id="slide-1" data-index="0" data-kind="cover" data-trans="fade" data-anim-set="a" aria-label="第 1 页"><div class="slide__inner ">
         <div class="cover__stars"><circle cx="0.00%" cy="0.00%" r="0.50" opacity="0.18" fill="#cfe0f8"/><circle cx="37.51%" cy="61.80%" r="1.00" opacity="0.31" fill="#cfe0f8"/><circle cx="75.02%" cy="23.61%" r="0.79" opacity="0.44" fill="#cfe0f8"/><circle cx="12.52%" cy="85.41%" r="0.57" opacity="0.57" fill="#cfe0f8"/><circle cx="50.03%" cy="47.21%" r="1.07" opacity="0.30" fill="#cfe0f8"/><circle cx="87.54%" cy="9.01%" r="0.86" opacity="0.43" fill="#cfe0f8"/><circle cx="25.05%" cy="70.82%" r="0.64" opacity="0.56" fill="#cfe0f8"/><circle cx="62.56%" cy="32.62%" r="1.14" opacity="0.29" fill="#cfe0f8"/><circle cx="0.06%" cy="94.42%" r="0.93" opacity="0.42" fill="#cfe0f8"/><circle cx="37.57%" cy="56.23%" r="0.71" opacity="0.55" fill="#cfe0f8"/><circle cx="75.08%" cy="18.03%" r="0.50" opacity="0.28" fill="#cfe0f8"/><circle cx="12.59%" cy="79.83%" r="1.00" opacity="0.41" fill="#cfe0f8"/><circle cx="50.10%" cy="41.64%" r="0.79" opacity="0.54" fill="#cfe0f8"/><circle cx="87.60%" cy="3.44%" r="0.57" opacity="0.27" fill="#cfe0f8"/><circle cx="25.11%" cy="65.24%" r="1.07" opacity="0.40" fill="#cfe0f8"/><circle cx="62.62%" cy="27.04%" r="0.86" opacity="0.53" fill="#cfe0f8"/><circle cx="0.13%" cy="88.85%" r="0.64" opacity="0.26" fill="#cfe0f8"/><circle cx="37.64%" cy="50.65%" r="1.14" opacity="0.39" fill="#cfe0f8"/><circle cx="75.14%" cy="12.45%" r="0.93" opacity="0.52" fill="#cfe0f8"/><circle cx="12.65%" cy="74.26%" r="0.71" opacity="0.25" fill="#cfe0f8"/><circle cx="50.16%" cy="36.06%" r="0.50" opacity="0.38" fill="#cfe0f8"/><circle cx="87.67%" cy="97.86%" r="1.00" opacity="0.51" fill="#cfe0f8"/><circle cx="25.18%" cy="59.67%" r="0.79" opacity="0.24" fill="#cfe0f8"/><circle cx="62.68%" cy="21.47%" r="0.57" opacity="0.37" fill="#cfe0f8"/><circle cx="0.19%" cy="83.27%" r="1.07" opacity="0.50" fill="#cfe0f8"/><circle cx="37.70%" cy="45.07%" r="0.86" opacity="0.23" fill="#cfe0f8"/><circle cx="75.21%" cy="6.88%" r="0.64" opacity="0.36" fill="#cfe0f8"/><circle cx="12.72%" cy="68.68%" r="1.14" opacity="0.49" fill="#cfe0f8"/><circle cx="50.22%" cy="30.48%" r="0.93" opacity="0.22" fill="#cfe0f8"/><circle cx="87.73%" cy="92.29%" r="0.71" opacity="0.35" fill="#cfe0f8"/><circle cx="25.24%" cy="54.09%" r="0.50" opacity="0.48" fill="#cfe0f8"/><circle cx="62.75%" cy="15.89%" r="1.00" opacity="0.21" fill="#cfe0f8"/><circle cx="0.26%" cy="77.70%" r="0.79" opacity="0.34" fill="#cfe0f8"/><circle cx="37.76%" cy="39.50%" r="0.57" opacity="0.47" fill="#cfe0f8"/><circle cx="75.27%" cy="1.30%" r="1.07" opacity="0.20" fill="#cfe0f8"/><circle cx="12.78%" cy="63.11%" r="0.86" opacity="0.33" fill="#cfe0f8"/><circle cx="50.29%" cy="24.91%" r="0.64" opacity="0.46" fill="#cfe0f8"/><circle cx="87.80%" cy="86.71%" r="1.14" opacity="0.19" fill="#cfe0f8"/><circle cx="25.30%" cy="48.51%" r="0.93" opacity="0.32" fill="#cfe0f8"/><circle cx="62.81%" cy="10.32%" r="0.71" opacity="0.45" fill="#cfe0f8"/><circle cx="0.32%" cy="72.12%" r="0.50" opacity="0.18" fill="#cfe0f8"/><circle cx="37.83%" cy="33.92%" r="1.00" opacity="0.31" fill="#cfe0f8"/><circle cx="75.34%" cy="95.73%" r="0.79" opacity="0.44" fill="#cfe0f8"/><circle cx="12.84%" cy="57.53%" r="0.57" opacity="0.57" fill="#cfe0f8"/><circle cx="50.35%" cy="19.33%" r="1.07" opacity="0.30" fill="#cfe0f8"/><circle cx="87.86%" cy="81.13%" r="0.86" opacity="0.43" fill="#cfe0f8"/></div>
         <div class="cover"><svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
   <rect x="2" y="2" width="20" height="20" rx="6.5" fill="#0e1520"/>
@@ -421,19 +588,19 @@
           <div class="chips anim" style="--i:3"><span class="chip">确定性排程</span><span class="chip">AI 辅助建议</span><span class="chip">本地优先</span><span class="chip">0 运行时依赖</span></div>
           <div class="meta anim" style="--i:4">9 年级 4 班　·　陈家晋 · 宋建宇　·　2026.10.30</div>
         </div></div><aside class="notes">开场 30 秒：我们做一个&quot;排得进去&quot;的计划工具。强调它不是聊天机器人，核心是确定性排程。</aside></section>
-<section class="slide" id="slide-2" data-index="1" data-kind="statement" aria-label="第 2 页"><div class="slide__inner ">
+<section class="slide" id="slide-2" data-index="1" data-kind="statement" data-trans="push" data-anim-set="b" aria-label="第 2 页"><div class="slide__inner ">
         <div class="statement">
           <h2 class="statement__big anim" style="--i:0">计划不是写在纸上，<br>是排得进去。</h2>
           <p class="sub anim" style="--i:1">输入相同 → 计划相同；每一处改动都先给你看，你点确认才生效。</p>
           <div class="proof anim" style="--i:2"><div class="proof__item"><strong class="count" data-count="853">0</strong><span>自动化测试全通过</span></div><div class="proof__item"><strong class="count" data-count="0">0</strong><span>运行时依赖</span></div><div class="proof__item"><strong class="count" data-count="59">0</strong><span>可运行历史版本</span></div></div>
         </div></div><aside class="notes">这一页定调：我们的价值不是&quot;生成计划&quot;，而是&quot;排得进去并且可控&quot;。</aside></section>
-<section class="slide" id="slide-3" data-index="2" data-kind="agenda" aria-label="第 3 页"><div class="slide__inner ">
+<section class="slide" id="slide-3" data-index="2" data-kind="agenda" data-trans="zoom" data-anim-set="c" aria-label="第 3 页"><div class="slide__inner ">
         
         <ol class="agenda"><li class="agenda__item anim" style="--i:2"><span class="agenda__n">01</span><div><h3>产品介绍</h3><p>我们做什么、为谁做、解决什么问题</p></div></li><li class="agenda__item anim" style="--i:3"><span class="agenda__n">02</span><div><h3>现场演示</h3><p>输入作业，看系统排出七天计划</p></div></li><li class="agenda__item anim" style="--i:4"><span class="agenda__n">03</span><div><h3>开发过程</h3><p>用 AI 工具辅助完成规则与界面</p></div></li><li class="agenda__item anim" style="--i:5"><span class="agenda__n">04</span><div><h3>测试与反思</h3><p>发现问题、修复问题与收获</p></div></li></ol></div><aside class="notes">四步走完，约 8 分钟；演示环节会现场打开网页。</aside></section>
-<section class="slide" id="slide-4" data-index="3" data-kind="grid-list" aria-label="第 4 页"><div class="slide__inner ">
+<section class="slide" id="slide-4" data-index="3" data-kind="grid-list" data-trans="lift" data-anim-set="d" aria-label="第 4 页"><div class="slide__inner ">
         <div class="eyebrow anim" style="--i:0">用户痛点</div><div class="title-row"><h2 class="title anim" style="--i:1">知道该学，却总在截止前赶工</h2></div><p class="sub anim" style="--i:2">同时上多门课，时间被课程、吃饭、社团切得很碎</p>
         <ul class="pain"><li class="pain__item anim" style="--i:3"><span class="pain__icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span><div><h3>任务堆在一起</h3><p>数学、英语、生物三份作业同时压过来</p></div></li><li class="pain__item anim" style="--i:4"><span class="pain__icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M15 9l-2.2 5.8L7 17l2.2-5.8z"/></svg></span><div><h3>不知道先做哪个</h3><p>哪天真该花多少时间，全靠猜</p></div></li><li class="pain__item anim" style="--i:5"><span class="pain__icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><path d="M9 7l11 10M9 17L20 7"/></svg></span><div><h3>大作业不会拆</h3><p>100 分钟的论文想分几天写，却不知怎么分</p></div></li><li class="pain__item anim" style="--i:6"><span class="pain__icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10M7 20h10M8 4c0 4 8 4 8 8s-8 4-8 8"/></svg></span><div><h3>排计划太费时间</h3><p>手排一次半小时，一改就全乱</p></div></li><li class="pain__item anim" style="--i:7"><span class="pain__icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.2"/></svg></span><div><h3>整块时间被切碎</h3><p>上课、吃饭、社团，凑不出连续两小时</p></div></li></ul></div><aside class="notes">这五条来自我自己和同学的真实处境；不是调研报告，是我们每天的状态。</aside></section>
-<section class="slide" id="slide-5" data-index="4" data-kind="compare" aria-label="第 5 页"><div class="slide__inner ">
+<section class="slide" id="slide-5" data-index="4" data-kind="compare" data-trans="fade" data-anim-set="e" aria-label="第 5 页"><div class="slide__inner ">
         <div class="eyebrow anim" style="--i:0">需求分析</div><div class="title-row"><h2 class="title anim" style="--i:1">现有工具排不出真正能执行的计划</h2></div>
         <ul class="compare"><li class="compare__row anim " style="--i:3">
             <span class="compare__name">通用日历</span><span class="compare__why">只记时间，不懂任务难度和截止优先级</span>
@@ -443,19 +610,19 @@
             <span class="compare__name">AI 排程</span><span class="compare__why">结果不可控，可能排出根本做不完的计划</span>
             <span class="compare__mark is-no"><svg class="icon icon--mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span></li><li class="compare__row anim " style="--i:6">
             <span class="compare__name">手动排表</span><span class="compare__why">每次重排要半小时，改一处全乱</span>
-            <span class="compare__mark is-no"><svg class="icon icon--mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span></li><li class="compare__row anim is-ours" style="--i:7">
+            <span class="compare__mark is-no"><svg class="icon icon--mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span></li><li class="compare__row anim is-ours glow" style="--i:7">
             <span class="compare__name">本产品</span><span class="compare__why">确定性排程 + 硬约束校验 + 改前预览</span>
             <span class="compare__mark is-ok"><svg class="icon icon--mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg></span></li></ul></div><aside class="notes">关键差异在&quot;可控&quot;：AI 排程不可复现，我们的排程同输入同输出，可检查可撤销。</aside></section>
-<section class="slide" id="slide-6" data-index="5" data-kind="four" aria-label="第 6 页"><div class="slide__inner ">
+<section class="slide" id="slide-6" data-index="5" data-kind="four" data-trans="push" data-anim-set="a" aria-label="第 6 页"><div class="slide__inner ">
         <div class="eyebrow anim" style="--i:0">我们的答案</div><div class="title-row"><h2 class="title anim" style="--i:1">把&quot;排不出来&quot;变成&quot;排得清楚&quot;</h2></div>
         <div class="four"><div class="four__card anim" style="--i:3"><h3>自动排期</h3><p>综合截止日、难度、重要性与空闲时间，排出未来七天</p></div><div class="four__card anim" style="--i:4"><h3>任务拆分</h3><p>100 分钟的大作业分到三天，总量守恒，可跟踪进度</p></div><div class="four__card anim" style="--i:5"><h3>冲突检测</h3><p>时间不够就明说原因，不硬塞、不造假可行</p></div><div class="four__card anim" style="--i:6"><h3>改前确认</h3><p>新增作业先看逐项改动预览，确认后才写入</p></div></div></div><aside class="notes">四件事对应四个技术点，后面各用一页展开。</aside></section>
-<section class="slide" id="slide-7" data-index="6" data-kind="who" aria-label="第 7 页"><div class="slide__inner ">
+<section class="slide" id="slide-7" data-index="6" data-kind="who" data-trans="zoom" data-anim-set="b" aria-label="第 7 页"><div class="slide__inner ">
         <div class="eyebrow anim" style="--i:0">目标人群</div><div class="title-row"><h2 class="title anim" style="--i:1">为被多门课压着的中学生而做</h2></div>
         <div class="who">
           <div class="who__tags anim" style="--i:3"><span class="chip chip--lg">12–15 岁</span><span class="chip chip--lg">初中 / IB MYP</span><span class="chip chip--lg">每周都有作业与小测</span><span class="chip chip--lg">知道要学，但总在截止前赶工</span></div>
           <blockquote class="anim" style="--i:4">&quot;我不是不想学，是每次坐下来都不知道该先做哪一个。&quot;</blockquote>
         </div></div><aside class="notes">人群画像是具体的：初中 IB MYP 阶段，多门课并行，作业与小测密集。</aside></section>
-<section class="slide" id="slide-8" data-index="7" data-kind="feature" aria-label="第 8 页"><div class="slide__inner ">
+<section class="slide" id="slide-8" data-index="7" data-kind="feature" data-trans="lift" data-anim-set="c" aria-label="第 8 页"><div class="slide__inner ">
         <div class="title-row"><span class="tag">亮点 A</span><h2 class="title anim" style="--i:1">确定性排程：同样的输入，永远同样的结果</h2></div>
         <div class="feature">
           <ul class="feature__list"><li class="anim" style="--i:3">排程是纯函数：不看时钟、不联网、不掷骰子</li><li class="anim" style="--i:4">10 条硬约束（H1–H10）逐条校验，违反就不交付</li><li class="anim" style="--i:5">排不下时如实报告原因，绝不偷偷压缩或取消</li><li class="anim" style="--i:6">每个未安排任务都有原因码 + 中文说明 + 建议</li></ul>
@@ -467,7 +634,7 @@
       <div class="viz__col"><span class="viz__cap">输出 B</span><span class="viz__blk"></span><span class="viz__blk"></span></div>
     </div></div>
         </div></div><aside class="notes">这一页是最硬的技术点：可复现、可检查。测试里同一输入跑两次结果必须一致。</aside></section>
-<section class="slide" id="slide-9" data-index="8" data-kind="feature" aria-label="第 9 页"><div class="slide__inner ">
+<section class="slide" id="slide-9" data-index="8" data-kind="feature" data-trans="fade" data-anim-set="d" aria-label="第 9 页"><div class="slide__inner ">
         <div class="title-row"><span class="tag">亮点 B</span><h2 class="title anim" style="--i:1">任务拆分与依赖：大作业不再靠意志力</h2></div>
         <div class="feature">
           <ul class="feature__list"><li class="anim" style="--i:3">可拆分任务切成合规片段，跨天铺开</li><li class="anim" style="--i:4">所有片段总时长 = 任务剩余工作量（总量守恒）</li><li class="anim" style="--i:5">不可拆分任务必须一次排进连续时段，绝不切碎</li><li class="anim" style="--i:6">前置任务未完成，后续任务不会被排到前面</li></ul>
@@ -479,7 +646,7 @@
       <span class="viz__note">40 + 40 + 20 分钟　·　总量不变</span>
     </div></div>
         </div></div><aside class="notes">用一条 100 分钟的长条变三条示意；这是学生最容易&quot;手排失败&quot;的地方。</aside></section>
-<section class="slide" id="slide-10" data-index="9" data-kind="feature" aria-label="第 10 页"><div class="slide__inner ">
+<section class="slide" id="slide-10" data-index="9" data-kind="feature" data-trans="push" data-anim-set="e" aria-label="第 10 页"><div class="slide__inner ">
         <div class="title-row"><span class="tag">亮点 C</span><h2 class="title anim" style="--i:1">预览确认与撤销：改动永远可控</h2></div>
         <div class="feature">
           <ul class="feature__list"><li class="anim" style="--i:3">候选计划与正式计划严格分开，绝不偷偷替换</li><li class="anim" style="--i:4">差异逐条列出：新增 / 移动 / 拆分 / 缩短 / 取消 + 原因</li><li class="anim" style="--i:5">确认才写入；放弃则零改动；每次应用都留版本可回滚</li><li class="anim" style="--i:6">&quot;本次无需调整&quot;会直说，不拿一堆 0 糊弄你</li></ul>
@@ -489,7 +656,7 @@
       <div class="viz__col"><span class="viz__cap">新计划</span><span class="blk blk--new" style="--w:64%"></span><span class="blk blk--new" style="--w:82%"></span><span class="blk blk--new" style="--w:52%"></span></div>
     </div></div>
         </div></div><aside class="notes">强调&quot;零静默改动&quot;：任何变更都要经过预览这一步。</aside></section>
-<section class="slide" id="slide-11" data-index="10" data-kind="feature" aria-label="第 11 页"><div class="slide__inner ">
+<section class="slide" id="slide-11" data-index="10" data-kind="feature" data-trans="zoom" data-anim-set="a" aria-label="第 11 页"><div class="slide__inner ">
         <div class="title-row"><span class="tag">亮点 D</span><h2 class="title anim" style="--i:1">专注执行闭环：计划接着计时跑</h2></div>
         <div class="feature">
           <ul class="feature__list"><li class="anim" style="--i:3">任务清单直接进专注页，点「专注」按任务时长开始</li><li class="anim" style="--i:4">倒计时 / 正计时双模式，暂停不丢时间，刷新不归零</li><li class="anim" style="--i:5">完成即回写：记录实际学习时段、任务完成、取消剩余时段</li><li class="anim" style="--i:6">番茄数与奖励转盘挂钩，完成一个任务额外发一次机会</li></ul>
@@ -504,7 +671,7 @@
       <span class="viz__cap">专注 68% · 41 / 60 分钟</span>
     </div></div>
         </div></div><aside class="notes">演示时这里切到真实页面；这一页只是示意环形进度。</aside></section>
-<section class="slide" id="slide-12" data-index="11" data-kind="feature" aria-label="第 12 页"><div class="slide__inner ">
+<section class="slide" id="slide-12" data-index="11" data-kind="feature" data-trans="lift" data-anim-set="b" aria-label="第 12 页"><div class="slide__inner ">
         <div class="title-row"><span class="tag">亮点 E</span><h2 class="title anim" style="--i:1">体验：13 个页面，一套设计语言</h2></div>
         <div class="feature">
           <ul class="feature__list"><li class="anim" style="--i:3">深色为默认，冷蓝 + 暖金；液态玻璃分层，不牺牲可读性</li><li class="anim" style="--i:4">首页太阳系概念、七天看板、每日视图、调整预览统一风格</li><li class="anim" style="--i:5">浅色 / 深色 / 自定义壁纸；壁纸下自动提高不透明度</li><li class="anim" style="--i:6">键盘可操作、焦点可见、减少动态效果时关闭动画</li></ul>
@@ -512,66 +679,66 @@
     <div class="pages"><span class="pages__chip">首页</span><span class="pages__chip">七天计划</span><span class="pages__chip">每日视图</span><span class="pages__chip">学习任务</span><span class="pages__chip">固定日程</span><span class="pages__chip">AI 助手</span><span class="pages__chip">学习统计</span><span class="pages__chip">专注花园</span><span class="pages__chip pages__chip--more">+5</span></div>
   </div></div>
         </div></div><aside class="notes">13 个页面列表：首页、七天计划、每日视图、学习任务、固定日程、AI 助手、统计、专注花园、预览、版本历史、外观、通知、设置。</aside></section>
-<section class="slide" id="slide-13" data-index="12" data-kind="ai" aria-label="第 13 页"><div class="slide__inner ">
+<section class="slide" id="slide-13" data-index="12" data-kind="ai" data-trans="fade" data-anim-set="c" aria-label="第 13 页"><div class="slide__inner ">
         <div class="eyebrow anim" style="--i:0">AI 的边界</div><div class="title-row"><h2 class="title anim" style="--i:1">AI 只提议，永不改数据</h2></div>
         <div class="flow"><span class="flow__step anim" style="--i:3">你描述情况</span><span class="flow__arrow anim" style="--i:3">→</span><span class="flow__step anim" style="--i:4">AI 给方案</span><span class="flow__arrow anim" style="--i:4">→</span><span class="flow__step anim" style="--i:5">程序校验</span><span class="flow__arrow anim" style="--i:5">→</span><span class="flow__step anim" style="--i:6">生成预览</span><span class="flow__arrow anim" style="--i:6">→</span><span class="flow__step anim" style="--i:7">你点确认</span></div>
         <ul class="rules"><li class="anim" style="--i:4"><strong>只发必要数据</strong><span>任务标题、时长、截止与评分；备注与姓名不发送</span></li><li class="anim" style="--i:5"><strong>提议必须过校验</strong><span>任务必须存在、字段在白名单内、数值在范围内</span></li><li class="anim" style="--i:6"><strong>核心排程不用 AI</strong><span>AI 从不决定&quot;排到几点&quot;，它只建议参数</span></li><li class="anim" style="--i:7"><strong>失败如实说明</strong><span>超时、限流、格式错误都给出原因与下一步</span></li></ul></div><aside class="notes">这是产品原则：可解释、可回退。AI 失败也不影响排程与数据。</aside></section>
-<section class="slide" id="slide-14" data-index="13" data-kind="metrics" aria-label="第 14 页"><div class="slide__inner ">
+<section class="slide" id="slide-14" data-index="13" data-kind="metrics" data-trans="push" data-anim-set="d" aria-label="第 14 页"><div class="slide__inner ">
         <div class="eyebrow anim" style="--i:0">质量证据</div><div class="title-row"><h2 class="title anim" style="--i:1">不是&quot;能跑&quot;，是&quot;可验证&quot;</h2></div>
-        <div class="metrics"><div class="metrics__card anim" style="--i:3">
+        <div class="metrics"><div class="metrics__card anim glow" style="--i:3">
             <strong class="count" data-count="853">0</strong>
             <span class="metrics__label">自动化测试全通过</span>
-            <span class="metrics__hint">单元 / 集成 / 端到端</span></div><div class="metrics__card anim" style="--i:4">
+            <span class="metrics__hint">单元 / 集成 / 端到端</span></div><div class="metrics__card anim " style="--i:4">
             <strong class="count" data-count="20">0</strong>
             <span class="metrics__label">验收场景逐条覆盖</span>
-            <span class="metrics__hint">docs/ACCEPTANCE.md</span></div><div class="metrics__card anim" style="--i:5">
+            <span class="metrics__hint">docs/ACCEPTANCE.md</span></div><div class="metrics__card anim " style="--i:5">
             <strong class="count" data-count="0">0</strong>
             <span class="metrics__label">运行时依赖</span>
-            <span class="metrics__hint">零第三方库、无 CDN</span></div><div class="metrics__card anim" style="--i:6">
+            <span class="metrics__hint">零第三方库、无 CDN</span></div><div class="metrics__card anim " style="--i:6">
             <strong class="count" data-count="93">0</strong>
             <span class="metrics__label">次提交 · 15 天</span>
-            <span class="metrics__hint">2026-10-16 → 10-30</span></div><div class="metrics__card anim" style="--i:7">
+            <span class="metrics__hint">2026-10-16 → 10-30</span></div><div class="metrics__card anim " style="--i:7">
             <strong class="count" data-count="59">0</strong>
             <span class="metrics__label">可运行历史版本</span>
             <span class="metrics__hint">每个提交都能打开</span></div></div>
         <p class="footnote anim" style="--i:8">数据截至 2026-10-30　·　可现场复核：node --test &quot;tests/**/*.test.js&quot;　·　git rev-list --count HEAD</p></div><aside class="notes">数字都在页脚注了截止日期，可现场复核：node --test、git rev-list --count HEAD。</aside></section>
-<section class="slide" id="slide-15" data-index="14" data-kind="link" aria-label="第 15 页"><div class="slide__inner ">
+<section class="slide" id="slide-15" data-index="14" data-kind="link" data-trans="zoom" data-anim-set="e" aria-label="第 15 页"><div class="slide__inner ">
         <div class="eyebrow anim" style="--i:0">第 2 步 · 现场演示</div><div class="title-row"><h2 class="title anim" style="--i:1">现在打开，现场输入一份作业</h2></div>
-        <a class="linkcard anim" style="--i:3" href="https://powerschedule-bfq.pages.dev/" target="_blank" rel="noopener">
+        <a class="linkcard anim glow" style="--i:3" href="https://powerschedule-bfq.pages.dev/" target="_blank" rel="noopener">
           <span class="linkcard__label">打开</span>
           <span class="linkcard__url">https://powerschedule-bfq.pages.dev/</span>
         </a>
         <p class="hint anim" style="--i:4">进入后点「学习任务」新建，再点「生成计划」看预览</p></div><aside class="notes">现场演示 2 分钟：新建任务 → 生成计划 → 看预览差异 → 确认应用。</aside></section>
-<section class="slide" id="slide-16" data-index="15" data-kind="link" aria-label="第 16 页"><div class="slide__inner ">
+<section class="slide" id="slide-16" data-index="15" data-kind="link" data-trans="lift" data-anim-set="a" aria-label="第 16 页"><div class="slide__inner ">
         <div class="eyebrow anim" style="--i:0">第 3 步 · 过程展示</div><div class="title-row"><h2 class="title anim" style="--i:1">59 个版本，26 段原始 prompt</h2></div>
-        <a class="linkcard anim" style="--i:3" href="versions/index.html" target="_blank" rel="noopener">
+        <a class="linkcard anim glow" style="--i:3" href="versions/index.html" target="_blank" rel="noopener">
           <span class="linkcard__label">打开</span>
           <span class="linkcard__url">versions/index.html</span>
         </a>
         <p class="hint anim" style="--i:4">每一段都写着&quot;我当时的 prompt&quot;与&quot;它解决了什么&quot;</p></div><aside class="notes">这是我们的开发证据链：每个版本都能打开，每段 prompt 都有产出。</aside></section>
-<section class="slide" id="slide-17" data-index="16" data-kind="tools" aria-label="第 17 页"><div class="slide__inner ">
+<section class="slide" id="slide-17" data-index="16" data-kind="tools" data-trans="fade" data-anim-set="b" aria-label="第 17 页"><div class="slide__inner ">
         <div class="eyebrow anim" style="--i:0">开发过程 · AI 工具选型</div><div class="title-row"><h2 class="title anim" style="--i:1">四个工具，各司其职</h2></div>
-        <div class="tools"><div class="tools__card anim" style="--i:3">
+        <div class="tools"><div class="tools__card anim " style="--i:3">
             <span class="tools__badge">探索</span>
             <h3>ChatGPT</h3><p class="tools__role">灵感与早期 prompt</p>
-            <ul><li>项目初期找方向</li><li>写了部分初始 prompt</li><li>对话变长后上下文受限</li></ul></div><div class="tools__card anim" style="--i:4">
+            <ul><li>项目初期找方向</li><li>写了部分初始 prompt</li><li>对话变长后上下文受限</li></ul></div><div class="tools__card anim glow" style="--i:4">
             <span class="tools__badge">主力</span>
             <h3>DeepSeek Harness</h3><p class="tools__role">主力开发</p>
-            <ul><li>直接读取项目文件</li><li>按仓库现状生成 prompt</li><li>几轮后成为主力</li></ul></div><div class="tools__card anim" style="--i:5">
+            <ul><li>直接读取项目文件</li><li>按仓库现状生成 prompt</li><li>几轮后成为主力</li></ul></div><div class="tools__card anim " style="--i:5">
             <span class="tools__badge">辅助</span>
             <h3>Codex</h3><p class="tools__role">内嵌 AI 接入</p>
-            <ul><li>作为接入平台使用</li><li>验证提议结构</li></ul></div><div class="tools__card anim" style="--i:6">
+            <ul><li>作为接入平台使用</li><li>验证提议结构</li></ul></div><div class="tools__card anim " style="--i:6">
             <span class="tools__badge">平台</span>
             <h3>Netlify / Cloudflare</h3><p class="tools__role">中继与部署</p>
             <ul><li>先 Netlify 跑通</li><li>后迁 Cloudflare Pages</li></ul></div></div></div><aside class="notes">老实说：ChatGPT 帮我们起步，DeepSeek Harness 是主力，Codex 做接入验证。</aside></section>
-<section class="slide" id="slide-18" data-index="17" data-kind="story" aria-label="第 18 页"><div class="slide__inner ">
+<section class="slide" id="slide-18" data-index="17" data-kind="story" data-trans="push" data-anim-set="c" aria-label="第 18 页"><div class="slide__inner ">
         <div class="eyebrow anim" style="--i:0">第 4 步 · 最大困难</div><div class="title-row"><h2 class="title anim" style="--i:1">最难的是&quot;让 AI 真的能改计划&quot;</h2></div>
-        <ol class="story"><li class="story__step anim" style="--i:3"><span class="story__dot"></span><h3>跑通</h3><p>Netlify 函数两小时跑通，AI 能回话了</p></li><li class="story__step anim" style="--i:4"><span class="story__dot"></span><h3>卡住</h3><p>但编辑受限、额度不够，改一次要等很久</p></li><li class="story__step anim" style="--i:5"><span class="story__dot"></span><h3>迁移</h3><p>换到 Cloudflare Worker 中继，跨域与重试自己处理</p></li><li class="story__step anim" style="--i:6"><span class="story__dot"></span><h3>收敛</h3><p>提议改成结构化 JSON：任务 id 必须来自枚举，校验不过就不展示</p></li></ol></div><aside class="notes">这段是全项目最折腾的地方，也是学到最多的地方：不是&quot;接上模型&quot;就完了，是&quot;让它可控&quot;。</aside></section>
-<section class="slide" id="slide-19" data-index="18" data-kind="learn" aria-label="第 19 页"><div class="slide__inner ">
+        <ol class="story"><li class="story__step anim " style="--i:3"><span class="story__dot"></span><h3>跑通</h3><p>Netlify 函数两小时跑通，AI 能回话了</p></li><li class="story__step anim " style="--i:4"><span class="story__dot"></span><h3>卡住</h3><p>但编辑受限、额度不够，改一次要等很久</p></li><li class="story__step anim " style="--i:5"><span class="story__dot"></span><h3>迁移</h3><p>换到 Cloudflare Worker 中继，跨域与重试自己处理</p></li><li class="story__step anim glow" style="--i:6"><span class="story__dot"></span><h3>收敛</h3><p>提议改成结构化 JSON：任务 id 必须来自枚举，校验不过就不展示</p></li></ol></div><aside class="notes">这段是全项目最折腾的地方，也是学到最多的地方：不是&quot;接上模型&quot;就完了，是&quot;让它可控&quot;。</aside></section>
+<section class="slide" id="slide-19" data-index="18" data-kind="learn" data-trans="zoom" data-anim-set="d" aria-label="第 19 页"><div class="slide__inner ">
         <div class="eyebrow anim" style="--i:0">第 5 步 · 反思</div><div class="title-row"><h2 class="title anim" style="--i:1">我从这个项目里带走了什么</h2></div>
         <div class="learn"><div class="learn__card anim" style="--i:3"><span class="learn__n">01</span><h3>把大目标拆成可交付的小步</h3><p>需求、开发、测试、文档并行，学会排优先级而不是被事情推着走。</p></div><div class="learn__card anim" style="--i:4"><span class="learn__n">02</span><h3>AI 的效果取决于环境</h3><p>让它看见项目文件，比反复聊天更有效；上下文比措辞更重要。</p></div><div class="learn__card anim" style="--i:5"><span class="learn__n">03</span><h3>判断力才是核心能力</h3><p>不是照单全收 AI 的输出，而是能看出哪里不对、怎么验证。</p></div></div>
         <p class="footnote anim" style="--i:7">特别鸣谢：刘衍辰</p></div><aside class="notes">三条收获对应 MYP 的三个学习成果：接受挑战、发展技能、协作与自主规划。</aside></section>
-<section class="slide" id="slide-20" data-index="19" data-kind="end" aria-label="第 20 页"><div class="slide__inner ">
+<section class="slide" id="slide-20" data-index="19" data-kind="end" data-trans="lift" data-anim-set="e" aria-label="第 20 页"><div class="slide__inner ">
         <div class="end">
           <h2 class="display anim" style="--i:0">THANK YOU</h2>
         </div></div><aside class="notes">收尾留 30 秒提问时间；如果被问&quot;AI 会不会乱改&quot;，直接翻回第 13 页。</aside></section>

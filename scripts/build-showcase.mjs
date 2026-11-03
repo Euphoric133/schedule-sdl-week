@@ -354,7 +354,7 @@ function renderSlide(slide, index) {
       body = wrap(`
         ${head(slide)}
         <ul class="compare">${slide.rows
-          .map(([name, why, mark], i) => `<li class="compare__row anim ${mark === 'check' ? 'is-ours' : ''}" style="--i:${i + 3}">
+          .map(([name, why, mark], i) => `<li class="compare__row anim ${mark === 'check' ? 'is-ours glow' : ''}" style="--i:${i + 3}">
             <span class="compare__name">${esc(name)}</span><span class="compare__why">${esc(why)}</span>
             <span class="compare__mark ${mark === 'check' ? 'is-ok' : 'is-no'}">${icon(mark, 'icon icon--mark')}</span></li>`)
           .join('')}</ul>`);
@@ -403,7 +403,7 @@ function renderSlide(slide, index) {
       body = wrap(`
         ${head(slide)}
         <div class="metrics">${slide.items
-          .map(([n, label, hint], i) => `<div class="metrics__card anim" style="--i:${i + 3}">
+          .map(([n, label, hint], i) => `<div class="metrics__card anim ${i === 0 ? 'glow' : ''}" style="--i:${i + 3}">
             <strong class="count" data-count="${esc(n)}">0</strong>
             <span class="metrics__label">${esc(label)}</span>
             <span class="metrics__hint">${esc(hint)}</span></div>`)
@@ -414,7 +414,7 @@ function renderSlide(slide, index) {
     case 'link':
       body = wrap(`
         ${head(slide)}
-        <a class="linkcard anim" style="--i:3" href="${esc(slide.url)}" target="_blank" rel="noopener">
+        <a class="linkcard anim glow" style="--i:3" href="${esc(slide.url)}" target="_blank" rel="noopener">
           <span class="linkcard__label">打开</span>
           <span class="linkcard__url">${esc(slide.url)}</span>
         </a>
@@ -425,7 +425,7 @@ function renderSlide(slide, index) {
       body = wrap(`
         ${head(slide)}
         <div class="tools">${slide.items
-          .map(([name, role, points, badge], i) => `<div class="tools__card anim" style="--i:${i + 3}">
+          .map(([name, role, points, badge], i) => `<div class="tools__card anim ${i === 1 ? 'glow' : ''}" style="--i:${i + 3}">
             <span class="tools__badge">${esc(badge)}</span>
             <h3>${esc(name)}</h3><p class="tools__role">${esc(role)}</p>
             <ul>${points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>`)
@@ -436,7 +436,7 @@ function renderSlide(slide, index) {
       body = wrap(`
         ${head(slide)}
         <ol class="story">${slide.steps
-          .map(([t, d], i) => `<li class="story__step anim" style="--i:${i + 3}"><span class="story__dot"></span><h3>${esc(t)}</h3><p>${esc(d)}</p></li>`)
+          .map(([t, d], i) => `<li class="story__step anim ${i === 3 ? 'glow' : ''}" style="--i:${i + 3}"><span class="story__dot"></span><h3>${esc(t)}</h3><p>${esc(d)}</p></li>`)
           .join('')}</ol>`);
       break;
 
@@ -461,7 +461,11 @@ function renderSlide(slide, index) {
       body = wrap(head(slide));
   }
 
-  return `<section class="slide" id="slide-${index + 1}" data-index="${index}" data-kind="${slide.kind}" aria-label="第 ${index + 1} 页">${body}${notes}</section>`;
+  const TRANS = ['fade', 'push', 'zoom', 'lift'];
+  const SETS = ['a', 'b', 'c', 'd', 'e'];
+  const trans = slide.trans ?? TRANS[index % TRANS.length];
+  const animSet = slide.animSet ?? SETS[index % SETS.length];
+  return `<section class="slide" id="slide-${index + 1}" data-index="${index}" data-kind="${slide.kind}" data-trans="${trans}" data-anim-set="${animSet}" aria-label="第 ${index + 1} 页">${body}${notes}</section>`;
 }
 
 /** 每个亮点页的示意图（纯 SVG / CSS） */
@@ -581,28 +585,189 @@ const html = `<!doctype html>
     padding: 96px 120px 120px;
     opacity: 0;
     visibility: hidden;
-    transform: translate3d(40px, 0, 0);
-    transition: opacity 380ms var(--ease), transform 380ms var(--ease), visibility 0s linear 380ms;
+    transition: opacity 380ms var(--ease), transform 420ms var(--ease), visibility 0s linear 420ms;
   }
+  /* 翻页过渡四种，按页分配，避免每次都是同一种"淡入" */
+  .slide[data-trans="fade"] { transform: none; }
+  .slide[data-trans="push"] { transform: translate3d(64px, 0, 0); }
+  .slide[data-trans="zoom"] { transform: scale(.968); }
+  .slide[data-trans="lift"] { transform: translate3d(0, 46px, 0); }
   .slide.is-active {
     opacity: 1; visibility: visible;
     transform: none;
-    transition: opacity 380ms var(--ease), transform 380ms var(--ease), visibility 0s;
+    transition: opacity 380ms var(--ease), transform 460ms var(--ease), visibility 0s;
   }
   .slide__inner { position: relative; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
   .slide[data-kind="cover"] { padding: 0; }
   .slide[data-kind="cover"] .slide__inner { height: 100%; justify-content: center; padding: 0 140px; }
 
-  /* —— 元素入场 —— */
-  .anim { opacity: 0; transform: translate3d(0, 22px, 0); }
+  /* ==================================================================
+     动画系统
+     ------------------------------------------------------------------
+     一页一种主入场 + 列表逐项错位，避免"整场只有一个上浮"。
+     变体按 data-kind 分配，同一页内部再按 nth-child 交替左右。
+     ================================================================== */
+
+  .anim { opacity: 0; will-change: opacity, transform; }
   .slide.is-active .anim {
-    animation: rise 620ms var(--ease) both;
-    animation-delay: calc(var(--i, 0) * 70ms + 120ms);
+    animation-duration: 640ms;
+    animation-timing-function: var(--ease);
+    animation-fill-mode: both;
+    animation-delay: calc(var(--i, 0) * 70ms + 140ms);
+    animation-name: rise;
   }
-  @keyframes rise {
-    from { opacity: 0; transform: translate3d(0, 22px, 0); }
-    to { opacity: 1; transform: none; }
+
+  @keyframes rise   { from { opacity:0; transform: translate3d(0, 24px, 0); }  to { opacity:1; transform:none; } }
+  @keyframes sink   { from { opacity:0; transform: translate3d(0,-18px, 0); }  to { opacity:1; transform:none; } }
+  @keyframes leftIn { from { opacity:0; transform: translate3d(-48px, 0, 0); } to { opacity:1; transform:none; } }
+  @keyframes rightIn{ from { opacity:0; transform: translate3d(48px, 0, 0); }  to { opacity:1; transform:none; } }
+  @keyframes zoomIn { from { opacity:0; transform: scale(.90); }               to { opacity:1; transform: scale(1); } }
+  @keyframes blurIn { from { opacity:0; filter: blur(14px); }                 to { opacity:1; filter: blur(0); } }
+  @keyframes clipUp { from { opacity:0; clip-path: inset(0 0 100% 0); }       to { opacity:1; clip-path: inset(0 0 0 0); } }
+  @keyframes popIn  {
+    0%   { opacity:0; transform: scale(.82); }
+    62%  { opacity:1; transform: scale(1.045); }
+    100% { opacity:1; transform: scale(1); }
   }
+  @keyframes flipIn {
+    from { opacity:0; transform: perspective(1100px) rotateX(-14deg) translateY(20px); }
+    to   { opacity:1; transform: perspective(1100px) rotateX(0) translateY(0); }
+  }
+
+  /* 按页面类型分配主入场 */
+  .slide[data-kind="statement"] .statement__big     { animation-name: clipUp; }
+  .slide[data-kind="statement"] .proof__item        { animation-name: flipIn; }
+  .slide[data-kind="cover"] .logo                   { animation-name: zoomIn; }
+  .slide[data-kind="cover"] .eyebrow                { animation-name: sink; }
+  .slide[data-kind="cover"] .display                { animation-name: clipUp; }
+  .slide[data-kind="agenda"] .agenda__item:nth-child(odd)  { animation-name: leftIn; }
+  .slide[data-kind="agenda"] .agenda__item:nth-child(even) { animation-name: rightIn; }
+  .slide[data-kind="grid-list"] .pain__item         { animation-name: blurIn; animation-duration: 720ms; }
+  .slide[data-kind="compare"] .compare__row         { animation-name: leftIn; }
+  .slide[data-kind="four"] .four__card              { animation-name: flipIn; }
+  .slide[data-kind="who"] .chip                     { animation-name: popIn; animation-duration: 520ms; }
+  .slide[data-kind="who"] blockquote                { animation-name: blurIn; }
+  /* 五个亮点页连续出现，各用一套入场，避免"五页一个样" */
+  .slide[data-kind="feature"][data-anim-set="a"] .feature__list li:nth-child(odd)  { animation-name: leftIn; }
+  .slide[data-kind="feature"][data-anim-set="a"] .feature__list li:nth-child(even) { animation-name: rightIn; }
+  .slide[data-kind="feature"][data-anim-set="a"] .feature__visual { animation-name: zoomIn; animation-duration: 760ms; }
+
+  .slide[data-kind="feature"][data-anim-set="b"] .feature__list li:nth-child(odd)  { animation-name: sink; }
+  .slide[data-kind="feature"][data-anim-set="b"] .feature__list li:nth-child(even) { animation-name: rise; }
+  .slide[data-kind="feature"][data-anim-set="b"] .feature__visual { animation-name: flipIn; animation-duration: 820ms; }
+
+  .slide[data-kind="feature"][data-anim-set="c"] .feature__list li { animation-name: blurIn; animation-duration: 700ms; }
+  .slide[data-kind="feature"][data-anim-set="c"] .feature__visual { animation-name: clipUp; animation-duration: 820ms; }
+
+  .slide[data-kind="feature"][data-anim-set="d"] .feature__list li:nth-child(odd)  { animation-name: rightIn; }
+  .slide[data-kind="feature"][data-anim-set="d"] .feature__list li:nth-child(even) { animation-name: leftIn; }
+  .slide[data-kind="feature"][data-anim-set="d"] .feature__visual { animation-name: popIn; animation-duration: 700ms; }
+
+  .slide[data-kind="feature"][data-anim-set="e"] .feature__list li { animation-name: zoomIn; animation-duration: 620ms; }
+  .slide[data-kind="feature"][data-anim-set="e"] .feature__visual { animation-name: rightIn; animation-duration: 800ms; }
+  .slide[data-kind="ai"] .flow__step                { animation-name: popIn; animation-duration: 560ms; }
+  .slide[data-kind="ai"] .rules li                  { animation-name: sink; }
+  .slide[data-kind="metrics"] .metrics__card        { animation-name: popIn; animation-duration: 580ms; }
+  .slide[data-kind="link"] .linkcard                { animation-name: clipUp; animation-duration: 720ms; }
+  .slide[data-kind="tools"] .tools__card            { animation-name: flipIn; }
+  .slide[data-kind="tools"] .tools__badge           { animation-name: popIn; animation-delay: .5s; }
+  .slide[data-kind="story"] .story__step            { animation-name: rightIn; }
+  .slide[data-kind="learn"] .learn__card            { animation-name: zoomIn; }
+  .slide[data-kind="end"] .display                  { animation-name: clipUp; animation-duration: 900ms; }
+
+  /* 逐个错位：列表/网格内部的元素按序号递增 */
+  .slide[data-kind="grid-list"] .pain__item:nth-child(2),
+  .slide[data-kind="metrics"] .metrics__card:nth-child(2),
+  .slide[data-kind="tools"] .tools__card:nth-child(2),
+  .slide[data-kind="story"] .story__step:nth-child(2),
+  .slide[data-kind="learn"] .learn__card:nth-child(2) { animation-delay: .26s; }
+  .slide[data-kind="grid-list"] .pain__item:nth-child(3),
+  .slide[data-kind="metrics"] .metrics__card:nth-child(3),
+  .slide[data-kind="tools"] .tools__card:nth-child(3),
+  .slide[data-kind="story"] .story__step:nth-child(3),
+  .slide[data-kind="learn"] .learn__card:nth-child(3) { animation-delay: .38s; }
+  .slide[data-kind="grid-list"] .pain__item:nth-child(4),
+  .slide[data-kind="metrics"] .metrics__card:nth-child(4),
+  .slide[data-kind="tools"] .tools__card:nth-child(4),
+  .slide[data-kind="story"] .story__step:nth-child(4) { animation-delay: .50s; }
+  .slide[data-kind="grid-list"] .pain__item:nth-child(5),
+  .slide[data-kind="metrics"] .metrics__card:nth-child(5) { animation-delay: .62s; }
+  .slide[data-kind="who"] .chip:nth-child(2) { animation-delay: .26s; }
+  .slide[data-kind="who"] .chip:nth-child(3) { animation-delay: .34s; }
+  .slide[data-kind="who"] .chip:nth-child(4) { animation-delay: .42s; }
+
+  /* ==================================================================
+     明暗突出
+     ------------------------------------------------------------------
+     每页有一道缓慢扫过的"主光"，重点元素再叠一层辉光。
+     不用 filter: brightness 压暗整页（会糊字），只用局部透明度与描边。
+     ================================================================== */
+  .slide::before {
+    content: '';
+    position: absolute; inset: -10% -6%;
+    background:
+      radial-gradient(38% 34% at 26% 14%, rgba(107,164,240,.20), transparent 72%),
+      radial-gradient(30% 28% at 78% 78%, rgba(214,174,78,.10), transparent 74%);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .slide.is-active::before { animation: keyLight 2200ms var(--ease) both; }
+  @keyframes keyLight {
+    0%   { opacity: 0; transform: translate3d(-3%, -2%, 0) scale(1.04); }
+    45%  { opacity: .85; }
+    100% { opacity: .38; transform: none; }
+  }
+
+  /* 重点元素：描边辉光（用伪元素，避免和入场动画抢 box-shadow） */
+  .glow { position: relative; }
+  .glow::after {
+    content: '';
+    position: absolute; inset: -1px; border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    box-shadow: 0 0 0 1px rgba(107,164,240,.55), 0 0 34px rgba(107,164,240,.30);
+  }
+  .slide.is-active .glow::after { animation: glowIn 2600ms var(--ease) 900ms both; }
+  @keyframes glowIn {
+    0%   { opacity: 0; }
+    35%  { opacity: 1; }
+    100% { opacity: .45; }
+  }
+
+  /* 非重点元素压暗，制造"主次"。
+     必须用 filter 而不是 opacity：入场动画结束在 opacity:1 且 fill: both，
+     会把静态的 opacity 覆盖掉（试过，视觉上等于没压暗）。 */
+  .slide[data-kind="compare"] .compare__row:not(.is-ours) { filter: brightness(.66) saturate(.8); }
+  .slide[data-kind="tools"] .tools__card:not(.glow) { filter: brightness(.64) saturate(.8); }
+  .slide[data-kind="story"] .story__step:not(.glow) { filter: brightness(.7); }
+  .slide[data-kind="metrics"] .metrics__card:not(.glow) { filter: brightness(.78); }
+
+  /* 重点元素额外描边（静态，不参与动画） */
+  .slide[data-kind="compare"] .is-ours,
+  .slide[data-kind="link"] .linkcard { border-color: rgba(107,164,240,.55); }
+
+  /* 故事页的节点圆点：弹一下，强调"时间在推进" */
+  .slide[data-kind="story"] .story__dot { animation: dotPop 520ms var(--ease) both; }
+  .slide[data-kind="story"] .story__step:nth-child(2) .story__dot { animation-delay: .26s; }
+  .slide[data-kind="story"] .story__step:nth-child(3) .story__dot { animation-delay: .38s; }
+  .slide[data-kind="story"] .story__step:nth-child(4) .story__dot { animation-delay: .50s; }
+  @keyframes dotPop {
+    0%   { transform: translateY(-50%) scale(0); opacity: 0; }
+    70%  { transform: translateY(-50%) scale(1.5); opacity: 1; }
+    100% { transform: translateY(-50%) scale(1); opacity: 1; }
+  }
+
+  /* 尾页与主张页：文字自带一点光晕 */
+  .slide[data-kind="end"] .display,
+  .slide[data-kind="statement"] .statement__big {
+    text-shadow: 0 0 46px rgba(107,164,240,.28);
+  }
+
+  /* 图标线条描边动画 */
+  .slide.is-active .icon path,
+  .slide.is-active .icon circle { animation: draw 900ms var(--ease) .3s both; }
+  @keyframes draw { from { stroke-dasharray: 60; stroke-dashoffset: 60; } to { stroke-dasharray: 60; stroke-dashoffset: 0; } }
 
   /* —— 排版 —— */
   .eyebrow {
@@ -875,7 +1040,13 @@ const html = `<!doctype html>
 
   /* —— 减少动态 —— */
   @media (prefers-reduced-motion: reduce) {
-    .slide, .anim, .splitbar i, .ring__progress, .hud__bar { animation: none !important; transition: none !important; }
+    .slide, .anim, .splitbar i, .ring__progress, .hud__bar,
+    .slide::before, .glow::after, .story__dot, .icon path, .icon circle {
+      animation: none !important; transition: none !important;
+    }
+    .slide::before { opacity: .3; }
+    .glow::after { opacity: .4; }
+    .slide [class]:not(.glow) { filter: none !important; }
     .slide { opacity: 1; transform: none; }
     .slide:not(.is-active) { display: none; }
   }

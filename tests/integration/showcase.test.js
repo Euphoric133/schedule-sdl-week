@@ -138,6 +138,45 @@ test('演示页：16:9 舞台用绝对定位 + translate 居中（不依赖 grid
   assert.equal(/display:\s*grid/.test(viewportRule), false, '视口不应再用 grid 布局');
 });
 
+test('演示页：动画有足够多的变体，不是全场一种上浮', async () => {
+  const html = await deck();
+  const keyframes = new Set([...html.matchAll(/@keyframes\s+(\w+)/g)].map((m) => m[1]));
+  const entrance = ['rise', 'sink', 'leftIn', 'rightIn', 'zoomIn', 'blurIn', 'clipUp', 'popIn', 'flipIn'];
+  const used = entrance.filter((name) => keyframes.has(name));
+  assert.ok(used.length >= 7, `入场动画变体太少（${used.length} 个）：${used.join(', ')}`);
+
+  // 同一页内部也不能只有一种：至少 8 种不同 data-kind 使用了不同动画
+  const byKind = new Map();
+  for (const m of html.matchAll(/\.slide\[data-kind="([a-z-]+)"\][^{]*\{[^}]*animation-name:\s*(\w+)/g)) {
+    if (!byKind.has(m[1])) byKind.set(m[1], new Set());
+    byKind.get(m[1]).add(m[2]);
+  }
+  assert.ok(byKind.size >= 10, `应覆盖至少 10 类页面，实际 ${byKind.size}`);
+
+  // 翻页过渡至少 4 种
+  const transitions = new Set([...html.matchAll(/data-trans="(\w+)"/g)].map((m) => m[1]));
+  assert.ok(transitions.size >= 4, `翻页过渡应至少 4 种，实际 ${[...transitions].join(', ')}`);
+});
+
+test('演示页：有明暗层次（主光 + 重点辉光 + 非重点压暗）', async () => {
+  const html = await deck();
+  assert.match(html, /@keyframes\s+keyLight/, '缺少逐页主光');
+  assert.match(html, /@keyframes\s+glowIn/, '缺少重点元素辉光');
+  assert.ok((html.match(/class="[^"]*glow/g) ?? []).length >= 4, '重点元素太少');
+  // 压暗必须用 filter：入场动画的 opacity 会覆盖静态 opacity
+  assert.match(html, /:not\(\.is-ours\)\s*\{\s*filter:\s*brightness/, '对比页应有非重点压暗（filter）');
+  assert.match(html, /:not\(\.glow\)\s*\{\s*filter:\s*brightness/, '工具页应有非重点压暗（filter）');
+});
+
+test('演示页：减少动态效果时关闭新动画但保留可读的层次', async () => {
+  const html = await deck();
+  const reduced = html.match(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\n  \}/)?.[0] ?? '';
+  assert.ok(reduced, '缺少 prefers-reduced-motion 规则');
+  for (const name of ['glow::after', 'story__dot', '::before']) {
+    assert.ok(reduced.includes(name), `减少动态应覆盖 ${name}`);
+  }
+});
+
 test('演示页：数字来自真实仓库（测试数/提交数/版本数）', async () => {
   const html = await deck();
   assert.ok(html.includes('853'), '应写入真实测试数 853');
