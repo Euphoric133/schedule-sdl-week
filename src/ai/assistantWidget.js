@@ -14,6 +14,7 @@
 
 import { el, toast } from '../ui/dom.js';
 import { buildScheduleContext, sendMessage, stripProposalBlock } from './chatClient.js';
+import { PLAN_CHANGE_CTA, looksLikePlanChange } from './planIntent.js';
 
 const OPENERS = ['今天的学习安排有没有风险？', '我今天没按计划完成，怎么调整？', '帮我看看先做哪件事。'];
 
@@ -80,7 +81,7 @@ export function mountAiAssistant({ root, app, now, send = sendMessage }) {
     el('div.ai-assistant__composer', {}, [input, sendButton]),
     el('p.ai-assistant__hint', {
       // 数据流向必须说清楚：会话摘要（任务标题、截止时间、剩余时长）会离开浏览器
-      text: '助手只能给建议，日程调整需要你在预览页确认。你输入的对话，以及最多 8 个进行中任务的标题、科目、截止时间与剩余时长，会发送给 Google Gemini 用于生成回答；其余数据仍只保存在浏览器里。',
+      text: '这里适合聊情况与取舍；要真正新建、修改或删除任务，请用「AI 助手」页的「帮我改计划」（改动都要你确认）。你输入的对话，以及最多 8 个进行中任务的标题、科目、截止时间与剩余时长，会发送给 Google Gemini 用于生成回答；其余数据仍只保存在浏览器里。',
     }),
   );
 
@@ -124,13 +125,26 @@ export function mountAiAssistant({ root, app, now, send = sendMessage }) {
   function renderMessages() {
     list.replaceChildren();
     for (const message of messages) {
-      list.appendChild(
-        el(`div.ai-assistant__msg.ai-assistant__msg--${message.role}`, {}, [
-          el('span.ai-assistant__who', { text: message.role === 'user' ? '你' : '助手' }),
-          // 一律用 textContent（el 的 text 属性），绝不把模型输出当 HTML 插入
-          el('p.ai-assistant__text', { text: message.content }),
-        ]),
-      );
+      const item = el(`div.ai-assistant__msg.ai-assistant__msg--${message.role}`, {}, [
+        el('span.ai-assistant__who', { text: message.role === 'user' ? '你' : '助手' }),
+        // 一律用 textContent（el 的 text 属性），绝不把模型输出当 HTML 插入
+        el('p.ai-assistant__text', { text: message.content }),
+      ]);
+      if (message.cta) {
+        item.appendChild(
+          el('button.ai-assistant__cta', {
+            type: 'button',
+            text: PLAN_CHANGE_CTA,
+            on: {
+              click: () => {
+                close();
+                globalThis.location.hash = '#/ai';
+              },
+            },
+          }),
+        );
+      }
+      list.appendChild(item);
     }
     if (messages.length === 0 && !busy) {
       list.appendChild(
@@ -163,8 +177,19 @@ export function mountAiAssistant({ root, app, now, send = sendMessage }) {
     const result = await send({ messages, context: context() });
 
     if (result.ok) {
-      // 只显示给人看的文字；提议块由 #/ai 页面解析，不进对话气泡
-      messages.push({ role: 'assistant', content: stripProposalBlock(result.reply) });
+      /**
+       * 只显示给人看的文字；提议块由 #/ai 页面解析，不进对话气泡。
+       *
+       * 另外：气泡走的是**普通聊天通道**，不能产生可执行的结构化提议。
+       * 如果用户这句话其实是在要求改计划（"帮我加个任务""删掉数学作业"），
+       * 就在这条回复下面挂一个跳转按钮，把他带到真正能改的页面——
+       * 否则模型只能回答"我无法直接添加"，用户会以为功能没做。
+       */
+      messages.push({
+        role: 'assistant',
+        content: stripProposalBlock(result.reply),
+        cta: looksLikePlanChange(clean),
+      });
       setBusy(false);
       if (!open) {
         // 没打开面板时把结论放到气泡角标上：这就是"打开页面即可看到 AI 结果"
